@@ -1,0 +1,29 @@
+name: knowledge-base
+
+on:
+  push:
+    paths:
+      - "docs/**"
+      - ".agents/**"
+      - "scripts/**"
+      - "AGENTS.md"
+      - "ARCHITECTURE.md"
+      - "README.md"
+  pull_request:
+    paths:
+      - "docs/**"
+      - ".agents/**"
+      - "scripts/**"
+      - "AGENTS.md"
+      - "ARCHITECTURE.md"
+      - "README.md"
+
+jobs:
+  docs:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check docs
+        run: python3 scripts/knowledge/check_docs.py
+      - name: Check ExecPlans
+        run: python3 scripts/check_execplan.py

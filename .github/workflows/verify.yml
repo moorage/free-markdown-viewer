@@ -1,0 +1,21 @@
+name: verify
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bootstrap
+        run: ./scripts/bootstrap-apple
+      - name: Build
+        run: ./scripts/build --platform all
+      - name: Unit tests
+        run: ./scripts/test-unit
+      - name: macOS UI smoke
+        run: ./scripts/test-ui-macos --smoke
+      - name: iOS UI smoke
+        run: ./scripts/test-ui-ios --device both --smoke

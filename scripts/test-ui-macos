@@ -1,0 +1,36 @@
+#!/bin/zsh
+
+set -euo pipefail
+
+source "$(cd "$(dirname "$0")" && pwd)/lib/xcode-env.sh"
+
+ensure_dirs
+require_project
+
+SMOKE="${1:-}"
+if [[ "${SMOKE}" != "--smoke" ]]; then
+  echo "test-ui-macos currently supports --smoke mode only" >&2
+  exit 1
+fi
+
+"${ROOT_DIR}/scripts/capture-checkpoint" \
+  --fixture basic_typography.md \
+  --platform-target macos \
+  --checkpoint shell-smoke-macos
+
+python3 - "${CHECKPOINTS_DIR}/shell-smoke-macos" <<'PY'
+import json
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+state = json.loads(root.joinpath("state.json").read_text())
+
+assert state["platform"] == "macos"
+assert state["deviceClass"] == "mac"
+assert state["selectedFile"] == "basic_typography.md"
+assert state["workspaceRoot"] == "Fixtures/docs"
+assert state["visibleBlocks"][0]["id"] == "block.placeholder.0"
+assert root.joinpath("window.png").exists()
+print("macOS smoke ok")
+PY

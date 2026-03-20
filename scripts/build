@@ -1,0 +1,99 @@
+#!/bin/zsh
+
+set -euo pipefail
+
+source "$(cd "$(dirname "$0")" && pwd)/lib/xcode-env.sh"
+
+ensure_dirs
+require_project
+
+PLATFORM="${1:-}"
+DEVICE_CLASS="iphone"
+if [[ "${PLATFORM}" == "--platform" ]]; then
+  PLATFORM="${2:-all}"
+  shift 2
+else
+  PLATFORM="all"
+  shift 0
+fi
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --device-class)
+      DEVICE_CLASS="${2:-iphone}"
+      shift 2
+      ;;
+    *)
+      echo "usage: ./scripts/build --platform macos|ios|all [--device-class iphone|ipad|both]" >&2
+      exit 1
+      ;;
+  esac
+done
+
+build_for_destination() {
+  local name="$1"
+  local destination="$2"
+  local bundle
+  bundle="$(result_bundle_path "build-${name}")"
+  rm -rf "${bundle}"
+  xcodebuild \
+    -project "${PROJECT_PATH}" \
+    -scheme "${SCHEME_NAME}" \
+    -configuration Debug \
+    -derivedDataPath "${DERIVED_DATA_DIR}" \
+    -resultBundlePath "${bundle}" \
+    -destination "${destination}" \
+    CODE_SIGNING_ALLOWED=NO \
+    CODE_SIGNING_REQUIRED=NO \
+    CODE_SIGN_IDENTITY="" \
+    build
+}
+
+case "${PLATFORM}" in
+  macos)
+    build_for_destination "macos" "${MAC_DESTINATION}"
+    ;;
+  ios)
+    case "${DEVICE_CLASS}" in
+      iphone)
+        IPHONE_ID="$(iphone_sim_id)"
+        build_for_destination "ios-iphone" "id=${IPHONE_ID}"
+        ;;
+      ipad)
+        IPAD_ID="$(ipad_sim_id)"
+        build_for_destination "ios-ipad" "id=${IPAD_ID}"
+        ;;
+      both)
+        IPHONE_ID="$(iphone_sim_id)"
+        IPAD_ID="$(ipad_sim_id)"
+        build_for_destination "ios-iphone" "id=${IPHONE_ID}"
+        build_for_destination "ios-ipad" "id=${IPAD_ID}"
+        ;;
+      *)
+        echo "expected --device-class iphone|ipad|both" >&2
+        exit 1
+        ;;
+    esac
+    ;;
+  all)
+    build_for_destination "macos" "${MAC_DESTINATION}"
+    if ios_platform_installed; then
+      if IPHONE_ID="$(iphone_sim_id 2>/dev/null || true)"; then
+        build_for_destination "ios-iphone" "id=${IPHONE_ID}"
+      else
+        echo "warning: no iPhone simulator id found; skipped iPhone build" >&2
+      fi
+      if IPAD_ID="$(ipad_sim_id 2>/dev/null || true)"; then
+        build_for_destination "ios-ipad" "id=${IPAD_ID}"
+      else
+        echo "warning: no iPad simulator id found; skipped iPad build" >&2
+      fi
+    else
+      echo "warning: iOS simulator platform is not installed; skipped iOS builds" >&2
+    fi
+    ;;
+  *)
+    echo "usage: ./scripts/build --platform macos|ios|all [--device-class iphone|ipad|both]" >&2
+    exit 1
+    ;;
+esac

@@ -1,0 +1,515 @@
+{
+  "root": "swift-markdown-viewer",
+  "tree": [
+    {
+      "type": "dir",
+      "name": ".agents",
+      "children": [
+        {
+          "type": "file",
+          "name": "DOCUMENTATION.md"
+        },
+        {
+          "type": "file",
+          "name": "IMPLEMENT.md"
+        },
+        {
+          "type": "file",
+          "name": "PLANS.md"
+        }
+      ]
+    },
+    {
+      "type": "dir",
+      "name": ".codex",
+      "children": [
+        {
+          "type": "file",
+          "name": "config.toml"
+        },
+        {
+          "type": "file",
+          "name": "local-environment.yaml"
+        }
+      ]
+    },
+    {
+      "type": "dir",
+      "name": ".github",
+      "children": [
+        {
+          "type": "dir",
+          "name": "workflows",
+          "children": [
+            {
+              "type": "file",
+              "name": "knowledge-base.yml"
+            },
+            {
+              "type": "file",
+              "name": "verify.yml"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "file",
+      "name": ".gitignore"
+    },
+    {
+      "type": "file",
+      "name": "AGENTS.md"
+    },
+    {
+      "type": "file",
+      "name": "ARCHITECTURE.md"
+    },
+    {
+      "type": "dir",
+      "name": "Fixtures",
+      "children": [
+        {
+          "type": "dir",
+          "name": "docs",
+          "children": [
+            {
+              "type": "file",
+              "name": "anchors_and_relative_links.md"
+            },
+            {
+              "type": "file",
+              "name": "basic_typography.md"
+            },
+            {
+              "type": "file",
+              "name": "mixed_long_document.md"
+            },
+            {
+              "type": "file",
+              "name": "stress_1000_blocks.md"
+            }
+          ]
+        },
+        {
+          "type": "dir",
+          "name": "expected",
+          "children": [
+            {
+              "type": "file",
+              "name": "README.md"
+            },
+            {
+              "type": "dir",
+              "name": "shell-smoke-ipad",
+              "children": [
+                {
+                  "type": "file",
+                  "name": "perf.json"
+                },
+                {
+                  "type": "file",
+                  "name": "state.json"
+                },
+                {
+                  "type": "file",
+                  "name": "window.png"
+                }
+              ]
+            },
+            {
+              "type": "dir",
+              "name": "shell-smoke-iphone",
+              "children": [
+                {
+                  "type": "file",
+                  "name": "perf.json"
+                },
+                {
+                  "type": "file",
+                  "name": "state.json"
+                },
+                {
+                  "type": "file",
+                  "name": "window.png"
+                }
+              ]
+            },
+            {
+              "type": "dir",
+              "name": "shell-smoke-macos",
+              "children": [
+                {
+                  "type": "file",
+                  "name": "perf.json"
+                },
+                {
+                  "type": "file",
+                  "name": "state.json"
+                },
+                {
+                  "type": "file",
+                  "name": "window.png"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "file",
+      "name": "README.md"
+    },
+    {
+      "type": "dir",
+      "name": "Swift Markdown Viewer",
+      "children": [
+        {
+          "type": "dir",
+          "name": "Swift Markdown Viewer",
+          "children": [
+            {
+              "type": "dir",
+              "name": "App",
+              "children": [
+                {
+                  "type": "dir",
+                  "name": "Platform",
+                  "children": [
+                    {
+                      "type": "file",
+                      "name": "PlatformScreenshotWriter.swift"
+                    },
+                    {
+                      "type": "dir",
+                      "name": "iOS",
+                      "children": []
+                    },
+                    {
+                      "type": "dir",
+                      "name": "macOS",
+                      "children": []
+                    }
+                  ]
+                },
+                {
+                  "type": "dir",
+                  "name": "Shared",
+                  "children": [
+                    {
+                      "type": "file",
+                      "name": "AppModel.swift"
+                    },
+                    {
+                      "type": "file",
+                      "name": "Models.swift"
+                    },
+                    {
+                      "type": "file",
+                      "name": "WorkspaceProvider.swift"
+                    }
+                  ]
+                },
+                {
+                  "type": "dir",
+                  "name": "Shell",
+                  "children": [
+                    {
+                      "type": "file",
+                      "name": "AppRootView.swift"
+                    },
+                    {
+                      "type": "file",
+                      "name": "ViewerShellView.swift"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "dir",
+              "name": "Assets.xcassets",
+              "children": [
+                {
+                  "type": "dir",
+                  "name": "AccentColor.colorset",
+                  "children": [
+                    {
+                      "type": "file",
+                      "name": "Contents.json"
+                    }
+                  ]
+                },
+                {
+                  "type": "dir",
+                  "name": "AppIcon.appiconset",
+                  "children": [
+                    {
+                      "type": "file",
+                      "name": "Contents.json"
+                    }
+                  ]
+                },
+                {
+                  "type": "file",
+                  "name": "Contents.json"
+                }
+              ]
+            },
+            {
+              "type": "file",
+              "name": "ContentView.swift"
+            },
+            {
+              "type": "dir",
+              "name": "Harness",
+              "children": [
+                {
+                  "type": "file",
+                  "name": "AccessibilityIDs.swift"
+                },
+                {
+                  "type": "file",
+                  "name": "HarnessCommandServer.swift"
+                },
+                {
+                  "type": "file",
+                  "name": "HarnessCommands.swift"
+                },
+                {
+                  "type": "file",
+                  "name": "HarnessLaunchOptions.swift"
+                },
+                {
+                  "type": "file",
+                  "name": "HarnessSnapshots.swift"
+                }
+              ]
+            },
+            {
+              "type": "file",
+              "name": "Swift_Markdown_ViewerApp.swift"
+            }
+          ]
+        },
+        {
+          "type": "dir",
+          "name": "Swift Markdown Viewer.xcodeproj",
+          "children": [
+            {
+              "type": "file",
+              "name": "project.pbxproj"
+            },
+            {
+              "type": "dir",
+              "name": "project.xcworkspace",
+              "children": [
+                {
+                  "type": "file",
+                  "name": "contents.xcworkspacedata"
+                },
+                {
+                  "type": "dir",
+                  "name": "xcshareddata",
+                  "children": [
+                    {
+                      "type": "dir",
+                      "name": "swiftpm",
+                      "children": [
+                        {
+                          "type": "dir",
+                          "name": "configuration",
+                          "children": []
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "dir",
+          "name": "Swift Markdown ViewerTests",
+          "children": [
+            {
+              "type": "file",
+              "name": "Swift_Markdown_ViewerTests.swift"
+            }
+          ]
+        },
+        {
+          "type": "dir",
+          "name": "Swift Markdown ViewerUITests",
+          "children": [
+            {
+              "type": "file",
+              "name": "Swift_Markdown_ViewerUITests.swift"
+            },
+            {
+              "type": "file",
+              "name": "Swift_Markdown_ViewerUITestsLaunchTests.swift"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "file",
+      "name": "codex_execplan_native_macos_gfm_viewer.md"
+    },
+    {
+      "type": "file",
+      "name": "codex_execplan_native_universal_gfm_viewer.md"
+    },
+    {
+      "type": "file",
+      "name": "default.profraw"
+    },
+    {
+      "type": "dir",
+      "name": "docs",
+      "children": [
+        {
+          "type": "file",
+          "name": "PLANS.md"
+        },
+        {
+          "type": "file",
+          "name": "QUALITY_SCORE.md"
+        },
+        {
+          "type": "file",
+          "name": "RELIABILITY.md"
+        },
+        {
+          "type": "file",
+          "name": "SECURITY.md"
+        },
+        {
+          "type": "file",
+          "name": "debug-contracts.md"
+        },
+        {
+          "type": "dir",
+          "name": "exec-plans",
+          "children": [
+            {
+              "type": "dir",
+              "name": "active",
+              "children": [
+                {
+                  "type": "file",
+                  "name": "2026-03-19-swift-codex-cli-harness.md"
+                }
+              ]
+            },
+            {
+              "type": "dir",
+              "name": "completed",
+              "children": [
+                {
+                  "type": "file",
+                  "name": "README.md"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "dir",
+          "name": "generated",
+          "children": []
+        },
+        {
+          "type": "file",
+          "name": "harness.md"
+        }
+      ]
+    },
+    {
+      "type": "dir",
+      "name": "scripts",
+      "children": [
+        {
+          "type": "file",
+          "name": "agent-loop"
+        },
+        {
+          "type": "file",
+          "name": "bootstrap-apple"
+        },
+        {
+          "type": "file",
+          "name": "build"
+        },
+        {
+          "type": "file",
+          "name": "capture-checkpoint"
+        },
+        {
+          "type": "file",
+          "name": "check_execplan.py"
+        },
+        {
+          "type": "file",
+          "name": "collect-perf"
+        },
+        {
+          "type": "file",
+          "name": "compare-goldens"
+        },
+        {
+          "type": "dir",
+          "name": "knowledge",
+          "children": [
+            {
+              "type": "file",
+              "name": "check_docs.py"
+            },
+            {
+              "type": "file",
+              "name": "generate_repo_map.py"
+            },
+            {
+              "type": "file",
+              "name": "suggest_doc_updates.py"
+            },
+            {
+              "type": "file",
+              "name": "update_quality_score.py"
+            }
+          ]
+        },
+        {
+          "type": "dir",
+          "name": "lib",
+          "children": [
+            {
+              "type": "file",
+              "name": "xcode-env.sh"
+            }
+          ]
+        },
+        {
+          "type": "file",
+          "name": "test-integration"
+        },
+        {
+          "type": "file",
+          "name": "test-ui-ios"
+        },
+        {
+          "type": "file",
+          "name": "test-ui-macos"
+        },
+        {
+          "type": "file",
+          "name": "test-unit"
+        }
+      ]
+    }
+  ]
+}

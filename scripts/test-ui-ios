@@ -1,0 +1,81 @@
+#!/bin/zsh
+
+set -euo pipefail
+
+source "$(cd "$(dirname "$0")" && pwd)/lib/xcode-env.sh"
+
+ensure_dirs
+require_project
+
+DEVICE="both"
+SMOKE=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --device)
+      DEVICE="${2:-both}"
+      shift 2
+      ;;
+    --smoke)
+      SMOKE="1"
+      shift
+      ;;
+    *)
+      echo "unknown argument: $1" >&2
+      exit 1
+      ;;
+  esac
+done
+
+run_ios_test() {
+  local suffix="$1"
+  "${ROOT_DIR}/scripts/capture-checkpoint" \
+    --fixture basic_typography.md \
+    --platform-target ios \
+    --device-class "${suffix}" \
+    --checkpoint "shell-smoke-${suffix}"
+
+  python3 - "${CHECKPOINTS_DIR}/shell-smoke-${suffix}" "${suffix}" <<'PY'
+import json
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+device_class = sys.argv[2]
+state = json.loads(root.joinpath("state.json").read_text())
+
+assert state["platform"] == "ios"
+assert state["deviceClass"] == device_class
+assert state["selectedFile"] == "basic_typography.md"
+assert state["workspaceRoot"] == "Fixtures/docs"
+assert state["visibleBlocks"][0]["id"] == "block.placeholder.0"
+assert root.joinpath("window.png").exists()
+print(f"iOS smoke ok for {device_class}")
+PY
+}
+
+if [[ -z "${SMOKE}" ]]; then
+  echo "test-ui-ios currently supports --smoke mode only" >&2
+  exit 1
+fi
+
+if ! ios_platform_installed; then
+  echo "iOS simulator platform is not installed. Run: xcodebuild -downloadPlatform iOS" >&2
+  exit 1
+fi
+
+case "${DEVICE}" in
+  iphone)
+    run_ios_test "iphone"
+    ;;
+  ipad)
+    run_ios_test "ipad"
+    ;;
+  both)
+    run_ios_test "iphone"
+    run_ios_test "ipad"
+    ;;
+  *)
+    echo "expected --device iphone|ipad|both" >&2
+    exit 1
+    ;;
+esac

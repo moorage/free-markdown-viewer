@@ -1,0 +1,17 @@
+#!/bin/zsh
+
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+source "${ROOT}/scripts/lib/xcode-env.sh"
+
+"${ROOT}/scripts/build" --platform all
+"${ROOT}/scripts/test-unit"
+"${ROOT}/scripts/test-integration"
+"${ROOT}/scripts/test-ui-macos" --smoke
+
+if ios_platform_installed; then
+  "${ROOT}/scripts/test-ui-ios" --device both --smoke
+fi
+
+echo "agent-loop: ok"

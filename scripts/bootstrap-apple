@@ -1,0 +1,33 @@
+#!/bin/zsh
+
+set -euo pipefail
+
+source "$(cd "$(dirname "$0")" && pwd)/lib/xcode-env.sh"
+
+ensure_dirs
+require_project
+
+command -v xcodebuild >/dev/null || { echo "xcodebuild is missing" >&2; exit 1; }
+command -v swift >/dev/null || { echo "swift is missing" >&2; exit 1; }
+command -v python3 >/dev/null || { echo "python3 is missing" >&2; exit 1; }
+
+xcodebuild -list -project "${PROJECT_PATH}" >/dev/null
+
+IPHONE_ID=""
+IPAD_ID=""
+if IPHONE_ID="$(iphone_sim_id 2>/dev/null || true)"; then
+  :
+fi
+if IPAD_ID="$(ipad_sim_id 2>/dev/null || true)"; then
+  :
+fi
+
+echo "project: ${PROJECT_PATH}"
+echo "scheme: ${SCHEME_NAME}"
+echo "derived-data: ${DERIVED_DATA_DIR}"
+echo "fixture-root: ${FIXTURE_ROOT}"
+echo "mac-destination: ${MAC_DESTINATION}"
+echo "iphone-sim-id: ${IPHONE_ID:-missing}"
+echo "ipad-sim-id: ${IPAD_ID:-missing}"
+echo "xcode: $(xcodebuild -version | tr '\n' ' ' | sed 's/  */ /g')"
+echo "swift: $(swift --version | head -n 1)"

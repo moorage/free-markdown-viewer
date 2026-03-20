@@ -1,0 +1,155 @@
+#!/bin/zsh
+
+set -euo pipefail
+
+source "$(cd "$(dirname "$0")" && pwd)/lib/xcode-env.sh"
+
+ensure_dirs
+require_project
+
+FIXTURE=""
+PLATFORM_TARGET="macos"
+DEVICE_CLASS="mac"
+CHECKPOINT=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --fixture)
+      FIXTURE="${2:-}"
+      shift 2
+      ;;
+    --platform-target)
+      PLATFORM_TARGET="${2:-}"
+      shift 2
+      ;;
+    --device-class)
+      DEVICE_CLASS="${2:-}"
+      shift 2
+      ;;
+    --checkpoint)
+      CHECKPOINT="${2:-}"
+      shift 2
+      ;;
+    *)
+      echo "unknown argument: $1" >&2
+      exit 1
+      ;;
+  esac
+done
+
+[[ -n "${FIXTURE}" ]] || { echo "--fixture is required" >&2; exit 1; }
+[[ -n "${CHECKPOINT}" ]] || { echo "--checkpoint is required" >&2; exit 1; }
+
+OUT_DIR="${CHECKPOINTS_DIR}/${CHECKPOINT}"
+rm -rf "${OUT_DIR}"
+mkdir -p "${OUT_DIR}"
+
+if [[ "${PLATFORM_TARGET}" == "macos" ]]; then
+  "$(cd "$(dirname "$0")" && pwd)/build" --platform macos
+  APP_BINARY="$(app_binary_path)"
+  STATE_PATH="${OUT_DIR}/state.json"
+  PERF_PATH="${OUT_DIR}/perf.json"
+  SCREENSHOT_PATH="${OUT_DIR}/window.png"
+  "${APP_BINARY}" \
+    --fixture-root "${FIXTURE_ROOT}" \
+    --open-file "${FIXTURE}" \
+    --platform-target macos \
+    --device-class "${DEVICE_CLASS}" \
+    --window-size 1024x768 \
+    --dump-visible-state "${STATE_PATH}" \
+    --dump-perf-state "${PERF_PATH}" \
+    --screenshot-path "${SCREENSHOT_PATH}" \
+    --ui-test-mode 1 &
+  APP_PID=$!
+  trap 'kill ${APP_PID} >/dev/null 2>&1 || true' EXIT
+  for _ in {1..40}; do
+    if [[ -f "${STATE_PATH}" && -f "${PERF_PATH}" && -f "${SCREENSHOT_PATH}" ]]; then
+      break
+    fi
+    sleep 0.25
+  done
+  kill "${APP_PID}" >/dev/null 2>&1 || true
+  trap - EXIT
+elif [[ "${PLATFORM_TARGET}" == "ios" ]]; then
+  case "${DEVICE_CLASS}" in
+    iphone)
+      SIM_ID="$(iphone_sim_id)"
+      ;;
+    ipad)
+      SIM_ID="$(ipad_sim_id)"
+      ;;
+    *)
+      echo "expected --device-class iphone|ipad for ios capture" >&2
+      exit 1
+      ;;
+  esac
+
+  if ! ios_platform_installed; then
+    echo "iOS simulator platform is not installed. Run: xcodebuild -downloadPlatform iOS" >&2
+    exit 1
+  fi
+
+  "$(cd "$(dirname "$0")" && pwd)/build" --platform ios --device-class "${DEVICE_CLASS}"
+  IOS_APP_BUNDLE="$(ios_app_bundle_path)"
+  xcrun simctl boot "${SIM_ID}" >/dev/null 2>&1 || true
+  xcrun simctl bootstatus "${SIM_ID}" -b
+  xcrun simctl uninstall "${SIM_ID}" "${BUNDLE_IDENTIFIER}" >/dev/null 2>&1 || true
+  xcrun simctl install "${SIM_ID}" "${IOS_APP_BUNDLE}"
+
+  CONTAINER_ROOT="$(xcrun simctl get_app_container "${SIM_ID}" "${BUNDLE_IDENTIFIER}" data)"
+  FIXTURE_COPY_ROOT="${CONTAINER_ROOT}/Documents/Fixtures/docs"
+  rm -rf "${FIXTURE_COPY_ROOT}"
+  mkdir -p "${FIXTURE_COPY_ROOT}"
+  cp -R "${FIXTURE_ROOT}/." "${FIXTURE_COPY_ROOT}/"
+
+  STATE_PATH="${CONTAINER_ROOT}/Documents/HarnessArtifacts/${CHECKPOINT}/state.json"
+  PERF_PATH="${CONTAINER_ROOT}/Documents/HarnessArtifacts/${CHECKPOINT}/perf.json"
+  SCREENSHOT_PATH="${CONTAINER_ROOT}/Documents/HarnessArtifacts/${CHECKPOINT}/window.png"
+  rm -rf "$(dirname "${STATE_PATH}")"
+
+  xcrun simctl launch "${SIM_ID}" "${BUNDLE_IDENTIFIER}" --args \
+    --fixture-root "${FIXTURE_COPY_ROOT}" \
+    --open-file "${FIXTURE}" \
+    --platform-target ios \
+    --device-class "${DEVICE_CLASS}" \
+    --window-size 1024x768 \
+    --dump-visible-state "${STATE_PATH}" \
+    --dump-perf-state "${PERF_PATH}" \
+    --screenshot-path "${SCREENSHOT_PATH}" \
+    --ui-test-mode 1 >/dev/null
+
+  for _ in {1..80}; do
+    if [[ -f "${STATE_PATH}" && -f "${PERF_PATH}" && -f "${SCREENSHOT_PATH}" ]]; then
+      break
+    fi
+    sleep 0.25
+  done
+
+  cp "${STATE_PATH}" "${OUT_DIR}/state.json"
+  cp "${PERF_PATH}" "${OUT_DIR}/perf.json"
+  cp "${SCREENSHOT_PATH}" "${OUT_DIR}/window.png"
+  python3 - "${SIM_ID}" "${BUNDLE_IDENTIFIER}" <<'PY'
+import subprocess
+import sys
+
+try:
+    subprocess.run(
+        ["xcrun", "simctl", "terminate", sys.argv[1], sys.argv[2]],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        timeout=2,
+        check=False,
+    )
+except subprocess.TimeoutExpired:
+    pass
+PY
+else
+  echo "expected --platform-target macos|ios" >&2
+  exit 1
+fi
+
+[[ -f "${OUT_DIR}/state.json" ]] || { echo "state.json missing" >&2; exit 1; }
+[[ -f "${OUT_DIR}/perf.json" ]] || { echo "perf.json missing" >&2; exit 1; }
+[[ -f "${OUT_DIR}/window.png" ]] || { echo "window.png missing" >&2; exit 1; }
+
+echo "checkpoint captured at ${OUT_DIR}"

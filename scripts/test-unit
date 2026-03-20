@@ -1,0 +1,24 @@
+#!/bin/zsh
+
+set -euo pipefail
+
+source "$(cd "$(dirname "$0")" && pwd)/lib/xcode-env.sh"
+
+ensure_dirs
+require_project
+
+BUNDLE="$(result_bundle_path "test-unit")"
+rm -rf "${BUNDLE}"
+
+xcodebuild \
+  -project "${PROJECT_PATH}" \
+  -scheme "${SCHEME_NAME}" \
+  -configuration Debug \
+  -derivedDataPath "${DERIVED_DATA_DIR}" \
+  -resultBundlePath "${BUNDLE}" \
+  -destination "${MAC_DESTINATION}" \
+  CODE_SIGNING_ALLOWED=NO \
+  CODE_SIGNING_REQUIRED=NO \
+  CODE_SIGN_IDENTITY="" \
+  -only-testing:"Swift Markdown ViewerTests" \
+  test

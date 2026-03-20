@@ -1,0 +1,13 @@
+#!/bin/zsh
+
+set -euo pipefail
+
+source "$(cd "$(dirname "$0")" && pwd)/lib/xcode-env.sh"
+
+CHECKPOINT="${1:-}"
+[[ -n "${CHECKPOINT}" ]] || { echo "usage: ./scripts/collect-perf <checkpoint>" >&2; exit 1; }
+
+PERF_PATH="${CHECKPOINTS_DIR}/${CHECKPOINT}/perf.json"
+[[ -f "${PERF_PATH}" ]] || { echo "missing perf file at ${PERF_PATH}" >&2; exit 1; }
+
+cat "${PERF_PATH}"

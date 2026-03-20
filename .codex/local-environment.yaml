@@ -1,0 +1,21 @@
+name: default
+setup:
+  - ./scripts/bootstrap-apple || true
+
+actions:
+  build:
+    run: ./scripts/build --platform all
+  test_unit:
+    run: ./scripts/test-unit
+  test_ui_macos:
+    run: ./scripts/test-ui-macos --smoke
+  test_ui_ios_iphone:
+    run: ./scripts/test-ui-ios --device iphone --smoke
+  test_ui_ios_ipad:
+    run: ./scripts/test-ui-ios --device ipad --smoke
+  verify_docs:
+    run: python3 scripts/knowledge/check_docs.py
+  verify_execplan:
+    run: python3 scripts/check_execplan.py
+  refresh_knowledge:
+    run: python3 scripts/knowledge/generate_repo_map.py && python3 scripts/knowledge/update_quality_score.py

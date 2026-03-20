@@ -16,6 +16,13 @@ extensions/playwright/fixtures/meal-planner-audio/
 extensions/playwright/artifacts/
 artifacts/
 test-results/
+DerivedData/
+*.xcresult
+*.xcuserstate
+*.xcuserdata/
+xcuserdata/
+*.profraw
+.codex/environments/
 .api.log
 .web.log
 .mcp.log

@@ -1,0 +1,11 @@
+model = "gpt-5.4"
+model_reasoning_effort = "high"
+
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+
+project_root_markers = [".git", "AGENTS.md"]
+
+[features]
+request_rule = true
+runtime_metrics = true

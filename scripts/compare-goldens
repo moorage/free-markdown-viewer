@@ -1,0 +1,61 @@
+#!/bin/zsh
+
+set -euo pipefail
+
+source "$(cd "$(dirname "$0")" && pwd)/lib/xcode-env.sh"
+
+CHECKPOINT=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --checkpoint)
+      CHECKPOINT="${2:-}"
+      shift 2
+      ;;
+    *)
+      echo "unknown argument: $1" >&2
+      exit 1
+      ;;
+  esac
+done
+
+[[ -n "${CHECKPOINT}" ]] || { echo "--checkpoint is required" >&2; exit 1; }
+
+ACTUAL_DIR="${CHECKPOINTS_DIR}/${CHECKPOINT}"
+EXPECTED_DIR="${EXPECTED_ROOT}/${CHECKPOINT}"
+
+python3 - "$ACTUAL_DIR" "$EXPECTED_DIR" <<'PY'
+import json
+import pathlib
+import sys
+
+actual = pathlib.Path(sys.argv[1])
+expected = pathlib.Path(sys.argv[2])
+if not expected.exists():
+    raise SystemExit(f"missing expected directory: {expected}")
+
+for name in ("state.json", "perf.json"):
+    actual_path = actual / name
+    expected_path = expected / name
+    if not actual_path.exists():
+        raise SystemExit(f"missing actual file: {actual_path}")
+    if not expected_path.exists():
+        raise SystemExit(f"missing expected file: {expected_path}")
+    a = json.loads(actual_path.read_text())
+    e = json.loads(expected_path.read_text())
+    if name == "perf.json":
+        for payload in (a, e):
+            launch_time = payload.pop("launchTime", None)
+            ready_time = payload.pop("readyTime", None)
+            if not isinstance(launch_time, (int, float)):
+                raise SystemExit("perf.json launchTime must be numeric")
+            if not isinstance(ready_time, (int, float)):
+                raise SystemExit("perf.json readyTime must be numeric")
+    if a != e:
+        raise SystemExit(f"{name} differs")
+
+if (expected / "window.png").exists():
+    if actual.joinpath("window.png").read_bytes() != expected.joinpath("window.png").read_bytes():
+        raise SystemExit("window.png differs")
+
+print("goldens match")
+PY
