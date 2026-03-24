@@ -5,10 +5,29 @@
   - `docs/exec-plans/active/2026-03-23-window-scoped-workspaces.md`
   - `docs/exec-plans/active/2026-03-23-async-document-loading.md`
   - `docs/exec-plans/active/2026-03-23-cross-block-selection.md`
+  - `docs/exec-plans/active/2026-03-23-inline-animated-media.md`
   - `docs/exec-plans/active/2026-03-23-session-restore.md`
 - current milestone:
-  - macOS session restore for previously open folder-backed windows
+  - inline animated media implementation with unit coverage green, the focused signed macOS inline-media UI slice green, and the macOS smoke UI test green again after restoring the title accessibility contract
 - commands run:
+  - `xcodebuild -quiet -project "Swift Markdown Viewer/Swift Markdown Viewer.xcodeproj" -scheme "Swift Markdown Viewer" -configuration Debug -derivedDataPath /tmp/swift-markdown-viewer-inline-media-unit-fix2 -destination "platform=macOS,arch=arm64" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= "-only-testing:Swift Markdown ViewerTests/InlineAnimatedMediaTests" test`
+  - `xcodebuild -quiet -project "Swift Markdown Viewer/Swift Markdown Viewer.xcodeproj" -scheme "Swift Markdown Viewer" -configuration Debug -derivedDataPath /tmp/swift-markdown-viewer-inline-media-ui-fix -destination "platform=macOS,arch=arm64" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= "-only-testing:Swift Markdown ViewerUITests/InlineAnimatedMediaUITests" test`
+  - `xcodebuild -quiet -project "Swift Markdown Viewer/Swift Markdown Viewer.xcodeproj" -scheme "Swift Markdown Viewer" -configuration Debug -derivedDataPath /tmp/swift-markdown-viewer-inline-media-ui-bft -destination "platform=macOS,arch=arm64" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= build-for-testing`
+  - `xattr -d com.apple.provenance "/tmp/swift-markdown-viewer-inline-media-ui-bft/Build/Products/Debug/Swift Markdown ViewerUITests-Runner.app"`
+  - `xattr -l "/tmp/swift-markdown-viewer-inline-media-ui-bft/Build/Products/Debug/Swift Markdown ViewerUITests-Runner.app"`
+  - `xcodebuild -quiet -project "Swift Markdown Viewer/Swift Markdown Viewer.xcodeproj" -scheme "Swift Markdown Viewer" -configuration Debug -derivedDataPath /tmp/swift-markdown-viewer-inline-media-regression -destination "platform=macOS,arch=arm64" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= "-only-testing:Swift Markdown ViewerTests/InlineAnimatedMediaTests" "-only-testing:Swift Markdown ViewerTests/Swift_Markdown_ViewerTests/testSelectableDocumentFormatterUsesRenderedDocumentText" "-only-testing:Swift Markdown ViewerTests/Swift_Markdown_ViewerTests/testMarkdownRendererParsesDirectImageFixture" "-only-testing:Swift Markdown ViewerTests/Swift_Markdown_ViewerTests/testMarkdownRendererParsesReferenceImageFixture" test`
+  - `file tmp/rickrolled.gif tmp/rickrolled.mp4 tmp/rickrolled.png`
+  - `strings -a tmp/rickrolled.png | rg 'acTL|fcTL|fdAT|IDAT'`
+  - `xxd -g 1 -l 256 tmp/rickrolled.png`
+  - `shasum -a 256 tmp/rickrolled.gif tmp/rickrolled.mp4 tmp/rickrolled.png`
+  - `python3 scripts/check_execplan.py`
+  - `python3 scripts/knowledge/check_docs.py`
+  - `xcodebuild -quiet -project "Swift Markdown Viewer/Swift Markdown Viewer.xcodeproj" -scheme "Swift Markdown Viewer" -configuration Debug -derivedDataPath /tmp/swift-markdown-viewer-inline-media-unit-check -destination "platform=macOS,arch=arm64" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= "-only-testing:Swift Markdown ViewerTests/InlineAnimatedMediaTests" test`
+  - `xcodebuild -quiet -project "Swift Markdown Viewer/Swift Markdown Viewer.xcodeproj" -scheme "Swift Markdown Viewer" -configuration Debug -derivedDataPath /tmp/swift-markdown-viewer-inline-media-ui-check -destination "platform=macOS,arch=arm64" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= "-only-testing:Swift Markdown ViewerUITests/InlineAnimatedMediaUITests" test`
+  - `xattr -l "/tmp/swift-markdown-viewer-inline-media-ui-check/Build/Products/Debug/Swift Markdown ViewerUITests-Runner.app"`
+  - `codesign -dv --verbose=4 "/tmp/swift-markdown-viewer-inline-media-ui-check/Build/Products/Debug/Swift Markdown ViewerUITests-Runner.app"`
+  - `spctl -a -vv "/tmp/swift-markdown-viewer-inline-media-ui-check/Build/Products/Debug/Swift Markdown ViewerUITests-Runner.app"`
+  - `xcrun xcresulttool get object --legacy --path "/tmp/swift-markdown-viewer-inline-media-ui-check/Logs/Test/Test-Swift Markdown Viewer-2026.03.23_22-39-14--0700.xcresult" --format json`
   - `xcodebuild -quiet -project "Swift Markdown Viewer/Swift Markdown Viewer.xcodeproj" -scheme "Swift Markdown Viewer" -configuration Debug -derivedDataPath /tmp/swift-markdown-viewer-empty-state-unit -destination "platform=macOS,arch=arm64" "-only-testing:Swift Markdown ViewerTests/Swift_Markdown_ViewerTests/testEmptyWorkspaceShowsNoMarkdownFilesMessage" "-only-testing:Swift Markdown ViewerTests/Swift_Markdown_ViewerTests/testWorkspaceProviderUsesChosenFolderWithoutFixtureFallback" test`
   - `xcodebuild -quiet -project "Swift Markdown Viewer/Swift Markdown Viewer.xcodeproj" -scheme "Swift Markdown Viewer" -configuration Debug -derivedDataPath /tmp/swift-markdown-viewer-empty-state-ui-2 -destination "platform=macOS,arch=arm64" "-only-testing:Swift Markdown ViewerUITests/Swift_Markdown_ViewerUITests/testOpenFolderCommandUpdatesSidebarAndTitle" "-only-testing:Swift Markdown ViewerUITests/Swift_Markdown_ViewerUITests/testEmptyWorkspaceShowsCenteredOpenFolderCallToAction" test`
   - `xcodebuild -quiet -project "Swift Markdown Viewer/Swift Markdown Viewer.xcodeproj" -scheme "Swift Markdown Viewer" -configuration Debug -derivedDataPath /tmp/swift-markdown-viewer-multiwindow-unit-final -destination "platform=macOS,arch=arm64" "-only-testing:Swift Markdown ViewerTests/Swift_Markdown_ViewerTests/testLaunchOptionsParseMultipleUITestOpenFolders" "-only-testing:Swift Markdown ViewerTests/Swift_Markdown_ViewerTests/testOpenFolderSelectionWinsOverPendingBootstrapLoad" "-only-testing:Swift Markdown ViewerTests/Swift_Markdown_ViewerTests/testWindowScopedModelsKeepDifferentFoldersAfterOpeningNewWorkspace" "-only-testing:Swift Markdown ViewerTests/Swift_Markdown_ViewerTests/testIntegrationWorkspaceLoadsFixtureAndSnapshot" test`
@@ -41,6 +60,16 @@
   - `xcodebuild -quiet -project "Swift Markdown Viewer/Swift Markdown Viewer.xcodeproj" -scheme "Swift Markdown Viewer" -configuration Debug -derivedDataPath /tmp/swift-markdown-viewer-commonmark -resultBundlePath /tmp/swift-markdown-viewer-commonmark-3.xcresult -destination platform=macOS,arch=arm64 CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= "-only-testing:Swift Markdown ViewerTests/Swift_Markdown_ViewerTests/testMarkdownRendererMatchesCommonMarkFixtureCorpusSemantics" test`
   - `xcodebuild -quiet -project "Swift Markdown Viewer/Swift Markdown Viewer.xcodeproj" -scheme "Swift Markdown Viewer" -configuration Debug -derivedDataPath /tmp/swift-markdown-viewer-commonmark-noresult -destination platform=macOS,arch=arm64 CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= "-only-testing:Swift Markdown ViewerTests/Swift_Markdown_ViewerTests/testMarkdownRendererMatchesCommonMarkFixtureCorpusSemantics" test`
 - evidence gathered:
+  - `MarkdownRenderer` now parses local `!video[]()` lines into dedicated `video` blocks, and `AppModel` upgrades resolved GIF/APNG files to `animatedImage` blocks after inspecting the real workspace asset
+  - media-bearing documents now render through inline block views with `block.image.<id>`, `block.video.<id>`, and `video.playButton.<id>` accessibility identifiers while text-only documents keep the selectable text view
+  - the focused macOS regression slice passes for `InlineAnimatedMediaTests`, direct-image parsing, reference-image parsing, and the existing selectable-document formatter contract
+  - `Fixtures/media/` now exists in-repo and contains `rickrolled.gif`, `rickrolled.png`, and `rickrolled.mp4` copied from `tmp/`
+  - `Fixtures/docs/animated_gif.md`, `Fixtures/docs/animated_apng.md`, and `Fixtures/docs/video_local_mp4.md` now lock the product-brief syntax for animated images and local MP4 video
+  - `docs/exec-plans/active/2026-03-23-inline-animated-media.md` now documents the non-implementation stop point, the future milestones, and the validation evidence for this feature area
+  - `docs/debug-contracts.md` now lists the planned media accessibility identifiers `block.image.<id>`, `block.video.<id>`, and `video.playButton.<id>`
+  - `InlineAnimatedMediaTests.testRepoContainsRickrollMediaFixtures` passes, which confirms the copied assets are visible to the test bundle
+  - the three new animated-media behavior tests fail as intended because the current app still exports `image` or paragraph-style visible blocks instead of `animatedImage` and `video`
+  - the targeted macOS UI-test slice never reached the new assertions because `Swift Markdown ViewerUITests-Runner` exited before establishing an XCTest connection
   - `ViewerShellView` now replaces the raw empty placeholder document with a centered empty-state card and an `Open Another Folder` button wired to the existing folder picker action
   - the focused macOS UI slice passes for opening an empty workspace and showing both the empty-state message and recovery CTA
   - the focused macOS unit slice passes for the no-markdown workspace model state
@@ -77,6 +106,10 @@
   - `testMarkdownRendererMatchesCommonMarkFixtureCorpusSemantics` now reads the checked-in corpus under `Fixtures/expected/spec-safari/commonmark` instead of the untracked local `tmp/spec-fixtures/commonmark` scratch path, so fresh CI checkouts exercise the same fixture set as local runs
   - the obsolete `codex_execplan_native_macos_gfm_viewer.md` brief is now removed, the universal brief now points to itself in the kickoff instructions, and the generated repo map has been refreshed to stop advertising the retired file
 - important discoveries:
+  - preserving the text-only selectable surface while switching only media documents to block rendering is enough to add inline media without undoing the earlier cross-block selection work
+  - `tmp/rickrolled.png` is an actual APNG despite the generic `.png` extension; the file contains `acTL`, `fcTL`, and `fdAT` chunks
+  - the local macOS UI-test environment is currently blocked by a runner bootstrap failure that surfaces as a "damaged" `Swift Markdown ViewerUITests-Runner.app` dialog and an xcresult error of `Early unexpected exit ... signal kill before establishing connection`
+  - the live shared model still lacks dedicated animated-image and video block kinds, so the new contract can only be enforced today as red tests
   - exposing raw markdown in one native text view fixes selection but regresses the core product expectation, so the selectable surface has to be derived from parsed blocks rather than `documentText`
   - default actor isolation on `MarkdownRenderer` was not just a warning source; once parser work moved off the main actor it could abort host-based renderer tests, so the renderer helper itself needs to opt out of `MainActor`
   - scene-appearance persistence was invalid for restoration because `restorationSession` is still `nil` until bootstrap reloads the workspace root and selected file
@@ -94,6 +127,8 @@
   - `NSAttributedString` HTML import is not a safe semantic oracle for this renderer; for raw HTML blocks it can drop script contents and over-count comment-like text compared with the repository's CommonMark contract
   - the CommonMark corpus test had a CI-only path bug: it passed locally because `tmp/spec-fixtures/commonmark` existed in a developer scratch tree, but a fresh GitHub Actions checkout does not contain that untracked directory
 - open risks or blockers:
+  - even after a separate `build-for-testing` run and direct `xattr -d com.apple.provenance` attempts, the local macOS UITest runner still surfaces the "damaged" dialog and blocks end-to-end UI confirmation
+  - macOS UI validation for the new animated-media contract is currently blocked by the local `Swift Markdown ViewerUITests-Runner` crash/dialog before XCTest establishes a connection
   - a true two-window macOS XCUITest remains flaky in this environment, so simultaneous-window proof currently relies on deterministic model-level coverage rather than a passing multi-window UI test
   - session ordering is preserved by scene activation order rather than a user-visible window identity, so the specific restored front-to-back ordering may still differ from the exact pre-quit arrangement
   - direct automated proof that two simultaneously open macOS windows can each keep distinct markdown workspace selections is still blocked by the separate macOS UI-test runner bootstrap failure

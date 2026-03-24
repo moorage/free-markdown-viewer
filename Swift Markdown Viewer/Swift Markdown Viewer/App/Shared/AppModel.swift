@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import ImageIO
 import SwiftUI
 
 @MainActor
@@ -49,6 +50,10 @@ final class AppModel: ObservableObject {
 
     var windowTitle: String {
         "\(workspaceRootDisplay) > \(selectedFileDisplayName)"
+    }
+
+    var shouldRenderBlockContent: Bool {
+        containsRenderableMedia(in: documentBlocks)
     }
 
     var shouldAutoPromptForFolderOnLaunch: Bool {
@@ -247,8 +252,8 @@ final class AppModel: ObservableObject {
             launchTime: 0,
             readyTime: readyReference.timeIntervalSince(startReference),
             visibleBlockCount: flattenedBlocks.count,
-            activeAnimatedMediaCount: 0,
-            activeVideoPlayerCount: 0
+            activeAnimatedMediaCount: flattenedBlocks.filter { $0.kind == .animatedImage }.count,
+            activeVideoPlayerCount: flattenedBlocks.filter { $0.kind == .video }.count
         )
     }
 
@@ -335,6 +340,17 @@ final class AppModel: ObservableObject {
         }
         return flattened
     }
+
+    private func containsRenderableMedia(in blocks: [MarkdownBlock]) -> Bool {
+        blocks.contains { block in
+            switch block.kind {
+            case .image, .animatedImage, .video:
+                return true
+            default:
+                return containsRenderableMedia(in: block.children)
+            }
+        }
+    }
 }
 
 extension AppModel {
@@ -349,7 +365,8 @@ extension AppModel {
     ) async -> DocumentLoadResult {
         let detachedTask = Task.detached(priority: .userInitiated) {
             let text = (try? provider.readFile(at: path)) ?? "Unable to read \(path.rawValue)"
-            let blocks = MarkdownRenderer.blocks(from: text)
+            let parsedBlocks = MarkdownRenderer.blocks(from: text)
+            let blocks = hydrateMedia(in: parsedBlocks, provider: provider)
             return DocumentLoadResult(text: text, blocks: blocks)
         }
 
@@ -358,6 +375,63 @@ extension AppModel {
         } onCancel: {
             detachedTask.cancel()
         }
+    }
+
+    private nonisolated static func hydrateMedia(
+        in blocks: [MarkdownBlock],
+        provider: LocalWorkspaceProvider
+    ) -> [MarkdownBlock] {
+        blocks.map { hydrateMedia(in: $0, provider: provider) }
+    }
+
+    private nonisolated static func hydrateMedia(
+        in block: MarkdownBlock,
+        provider: LocalWorkspaceProvider
+    ) -> MarkdownBlock {
+        let hydratedChildren = hydrateMedia(in: block.children, provider: provider)
+
+        switch block.kind {
+        case .image:
+            guard let image = block.image else {
+                return block.replacing(children: hydratedChildren)
+            }
+
+            let resolvedURL = try? provider.resolveMediaURL(for: WorkspacePath(rawValue: image.sourceURL))
+            let hydratedImage = MarkdownImage(
+                altText: image.altText,
+                sourceURL: image.sourceURL,
+                title: image.title,
+                resolvedURL: resolvedURL
+            )
+            let hydratedKind: MarkdownBlockKind = resolvedURL.map(isAnimatedImage(at:)) == true ? .animatedImage : .image
+            return block.replacing(
+                kind: hydratedKind,
+                image: hydratedImage,
+                children: hydratedChildren
+            )
+
+        case .video:
+            guard let video = block.video else {
+                return block.replacing(children: hydratedChildren)
+            }
+
+            let resolvedURL = try? provider.resolveMediaURL(for: WorkspacePath(rawValue: video.sourceURL))
+            let hydratedVideo = MarkdownVideo(
+                altText: video.altText,
+                sourceURL: video.sourceURL,
+                title: video.title,
+                resolvedURL: resolvedURL
+            )
+            return block.replacing(video: hydratedVideo, children: hydratedChildren)
+
+        default:
+            return block.replacing(children: hydratedChildren)
+        }
+    }
+
+    private nonisolated static func isAnimatedImage(at url: URL) -> Bool {
+        guard let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil) else { return false }
+        return CGImageSourceGetCount(imageSource) > 1
     }
 
     static func adjacentFilePath(

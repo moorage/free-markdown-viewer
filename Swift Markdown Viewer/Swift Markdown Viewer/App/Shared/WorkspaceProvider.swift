@@ -84,7 +84,7 @@ struct LocalWorkspaceProvider: WorkspaceProvider, Sendable {
 
     nonisolated func resolveMediaURL(for path: WorkspacePath) throws -> URL {
         if let rootURL {
-            return rootURL.appendingPathComponent(path.rawValue)
+            return rootURL.appendingPathComponent(path.rawValue).standardizedFileURL
         }
         throw WorkspaceProviderError.rootMissing(path.rawValue)
     }

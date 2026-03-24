@@ -30,6 +30,9 @@ Stable identifiers include:
 - `document.scrollView`
 - `document.text`
 - `block.placeholder.0`
+- `block.image.<id>`
+- `block.video.<id>`
+- `video.playButton.<id>`
 
 ## State snapshot
 
@@ -43,6 +46,7 @@ The app must be able to emit JSON with:
 - `history.forwardCount`
 - `viewport`
 - `visibleBlocks`
+- `visibleBlocks[*].kind` values that distinguish media blocks such as `animatedImage` and `video`
 - `sidebar.selectedNode`
 
 ## Perf snapshot

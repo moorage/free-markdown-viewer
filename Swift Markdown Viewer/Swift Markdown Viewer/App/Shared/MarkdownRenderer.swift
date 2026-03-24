@@ -29,6 +29,7 @@ nonisolated enum MarkdownRenderer {
         var isTaskCompleted: Bool?
         var table: MarkdownTable?
         var image: MarkdownImage?
+        var video: MarkdownVideo?
         var attributedText = AttributedString()
         var sourceText = ""
         var children: [BlockBuilder] = []
@@ -40,7 +41,8 @@ nonisolated enum MarkdownRenderer {
             level: Int? = nil,
             listItemIndex: Int? = nil,
             table: MarkdownTable? = nil,
-            image: MarkdownImage? = nil
+            image: MarkdownImage? = nil,
+            video: MarkdownVideo? = nil
         ) {
             self.identity = identity
             self.kind = kind
@@ -49,6 +51,7 @@ nonisolated enum MarkdownRenderer {
             self.listItemIndex = listItemIndex
             self.table = table
             self.image = image
+            self.video = video
         }
 
         var canAbsorbParagraphText: Bool {
@@ -393,7 +396,7 @@ nonisolated enum MarkdownRenderer {
             sourceText = ""
             plainText = ""
             attributedText = nil
-        case .image:
+        case .image, .animatedImage, .video:
             sourceText = builder.sourceText
             plainText = ""
             attributedText = nil
@@ -418,7 +421,7 @@ nonisolated enum MarkdownRenderer {
         let effectivePlainText: String
         if builder.kind == .rawHTML {
             effectivePlainText = plainText
-        } else if builder.kind == .image || builder.kind == .thematicBreak {
+        } else if builder.kind == .image || builder.kind == .animatedImage || builder.kind == .video || builder.kind == .thematicBreak {
             effectivePlainText = plainText
         } else if taskState.0 {
             effectivePlainText = normalizeVisibleText(String(taskState.2.characters))
@@ -446,6 +449,7 @@ nonisolated enum MarkdownRenderer {
             isTaskCompleted: taskState.1,
             table: builder.table,
             image: builder.image,
+            video: builder.video,
             attributedText: effectiveAttributedText,
             children: children
         )
@@ -502,6 +506,29 @@ nonisolated enum MarkdownRenderer {
                     isTaskCompleted: nil,
                     table: nil,
                     image: image,
+                    video: nil,
+                    attributedText: nil,
+                    children: []
+                )
+            ]
+        }
+
+        if meaningfulLines.count == 1,
+           let video = videoBlock(from: meaningfulLines[0]) {
+            return [
+                MarkdownBlock(
+                    id: "block.0",
+                    kind: .video,
+                    plainText: "",
+                    sourceText: meaningfulLines[0],
+                    level: nil,
+                    listItemIndex: nil,
+                    indentLevel: 0,
+                    isTaskItem: false,
+                    isTaskCompleted: nil,
+                    table: nil,
+                    image: nil,
+                    video: video,
                     attributedText: nil,
                     children: []
                 )
@@ -522,6 +549,7 @@ nonisolated enum MarkdownRenderer {
                     isTaskCompleted: nil,
                     table: nil,
                     image: nil,
+                    video: nil,
                     attributedText: nil,
                     children: []
                 )
@@ -558,6 +586,7 @@ nonisolated enum MarkdownRenderer {
                         isTaskCompleted: block.isTaskCompleted,
                         table: block.table,
                         image: block.image,
+                        video: block.video,
                         attributedText: block.attributedText,
                         children: block.children
                     )
@@ -591,6 +620,7 @@ nonisolated enum MarkdownRenderer {
                         isTaskCompleted: nil,
                         table: nil,
                         image: nil,
+                        video: nil,
                         attributedText: nil,
                         children: []
                     )
@@ -619,6 +649,35 @@ nonisolated enum MarkdownRenderer {
                         isTaskCompleted: nil,
                         table: nil,
                         image: image,
+                        video: nil,
+                        attributedText: nil,
+                        children: []
+                    )
+                )
+                blockIndex += 1
+                lineIndex += 1
+                continue
+            }
+
+            if !trimmed.isEmpty,
+               let video = videoBlock(from: trimmed) {
+                foundSpecialBlock = true
+                appendCoreBlocks(from: markdownBuffer)
+                markdownBuffer.removeAll()
+                blocks.append(
+                    MarkdownBlock(
+                        id: "block.\(blockIndex)",
+                        kind: .video,
+                        plainText: "",
+                        sourceText: trimmed,
+                        level: nil,
+                        listItemIndex: nil,
+                        indentLevel: 0,
+                        isTaskItem: false,
+                        isTaskCompleted: nil,
+                        table: nil,
+                        image: nil,
+                        video: video,
                         attributedText: nil,
                         children: []
                     )
@@ -660,6 +719,7 @@ nonisolated enum MarkdownRenderer {
             isTaskCompleted: nil,
             table: nil,
             image: nil,
+            video: nil,
             attributedText: nil,
             children: []
         )
@@ -853,7 +913,8 @@ nonisolated enum MarkdownRenderer {
             definitions[label] = MarkdownImage(
                 altText: "",
                 sourceURL: String(line[sourceRange]),
-                title: titleRange.map { String(line[$0]) }
+                title: titleRange.map { String(line[$0]) },
+                resolvedURL: nil
             )
         }
         return definitions
@@ -882,7 +943,12 @@ nonisolated enum MarkdownRenderer {
         guard let definition = references[label] else {
             return nil
         }
-        return MarkdownImage(altText: altText, sourceURL: definition.sourceURL, title: definition.title)
+        return MarkdownImage(
+            altText: altText,
+            sourceURL: definition.sourceURL,
+            title: definition.title,
+            resolvedURL: nil
+        )
     }
 
     private nonisolated static func directImage(from line: String) -> MarkdownImage? {
@@ -898,8 +964,35 @@ nonisolated enum MarkdownRenderer {
         return MarkdownImage(
             altText: normalizedInlineText(String(line[altRange])),
             sourceURL: String(line[sourceRange]),
-            title: titleRange.map { String(line[$0]) }
+            title: titleRange.map { String(line[$0]) },
+            resolvedURL: nil
         )
+    }
+
+    private nonisolated static func videoBlock(from line: String) -> MarkdownVideo? {
+        let pattern = #"^!video\[([^\]]*)\]\((\S+?)(?:\s+"([^"]*)")?\)\s*$"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let range = NSRange(location: 0, length: line.utf16.count)
+        guard let match = regex.firstMatch(in: line, range: range),
+              let altRange = Range(match.range(at: 1), in: line),
+              let sourceRange = Range(match.range(at: 2), in: line) else {
+            return nil
+        }
+
+        let sourceURL = String(line[sourceRange])
+        guard isLocalMediaReference(sourceURL) else { return nil }
+
+        let titleRange = Range(match.range(at: 3), in: line)
+        return MarkdownVideo(
+            altText: normalizedInlineText(String(line[altRange])),
+            sourceURL: sourceURL,
+            title: titleRange.map { String(line[$0]) },
+            resolvedURL: nil
+        )
+    }
+
+    private nonisolated static func isLocalMediaReference(_ sourceURL: String) -> Bool {
+        !(sourceURL.contains("://") || sourceURL.lowercased().hasPrefix("data:"))
     }
 
     private nonisolated static func normalizedInlineText(_ source: String) -> String {
@@ -964,6 +1057,30 @@ nonisolated enum MarkdownRenderer {
                         isTaskCompleted: nil,
                         table: nil,
                         image: image,
+                        video: nil,
+                        attributedText: nil,
+                        children: []
+                    )
+                )
+                index += 1
+                continue
+            }
+
+            if let video = videoBlock(from: trimmed) {
+                blocks.append(
+                    MarkdownBlock(
+                        id: nextID(),
+                        kind: .video,
+                        plainText: "",
+                        sourceText: trimmed,
+                        level: nil,
+                        listItemIndex: nil,
+                        indentLevel: 0,
+                        isTaskItem: false,
+                        isTaskCompleted: nil,
+                        table: nil,
+                        image: nil,
+                        video: video,
                         attributedText: nil,
                         children: []
                     )
@@ -998,6 +1115,7 @@ nonisolated enum MarkdownRenderer {
                     isTaskCompleted: nil,
                     table: nil,
                     image: nil,
+                    video: nil,
                     attributedText: trimmed.hasPrefix("<") ? nil : attributedText(for: trimmed),
                     children: []
                 )
@@ -1084,6 +1202,7 @@ nonisolated enum MarkdownRenderer {
                 rows: tableMatch.rows
             ),
             image: nil,
+            video: nil,
             attributedText: nil,
             children: []
         )

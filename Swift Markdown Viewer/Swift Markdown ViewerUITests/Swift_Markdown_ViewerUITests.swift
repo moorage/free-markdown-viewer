@@ -16,15 +16,16 @@ final class Swift_Markdown_ViewerUITests: XCTestCase {
     @MainActor
     func testSmokeLaunchShowsHarnessShell() throws {
         let app = XCUIApplication()
-        let repoRoot = ProcessInfo.processInfo.environment["PWD"] ?? FileManager.default.currentDirectoryPath
-        let fixtureRoot = "\(repoRoot)/Fixtures/docs"
+        let fixtureRoot = repoRootURL().appendingPathComponent("Fixtures/docs", isDirectory: true).path
         app.launchArguments = [
             "--fixture-root", fixtureRoot,
             "--open-file", "basic_typography.md",
             "--ui-test-mode", "1",
         ]
         app.launch()
+        app.activate()
 
+        XCTAssertTrue(app.windows.element(boundBy: 0).waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["nav.back"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["nav.forward"].exists)
         XCTAssertTrue(app.staticTexts["nav.title"].waitForExistence(timeout: 5))
@@ -34,8 +35,7 @@ final class Swift_Markdown_ViewerUITests: XCTestCase {
     @MainActor
     func testOpenFolderCommandUpdatesSidebarAndTitle() throws {
         let app = XCUIApplication()
-        let repoRoot = ProcessInfo.processInfo.environment["PWD"] ?? FileManager.default.currentDirectoryPath
-        let initialFixtureRoot = "\(repoRoot)/Fixtures/docs"
+        let initialFixtureRoot = repoRootURL().appendingPathComponent("Fixtures/docs", isDirectory: true).path
         let selectedFolder = try makeWorkspace(named: "UITest Workspace", files: [
             "zeta.md": "# Zeta\n\nOpened from UI test."
         ])
@@ -47,7 +47,9 @@ final class Swift_Markdown_ViewerUITests: XCTestCase {
             "--ui-test-mode", "1",
         ]
         app.launch()
+        app.activate()
 
+        XCTAssertTrue(app.windows.element(boundBy: 0).waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["nav.back"].waitForExistence(timeout: 5))
 
         app.windows.element(boundBy: 0).click()
@@ -61,8 +63,7 @@ final class Swift_Markdown_ViewerUITests: XCTestCase {
     @MainActor
     func testEmptyWorkspaceShowsCenteredOpenFolderCallToAction() throws {
         let app = XCUIApplication()
-        let repoRoot = ProcessInfo.processInfo.environment["PWD"] ?? FileManager.default.currentDirectoryPath
-        let initialFixtureRoot = "\(repoRoot)/Fixtures/docs"
+        let initialFixtureRoot = repoRootURL().appendingPathComponent("Fixtures/docs", isDirectory: true).path
         let emptyWorkspace = try makeWorkspace(named: "Empty Workspace", files: [:])
 
         app.launchArguments = [
@@ -72,7 +73,9 @@ final class Swift_Markdown_ViewerUITests: XCTestCase {
             "--ui-test-mode", "1",
         ]
         app.launch()
+        app.activate()
 
+        XCTAssertTrue(app.windows.element(boundBy: 0).waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["nav.back"].waitForExistence(timeout: 5))
 
         app.windows.element(boundBy: 0).click()
@@ -96,7 +99,9 @@ final class Swift_Markdown_ViewerUITests: XCTestCase {
             "--ui-test-mode", "1",
         ]
         app.launch()
+        app.activate()
 
+        XCTAssertTrue(app.windows.element(boundBy: 0).waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Click Workspace > alpha.md"].waitForExistence(timeout: 5))
 
         let betaNode = app.buttons["sidebar.node.beta.md"]
@@ -121,7 +126,9 @@ final class Swift_Markdown_ViewerUITests: XCTestCase {
             "--ui-test-mode", "1",
         ]
         app.launch()
+        app.activate()
 
+        XCTAssertTrue(app.windows.element(boundBy: 0).waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Keyboard Workspace > alpha.md"].waitForExistence(timeout: 5))
 
         let alphaNode = app.buttons["sidebar.node.alpha.md"]
@@ -164,6 +171,13 @@ final class Swift_Markdown_ViewerUITests: XCTestCase {
         }
         let expectation = XCTNSPredicateExpectation(predicate: predicate, object: nil)
         return XCTWaiter().wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    private func repoRootURL(filePath: StaticString = #filePath) -> URL {
+        URL(fileURLWithPath: "\(filePath)")
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
     }
 
 }

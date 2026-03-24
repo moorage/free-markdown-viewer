@@ -32,6 +32,8 @@ enum MarkdownBlockKind: String, Hashable, Sendable {
     case codeBlock
     case table
     case image
+    case animatedImage
+    case video
     case rawHTML
     case thematicBreak
 }
@@ -52,6 +54,14 @@ struct MarkdownImage: Hashable, Sendable {
     let altText: String
     let sourceURL: String
     let title: String?
+    let resolvedURL: URL?
+}
+
+struct MarkdownVideo: Hashable, Sendable {
+    let altText: String
+    let sourceURL: String
+    let title: String?
+    let resolvedURL: URL?
 }
 
 struct MarkdownBlock: Identifiable, Hashable, Sendable {
@@ -66,6 +76,33 @@ struct MarkdownBlock: Identifiable, Hashable, Sendable {
     let isTaskCompleted: Bool?
     let table: MarkdownTable?
     let image: MarkdownImage?
+    let video: MarkdownVideo?
     let attributedText: AttributedString?
     let children: [MarkdownBlock]
+}
+
+extension MarkdownBlock {
+    nonisolated func replacing(
+        kind: MarkdownBlockKind? = nil,
+        image: MarkdownImage? = nil,
+        video: MarkdownVideo? = nil,
+        children: [MarkdownBlock]? = nil
+    ) -> MarkdownBlock {
+        MarkdownBlock(
+            id: id,
+            kind: kind ?? self.kind,
+            plainText: plainText,
+            sourceText: sourceText,
+            level: level,
+            listItemIndex: listItemIndex,
+            indentLevel: indentLevel,
+            isTaskItem: isTaskItem,
+            isTaskCompleted: isTaskCompleted,
+            table: table,
+            image: image ?? self.image,
+            video: video ?? self.video,
+            attributedText: attributedText,
+            children: children ?? self.children
+        )
+    }
 }

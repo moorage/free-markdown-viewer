@@ -139,7 +139,7 @@ enum SelectableDocumentFormatter {
             let separator = String(repeating: "-", count: max(header.count, 3))
             let rows = table.rows.map { $0.joined(separator: " | ") }
             return ([header, separator] + rows).joined(separator: "\n")
-        case .image:
+        case .image, .animatedImage:
             guard let image = block.image else { return block.plainText }
 
             var lines: [String] = []
@@ -150,6 +150,20 @@ enum SelectableDocumentFormatter {
             }
             lines.append("Source: \(image.sourceURL)")
             if let title = image.title, !title.isEmpty {
+                lines.append("Title: \(title)")
+            }
+            return lines.joined(separator: "\n")
+        case .video:
+            guard let video = block.video else { return block.plainText }
+
+            var lines: [String] = []
+            if video.altText.isEmpty {
+                lines.append("Video")
+            } else {
+                lines.append("Video: \(video.altText)")
+            }
+            lines.append("Source: \(video.sourceURL)")
+            if let title = video.title, !title.isEmpty {
                 lines.append("Title: \(title)")
             }
             return lines.joined(separator: "\n")
@@ -177,7 +191,7 @@ enum SelectableDocumentFormatter {
         switch block.kind {
         case .heading:
             attributes[.font] = headingFont(level: block.level ?? 1)
-        case .paragraph, .unorderedListItem, .orderedListItem, .image:
+        case .paragraph, .unorderedListItem, .orderedListItem, .image, .animatedImage, .video:
             attributes[.font] = bodyFont
         case .blockquote:
             paragraphStyle.firstLineHeadIndent = indentWidth + 12
