@@ -382,6 +382,37 @@ final class Swift_Markdown_ViewerTests: XCTestCase {
     }
 
     @MainActor
+    func testAppModelExposesCurrentDocumentURLForWorkspaceBackedFile() async throws {
+        let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        try "# Notes".write(to: tempRoot.appendingPathComponent("notes.md"), atomically: true, encoding: .utf8)
+
+        let model = AppModel(
+            launchOptions: HarnessLaunchOptions(
+                fixtureRoot: tempRoot,
+                openFile: "notes.md",
+                uiTestOpenFolderURL: nil,
+                theme: nil,
+                windowSize: nil,
+                disableFileWatch: true,
+                dumpVisibleStateURL: nil,
+                dumpPerfStateURL: nil,
+                screenshotPathURL: nil,
+                commandDirectoryURL: nil,
+                uiTestMode: true,
+                platformTarget: .macos,
+                deviceClass: .mac
+            )
+        )
+
+        model.bootstrap()
+        try await Task.sleep(nanoseconds: 300_000_000)
+
+        XCTAssertTrue(model.canRevealSelectedFileInFinder)
+        XCTAssertEqual(model.selectedFileURL?.path, tempRoot.appendingPathComponent("notes.md").path)
+    }
+
+    @MainActor
     func testAdjacentFilePathMovesSidebarSelection() {
         let files = [
             MarkdownFileNode(path: WorkspacePath(rawValue: "alpha.md"), name: "alpha.md"),

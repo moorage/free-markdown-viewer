@@ -25,6 +25,36 @@ final class InlineAnimatedMediaTests: XCTestCase {
         }
     }
 
+    func testUnreadableMediaErrorExplainsSandboxEscapeForSiblingFixture() {
+        let workspaceRootURL = repoRootURL.appendingPathComponent("Fixtures/docs", isDirectory: true)
+        let resolvedURL = repoRootURL.appendingPathComponent("Fixtures/media/rickrolled.gif")
+        let message = sandboxEscapeMediaError(
+            resolvedURL: resolvedURL,
+            sourceURL: "../media/rickrolled.gif",
+            kindLabel: "Animated image",
+            workspaceRootURL: workspaceRootURL
+        )
+
+        #if os(macOS)
+        if isAppSandboxEnabled() {
+            XCTAssertEqual(
+                message,
+                """
+                Animated image is outside the opened folder and macOS sandbox access is blocked.
+                Open the parent folder that contains both the markdown file and the media file.
+                source: ../media/rickrolled.gif
+                opened root: \(workspaceRootURL.resolvingSymlinksInPath().standardizedFileURL.path)
+                resolved: \(resolvedURL.resolvingSymlinksInPath().standardizedFileURL.path)
+                """
+            )
+        } else {
+            XCTAssertNil(message)
+        }
+        #else
+        XCTAssertNil(message)
+        #endif
+    }
+
     @MainActor
     func testAnimatedGIFFixtureExportsAnimatedImageVisibleBlock() async throws {
         let snapshot = try await loadStateSnapshot(for: "animated_gif.md")

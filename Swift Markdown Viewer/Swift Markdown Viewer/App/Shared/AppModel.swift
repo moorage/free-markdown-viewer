@@ -52,6 +52,19 @@ final class AppModel: ObservableObject {
         "\(workspaceRootDisplay) > \(selectedFileDisplayName)"
     }
 
+    var selectedFileURL: URL? {
+        guard let workspaceRootURL, let selectedPath else { return nil }
+        return workspaceRootURL.appendingPathComponent(selectedPath.rawValue).standardizedFileURL
+    }
+
+    var canRevealSelectedFileInFinder: Bool {
+        selectedFileURL != nil
+    }
+
+    var currentWorkspaceRootURL: URL? {
+        workspaceRootURL
+    }
+
     var shouldRenderBlockContent: Bool {
         containsRenderableMedia(in: documentBlocks)
     }

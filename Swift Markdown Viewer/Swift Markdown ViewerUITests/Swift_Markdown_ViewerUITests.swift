@@ -28,6 +28,7 @@ final class Swift_Markdown_ViewerUITests: XCTestCase {
         XCTAssertTrue(app.windows.element(boundBy: 0).waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["nav.back"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["nav.forward"].exists)
+        XCTAssertTrue(app.buttons["toolbar.revealInFinder"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["nav.title"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.scrollViews["document.scrollView"].waitForExistence(timeout: 5))
     }

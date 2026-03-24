@@ -32,6 +32,7 @@ struct WindowSceneRootView: View {
         ContentView(model: model, onOpenFolder: openFolderAction)
             #if os(macOS)
             .focusedSceneValue(\.openFolderAction, OpenFolderAction(handler: openFolder))
+            .focusedSceneValue(\.revealInFinderAction, revealInFinderAction)
             .onAppear {
                 sessionStore.scheduleAdditionalWindows(openWindow: openWindow)
                 requestInitialFolderPromptIfNeeded()
@@ -56,6 +57,11 @@ struct WindowSceneRootView: View {
     #if os(macOS)
     private var openFolderAction: (() -> Void)? {
         openFolder
+    }
+
+    private var revealInFinderAction: RevealInFinderAction? {
+        guard model.canRevealSelectedFileInFinder else { return nil }
+        return RevealInFinderAction(handler: revealInFinder)
     }
 
     private func requestInitialFolderPromptIfNeeded() {
@@ -92,6 +98,11 @@ struct WindowSceneRootView: View {
 
         model.openFolder(at: selectedURL)
     }
+
+    private func revealInFinder() {
+        guard let selectedFileURL = model.selectedFileURL else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([selectedFileURL])
+    }
     #else
     private var openFolderAction: (() -> Void)? {
         nil
@@ -108,8 +119,20 @@ struct OpenFolderAction {
     }
 }
 
+struct RevealInFinderAction {
+    let handler: () -> Void
+
+    func callAsFunction() {
+        handler()
+    }
+}
+
 private struct OpenFolderActionKey: FocusedValueKey {
     typealias Value = OpenFolderAction
+}
+
+private struct RevealInFinderActionKey: FocusedValueKey {
+    typealias Value = RevealInFinderAction
 }
 
 extension FocusedValues {
@@ -117,10 +140,16 @@ extension FocusedValues {
         get { self[OpenFolderActionKey.self] }
         set { self[OpenFolderActionKey.self] = newValue }
     }
+
+    var revealInFinderAction: RevealInFinderAction? {
+        get { self[RevealInFinderActionKey.self] }
+        set { self[RevealInFinderActionKey.self] = newValue }
+    }
 }
 
 struct WindowOpenFolderCommands: Commands {
     @FocusedValue(\.openFolderAction) private var openFolderAction
+    @FocusedValue(\.revealInFinderAction) private var revealInFinderAction
 
     var body: some Commands {
         CommandGroup(after: .newItem) {
@@ -130,6 +159,12 @@ struct WindowOpenFolderCommands: Commands {
             }
             .keyboardShortcut("o", modifiers: [.command])
             .disabled(openFolderAction == nil)
+
+            Button("Show in Finder") {
+                revealInFinderAction?()
+            }
+            .keyboardShortcut("r", modifiers: [.command, .shift])
+            .disabled(revealInFinderAction == nil)
         }
     }
 }

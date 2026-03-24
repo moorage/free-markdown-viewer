@@ -3,6 +3,7 @@ import SwiftUI
 
 #if os(macOS)
 import AppKit
+import Security
 #elseif os(iOS)
 import UIKit
 #endif
@@ -24,6 +25,9 @@ struct ViewerShellView: View {
         .toolbar {
             ToolbarItem(placement: .navigation) {
                 macNavigationControls
+            }
+            ToolbarItem(placement: .primaryAction) {
+                macRevealInFinderButton
             }
         }
         .background(MacWindowConfiguration(title: model.windowTitle, contentSize: model.launchOptions.windowSize))
@@ -105,7 +109,10 @@ struct ViewerShellView: View {
             if shouldShowEmptyWorkspaceState {
                 emptyWorkspaceState
             } else if model.shouldRenderBlockContent {
-                DocumentBlockScrollView(blocks: model.documentBlocks)
+                DocumentBlockScrollView(
+                    blocks: model.documentBlocks,
+                    workspaceRootURL: model.currentWorkspaceRootURL
+                )
                     .padding(20)
             } else {
                 SelectableDocumentTextView(blocks: model.documentBlocks)
@@ -212,17 +219,32 @@ struct ViewerShellView: View {
         .controlGroupStyle(.navigation)
         .labelStyle(.iconOnly)
     }
+
+    private var macRevealInFinderButton: some View {
+        Button(action: revealSelectedDocumentInFinder) {
+            Label("Show in Finder", systemImage: "folder")
+        }
+        .disabled(!model.canRevealSelectedFileInFinder)
+        .accessibilityIdentifier(AccessibilityIDs.revealInFinderButton)
+        .help("Show in Finder")
+    }
+
+    private func revealSelectedDocumentInFinder() {
+        guard let selectedFileURL = model.selectedFileURL else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([selectedFileURL])
+    }
     #endif
 }
 
 private struct DocumentBlockScrollView: View {
     let blocks: [MarkdownBlock]
+    let workspaceRootURL: URL?
 
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 16) {
                 ForEach(blocks) { block in
-                    MarkdownBlockView(block: block)
+                    MarkdownBlockView(block: block, workspaceRootURL: workspaceRootURL)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -254,6 +276,7 @@ private struct SidebarFileRow: View {
 
 private struct MarkdownBlockView: View {
     let block: MarkdownBlock
+    let workspaceRootURL: URL?
 
     var body: some View {
         switch block.kind {
@@ -343,12 +366,13 @@ private struct MarkdownBlockView: View {
                 ImageBlockView(
                     image: image,
                     isAnimated: block.kind == .animatedImage,
-                    blockID: block.id
+                    blockID: block.id,
+                    workspaceRootURL: workspaceRootURL
                 )
             }
         case .video:
             if let video = block.video {
-                InlineVideoBlockView(video: video, blockID: block.id)
+                InlineVideoBlockView(video: video, blockID: block.id, workspaceRootURL: workspaceRootURL)
             }
         case .rawHTML:
             Text(verbatim: block.sourceText)
@@ -391,7 +415,7 @@ private struct MarkdownBlockView: View {
     private var childBlocks: some View {
         VStack(alignment: .leading, spacing: 12) {
             ForEach(block.children) { child in
-                MarkdownBlockView(block: child)
+                MarkdownBlockView(block: child, workspaceRootURL: workspaceRootURL)
             }
         }
         .padding(.leading, 28)
@@ -413,21 +437,47 @@ private struct ImageBlockView: View {
     let image: MarkdownImage
     let isAnimated: Bool
     let blockID: String
+    let workspaceRootURL: URL?
+
+    private var imageLoadError: String? {
+        mediaLoadError(
+            resolvedURL: image.resolvedURL,
+            sourceURL: image.sourceURL,
+            kindLabel: isAnimated ? "Animated image" : "Image",
+            workspaceRootURL: workspaceRootURL,
+            canDecode: { url in
+                #if os(macOS)
+                return NSImage(contentsOf: url) != nil
+                #elseif os(iOS)
+                return UIImage(contentsOfFile: url.path) != nil
+                #endif
+            }
+        )
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if let resolvedURL = image.resolvedURL {
+            if let resolvedURL = image.resolvedURL, imageLoadError == nil {
                 InlineAnimatedImageSurface(url: resolvedURL)
-                    .frame(maxWidth: .infinity, maxHeight: 320, alignment: .leading)
+                    .frame(maxWidth: .infinity, minHeight: 180, maxHeight: 320, alignment: .leading)
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             } else {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(Color.secondary.opacity(0.08))
                     .frame(height: 180)
                     .overlay {
-                        Image(systemName: "photo")
-                            .font(.system(size: 36, weight: .medium))
-                            .foregroundStyle(.secondary)
+                        VStack(spacing: 10) {
+                            Image(systemName: imageLoadError == nil ? "photo" : "exclamationmark.triangle")
+                                .font(.system(size: 36, weight: .medium))
+                                .foregroundStyle(.secondary)
+                            if let imageLoadError {
+                                Text(imageLoadError)
+                                    .font(.caption)
+                                    .multilineTextAlignment(.center)
+                                    .foregroundStyle(.secondary)
+                                    .padding(.horizontal, 16)
+                            }
+                        }
                     }
             }
 
@@ -442,6 +492,12 @@ private struct ImageBlockView: View {
                     Text(title)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                }
+                if let imageLoadError {
+                    Text(imageLoadError)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .textSelection(.enabled)
                 }
             }
         }
@@ -464,8 +520,10 @@ private struct ImageBlockView: View {
 private struct InlineVideoBlockView: View {
     let video: MarkdownVideo
     let blockID: String
+    let workspaceRootURL: URL?
 
     @State private var player: AVPlayer?
+    @State private var playerError: String?
     @State private var isPlaying = false
 
     var body: some View {
@@ -477,9 +535,22 @@ private struct InlineVideoBlockView: View {
                 if let player {
                     InlineVideoSurface(player: player)
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                } else {
+                    VStack(spacing: 10) {
+                        Image(systemName: playerError == nil ? "video" : "exclamationmark.triangle")
+                            .font(.system(size: 36, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.85))
+                        if let playerError {
+                            Text(playerError)
+                                .font(.caption)
+                                .multilineTextAlignment(.center)
+                                .foregroundStyle(.white.opacity(0.85))
+                                .padding(.horizontal, 16)
+                        }
+                    }
                 }
 
-                if !isPlaying {
+                if !isPlaying && player != nil {
                     Button {
                         togglePlayback()
                     } label: {
@@ -509,6 +580,12 @@ private struct InlineVideoBlockView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                if let playerError {
+                    Text(playerError)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .textSelection(.enabled)
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -525,12 +602,58 @@ private struct InlineVideoBlockView: View {
     }
 
     private func configurePlayerIfNeeded() {
-        guard player == nil, let resolvedURL = video.resolvedURL else { return }
-        let playerItem = AVPlayerItem(url: resolvedURL)
-        let player = AVPlayer(playerItem: playerItem)
-        player.actionAtItemEnd = .pause
-        player.seek(to: .zero)
-        self.player = player
+        guard player == nil, playerError == nil else { return }
+        guard let resolvedURL = video.resolvedURL else {
+            playerError = unresolvedMediaError(sourceURL: video.sourceURL, kindLabel: "Video")
+            return
+        }
+        guard FileManager.default.fileExists(atPath: resolvedURL.path) else {
+            playerError = missingMediaError(resolvedURL: resolvedURL, sourceURL: video.sourceURL, kindLabel: "Video")
+            return
+        }
+        guard FileManager.default.isReadableFile(atPath: resolvedURL.path) else {
+            playerError = unreadableMediaError(
+                resolvedURL: resolvedURL,
+                sourceURL: video.sourceURL,
+                kindLabel: "Video",
+                workspaceRootURL: workspaceRootURL
+            )
+            return
+        }
+
+        Task {
+            let asset = AVURLAsset(url: resolvedURL)
+            do {
+                let isPlayable = try await asset.load(.isPlayable)
+                let hasProtectedContent = try await asset.load(.hasProtectedContent)
+                guard isPlayable, !hasProtectedContent else {
+                    await MainActor.run {
+                        playerError = """
+                        Video is not playable.
+                        source: \(video.sourceURL)
+                        resolved: \(resolvedURL.path)
+                        """
+                    }
+                    return
+                }
+
+                let playerItem = AVPlayerItem(asset: asset)
+                let player = AVPlayer(playerItem: playerItem)
+                player.actionAtItemEnd = .pause
+                await MainActor.run {
+                    player.seek(to: .zero)
+                    self.player = player
+                }
+            } catch {
+                await MainActor.run {
+                    playerError = """
+                    Video failed to load: \(error.localizedDescription)
+                    source: \(video.sourceURL)
+                    resolved: \(resolvedURL.path)
+                    """
+                }
+            }
+        }
     }
 
     private func togglePlayback() {
@@ -547,6 +670,116 @@ private struct InlineVideoBlockView: View {
         }
         isPlaying.toggle()
     }
+}
+
+private func mediaLoadError(
+    resolvedURL: URL?,
+    sourceURL: String,
+    kindLabel: String,
+    workspaceRootURL: URL?,
+    canDecode: (URL) -> Bool
+) -> String? {
+    guard let resolvedURL else {
+        return unresolvedMediaError(sourceURL: sourceURL, kindLabel: kindLabel)
+    }
+    guard FileManager.default.fileExists(atPath: resolvedURL.path) else {
+        return missingMediaError(resolvedURL: resolvedURL, sourceURL: sourceURL, kindLabel: kindLabel)
+    }
+    guard FileManager.default.isReadableFile(atPath: resolvedURL.path) else {
+        return unreadableMediaError(
+            resolvedURL: resolvedURL,
+            sourceURL: sourceURL,
+            kindLabel: kindLabel,
+            workspaceRootURL: workspaceRootURL
+        )
+    }
+    guard canDecode(resolvedURL) else {
+        return """
+        \(kindLabel) failed to decode.
+        source: \(sourceURL)
+        resolved: \(resolvedURL.path)
+        """
+    }
+    return nil
+}
+
+private func unresolvedMediaError(sourceURL: String, kindLabel: String) -> String {
+    """
+    \(kindLabel) path could not be resolved.
+    source: \(sourceURL)
+    """
+}
+
+private func missingMediaError(resolvedURL: URL, sourceURL: String, kindLabel: String) -> String {
+    """
+    \(kindLabel) file is missing.
+    source: \(sourceURL)
+    resolved: \(resolvedURL.path)
+    """
+}
+
+func unreadableMediaError(
+    resolvedURL: URL,
+    sourceURL: String,
+    kindLabel: String,
+    workspaceRootURL: URL?
+) -> String {
+    if let sandboxMessage = sandboxEscapeMediaError(
+        resolvedURL: resolvedURL,
+        sourceURL: sourceURL,
+        kindLabel: kindLabel,
+        workspaceRootURL: workspaceRootURL
+    ) {
+        return sandboxMessage
+    }
+
+    return """
+    \(kindLabel) file is not readable.
+    source: \(sourceURL)
+    resolved: \(resolvedURL.path)
+    """
+}
+
+func sandboxEscapeMediaError(
+    resolvedURL: URL,
+    sourceURL: String,
+    kindLabel: String,
+    workspaceRootURL: URL?
+) -> String? {
+    #if os(macOS)
+    guard let workspaceRootURL else { return nil }
+    guard isAppSandboxEnabled() else { return nil }
+
+    let canonicalRootPath = workspaceRootURL.resolvingSymlinksInPath().standardizedFileURL.path
+    let canonicalResolvedPath = resolvedURL.resolvingSymlinksInPath().standardizedFileURL.path
+    let escapedWorkspaceRoot =
+        canonicalResolvedPath != canonicalRootPath &&
+        !canonicalResolvedPath.hasPrefix(canonicalRootPath + "/")
+
+    guard escapedWorkspaceRoot else { return nil }
+
+    return """
+    \(kindLabel) is outside the opened folder and macOS sandbox access is blocked.
+    Open the parent folder that contains both the markdown file and the media file.
+    source: \(sourceURL)
+    opened root: \(canonicalRootPath)
+    resolved: \(canonicalResolvedPath)
+    """
+    #else
+    return nil
+    #endif
+}
+
+func isAppSandboxEnabled() -> Bool {
+    #if os(macOS)
+    guard let task = SecTaskCreateFromSelf(nil) else { return false }
+    let key = "com.apple.security.app-sandbox" as CFString
+    guard let value = SecTaskCopyValueForEntitlement(task, key, nil) else { return false }
+    guard CFGetTypeID(value) == CFBooleanGetTypeID() else { return false }
+    return CFBooleanGetValue(unsafeBitCast(value, to: CFBoolean.self))
+    #else
+    return false
+    #endif
 }
 
 private struct InlineAnimatedImageSurface: View {

@@ -5,6 +5,7 @@ enum AccessibilityIDs {
     static let backButton = "nav.back"
     static let forwardButton = "nav.forward"
     static let title = "nav.title"
+    static let revealInFinderButton = "toolbar.revealInFinder"
     static let scrollView = "document.scrollView"
     static let text = "document.text"
     static let placeholderBlock = "block.placeholder.0"
