@@ -641,7 +641,7 @@ final class Swift_Markdown_ViewerTests: XCTestCase {
     }
 
     func testMarkdownRendererMatchesCommonMarkFixtureCorpusSemantics() throws {
-        let fixturesRoot = repoRootURL.appendingPathComponent("tmp/spec-fixtures/commonmark", isDirectory: true)
+        let fixturesRoot = repoRootURL.appendingPathComponent("Fixtures/expected/spec-safari/commonmark", isDirectory: true)
         let artifactsRoot = repoRootURL.appendingPathComponent("artifacts", isDirectory: true)
         try FileManager.default.createDirectory(at: artifactsRoot, withIntermediateDirectories: true)
         let reportURL = artifactsRoot.appendingPathComponent("commonmark-semantic-report.json")
