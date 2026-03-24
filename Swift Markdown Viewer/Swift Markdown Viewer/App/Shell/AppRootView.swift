@@ -45,11 +45,11 @@ struct AppRootView: View {
                     model.updateViewport(renderSize)
                     model.fulfillLaunchArtifactRequestsIfNeeded()
                 }
-                .onChange(of: proxy.size) { _, newSize in
+                .onChange(of: proxy.size) { newSize in
                     model.updateViewport(resolvedRenderSize(from: newSize))
                     model.fulfillLaunchArtifactRequestsIfNeeded()
                 }
-                .onChange(of: model.isReady) { _, _ in
+                .onChange(of: model.isReady) { _ in
                     model.fulfillLaunchArtifactRequestsIfNeeded()
                 }
                 #if os(macOS)

@@ -40,13 +40,13 @@ struct WindowSceneRootView: View {
                 sessionStore.removeActiveSession(for: sceneID)
             }
             #endif
-            .onChange(of: model.selectedPath) { _, _ in
+            .onChange(of: model.selectedPath) { _ in
                 sessionStore.updateActiveSession(model.restorationSession, for: sceneID)
             }
-            .onChange(of: model.windowTitle) { _, _ in
+            .onChange(of: model.windowTitle) { _ in
                 sessionStore.updateActiveSession(model.restorationSession, for: sceneID)
             }
-            .onChange(of: scenePhase) { _, newPhase in
+            .onChange(of: scenePhase) { newPhase in
                 if newPhase != .active {
                     sessionStore.persistActiveSessions()
                 }

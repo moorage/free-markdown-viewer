@@ -33,8 +33,8 @@ struct ViewerShellView: View {
         #endif
         .listStyle(.sidebar)
         .accessibilityIdentifier(AccessibilityIDs.sidebarList)
-        .onMoveCommand(perform: handleSidebarMove)
         #if os(macOS)
+        .onMoveCommand(perform: handleSidebarMove)
         .background(
             MacSidebarKeyEventBridge(
                 isEnabled: sidebarFocused,
@@ -64,6 +64,7 @@ struct ViewerShellView: View {
         .accessibilityIdentifier(AccessibilityIDs.sidebarNode(file.path.rawValue))
     }
 
+    #if os(macOS)
     private func handleSidebarMove(_ direction: MoveCommandDirection) {
         #if os(macOS)
         guard sidebarFocused else { return }
@@ -78,6 +79,7 @@ struct ViewerShellView: View {
             break
         }
     }
+    #endif
 
     private func sidebarRowBackground(isSelected: Bool) -> some View {
         Group {
