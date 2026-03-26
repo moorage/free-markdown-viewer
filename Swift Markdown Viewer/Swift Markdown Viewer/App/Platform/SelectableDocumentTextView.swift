@@ -3,6 +3,31 @@ import SwiftUI
 #if os(macOS)
 import AppKit
 
+private final class LinkCursorTextView: NSTextView {
+    override func resetCursorRects() {
+        super.resetCursorRects()
+
+        guard let textStorage, let layoutManager, let textContainer else { return }
+        let fullRange = NSRange(location: 0, length: textStorage.length)
+
+        textStorage.enumerateAttribute(.link, in: fullRange) { value, range, _ in
+            guard value != nil else { return }
+
+            let glyphRange = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+            layoutManager.enumerateEnclosingRects(
+                forGlyphRange: glyphRange,
+                withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0),
+                in: textContainer
+            ) { rect, _ in
+                self.addCursorRect(
+                    rect.offsetBy(dx: self.textContainerOrigin.x, dy: self.textContainerOrigin.y),
+                    cursor: .pointingHand
+                )
+            }
+        }
+    }
+}
+
 struct SelectableDocumentTextView: NSViewRepresentable {
     let blocks: [MarkdownBlock]
     let fontScale: CGFloat
@@ -13,16 +38,21 @@ struct SelectableDocumentTextView: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> NSScrollView {
-        let scrollView = NSTextView.scrollableTextView()
+        let textStorage = NSTextStorage()
+        let layoutManager = NSLayoutManager()
+        let textContainer = NSTextContainer(size: NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
+        textContainer.widthTracksTextView = true
+        layoutManager.addTextContainer(textContainer)
+        textStorage.addLayoutManager(layoutManager)
+
+        let textView = LinkCursorTextView(frame: .zero, textContainer: textContainer)
+        let scrollView = NSScrollView()
         scrollView.drawsBackground = false
         scrollView.borderType = .noBorder
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
         scrollView.autohidesScrollers = true
-
-        guard let textView = scrollView.documentView as? NSTextView else {
-            return scrollView
-        }
+        scrollView.documentView = textView
 
         textView.drawsBackground = false
         textView.isEditable = false
@@ -57,6 +87,7 @@ struct SelectableDocumentTextView: NSViewRepresentable {
         if !textView.attributedString().isEqual(to: attributedText) {
             textView.textStorage?.setAttributedString(attributedText)
         }
+        textView.resetCursorRects()
     }
 
     final class Coordinator: NSObject, NSTextViewDelegate {

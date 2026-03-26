@@ -15,8 +15,10 @@ struct ViewerShellView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
     @State private var compactShowsSidebar = true
+    @State private var sidebarFilterText = ""
     #if os(macOS)
     @FocusState private var sidebarFocused: Bool
+    @FocusState private var sidebarFilterFocused: Bool
     #endif
 
     var body: some View {
@@ -80,8 +82,14 @@ struct ViewerShellView: View {
     }
 
     private var sidebarContent: some View {
-        List(model.files) { file in
-            sidebarRow(for: file)
+        VStack(spacing: 0) {
+            #if os(macOS)
+            sidebarFilterField
+            #endif
+
+            List(filteredFiles) { file in
+                sidebarRow(for: file)
+            }
         }
         #if os(macOS)
         .focusable()
@@ -93,15 +101,55 @@ struct ViewerShellView: View {
         .onMoveCommand(perform: handleSidebarMove)
         .background(
             MacSidebarKeyEventBridge(
-                isEnabled: sidebarFocused,
-                onMoveUp: { model.selectAdjacentFile(offset: -1) },
-                onMoveDown: { model.selectAdjacentFile(offset: 1) }
+                isEnabled: sidebarFocused || sidebarFilterFocused,
+                onMoveUp: { selectAdjacentSidebarFile(offset: -1) },
+                onMoveDown: { selectAdjacentSidebarFile(offset: 1) },
+                onQuickFilter: {
+                    sidebarFilterFocused = true
+                },
+                onToggleFocus: {
+                    toggleSidebarKeyboardFocus()
+                }
             )
         )
         .onAppear {
             sidebarFocused = true
         }
         #endif
+    }
+
+    #if os(macOS)
+    private var sidebarFilterField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+
+            TextField("Quick Filter", text: $sidebarFilterText)
+                .textFieldStyle(.plain)
+                .focused($sidebarFilterFocused)
+
+            if !sidebarFilterText.isEmpty {
+                Button {
+                    sidebarFilterText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear Quick Filter")
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .overlay(alignment: .bottom) {
+            Divider()
+        }
+    }
+    #endif
+
+    private var filteredFiles: [MarkdownFileNode] {
+        AppModel.filteredFiles(from: model.files, matching: sidebarFilterText)
     }
 
     private func sidebarRow(for file: MarkdownFileNode) -> some View {
@@ -129,14 +177,34 @@ struct ViewerShellView: View {
 
         switch direction {
         case .up:
-            model.selectAdjacentFile(offset: -1)
+            selectAdjacentSidebarFile(offset: -1)
         case .down:
-            model.selectAdjacentFile(offset: 1)
+            selectAdjacentSidebarFile(offset: 1)
         default:
             break
         }
     }
     #endif
+
+    private func selectAdjacentSidebarFile(offset: Int) {
+        guard let targetPath = AppModel.adjacentFilePath(
+            from: model.selectedPath,
+            within: filteredFiles,
+            offset: offset
+        ) else { return }
+        model.openFile(targetPath)
+        showDetailIfNeeded()
+    }
+
+    private func toggleSidebarKeyboardFocus() {
+        if sidebarFilterFocused {
+            sidebarFilterFocused = false
+            sidebarFocused = true
+        } else {
+            sidebarFocused = false
+            sidebarFilterFocused = true
+        }
+    }
 
     private func sidebarRowBackground(isSelected: Bool) -> some View {
         Group {
@@ -479,17 +547,24 @@ private struct MarkdownBlockView: View {
             Text(MarkdownRenderer.attributedText(for: block))
                 .font(headingFont(for: block.level ?? 1, scale: fontScale))
                 .fontWeight(.semibold)
+                .linkHoverCursor(MarkdownRenderer.attributedText(for: block))
         case .paragraph:
             Text(MarkdownRenderer.attributedText(for: block))
                 .font(ViewerFont.body(scale: fontScale))
+                .linkHoverCursor(MarkdownRenderer.attributedText(for: block))
         case .unorderedListItem:
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top, spacing: 10) {
-                    Text(listMarker)
-                        .font(ViewerFont.body(scale: fontScale))
-                    Text(MarkdownRenderer.attributedText(for: block))
-                        .font(ViewerFont.body(scale: fontScale))
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if block.isTaskItem {
+                        taskListLabel
+                    } else {
+                        Text(listMarker)
+                            .font(ViewerFont.body(scale: fontScale))
+                        Text(MarkdownRenderer.attributedText(for: block))
+                            .font(ViewerFont.body(scale: fontScale))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .linkHoverCursor(MarkdownRenderer.attributedText(for: block))
+                    }
                 }
                 if !block.children.isEmpty {
                     childBlocks
@@ -499,12 +574,17 @@ private struct MarkdownBlockView: View {
         case .orderedListItem:
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top, spacing: 10) {
-                    Text(listMarker)
-                        .font(ViewerFont.monospacedBody(scale: fontScale))
-                        .monospacedDigit()
-                    Text(MarkdownRenderer.attributedText(for: block))
-                        .font(ViewerFont.body(scale: fontScale))
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if block.isTaskItem {
+                        taskListLabel
+                    } else {
+                        Text(listMarker)
+                            .font(ViewerFont.monospacedBody(scale: fontScale))
+                            .monospacedDigit()
+                        Text(MarkdownRenderer.attributedText(for: block))
+                            .font(ViewerFont.body(scale: fontScale))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .linkHoverCursor(MarkdownRenderer.attributedText(for: block))
+                    }
                 }
                 if !block.children.isEmpty {
                     childBlocks
@@ -520,6 +600,7 @@ private struct MarkdownBlockView: View {
                     .font(ViewerFont.body(scale: fontScale))
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .linkHoverCursor(MarkdownRenderer.attributedText(for: block))
             }
         case .codeBlock:
             ScrollView(.horizontal, showsIndicators: false) {
@@ -540,6 +621,7 @@ private struct MarkdownBlockView: View {
                                     .font(ViewerFont.body(scale: fontScale))
                                     .fontWeight(.semibold)
                                     .frame(maxWidth: .infinity, alignment: alignment(for: table.alignments[column]))
+                                    .linkHoverCursor(MarkdownRenderer.attributedText(for: cell))
                             }
                         }
                         Divider()
@@ -550,6 +632,7 @@ private struct MarkdownBlockView: View {
                                     Text(MarkdownRenderer.attributedText(for: cell))
                                         .font(ViewerFont.body(scale: fontScale))
                                         .frame(maxWidth: .infinity, alignment: alignment(for: table.alignments[column]))
+                                        .linkHoverCursor(MarkdownRenderer.attributedText(for: cell))
                                 }
                             }
                         }
@@ -610,13 +693,38 @@ private struct MarkdownBlockView: View {
     }
 
     private var listMarker: String {
-        if block.isTaskItem {
-            return block.isTaskCompleted == true ? "\u{2611}" : "\u{2610}"
-        }
         if block.kind == .orderedListItem {
             return "\(block.listItemIndex ?? 1)."
         }
         return "\u{2022}"
+    }
+
+    @ViewBuilder
+    private var taskListLabel: some View {
+        #if os(macOS)
+        Toggle(isOn: .constant(block.isTaskCompleted == true)) {
+            Text(MarkdownRenderer.attributedText(for: block))
+                .font(ViewerFont.body(scale: fontScale))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .linkHoverCursor(MarkdownRenderer.attributedText(for: block))
+        }
+        .toggleStyle(.checkbox)
+        .disabled(true)
+        #elseif os(iOS)
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: block.isTaskCompleted == true ? "checkmark.square.fill" : "square")
+                .font(ViewerFont.body(scale: fontScale))
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            Text(MarkdownRenderer.attributedText(for: block))
+                .font(ViewerFont.body(scale: fontScale))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .linkHoverCursor(MarkdownRenderer.attributedText(for: block))
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text(MarkdownRenderer.attributedText(for: block)))
+        .accessibilityValue(block.isTaskCompleted == true ? "Checked" : "Unchecked")
+        #endif
     }
 
     @ViewBuilder
@@ -640,6 +748,42 @@ private struct MarkdownBlockView: View {
         }
     }
 }
+
+#if os(macOS)
+private struct LinkHoverCursorModifier: ViewModifier {
+    let hasLink: Bool
+    @State private var isHovering = false
+
+    func body(content: Content) -> some View {
+        guard hasLink else { return AnyView(content) }
+
+        return AnyView(
+            content
+                .onHover { hovering in
+                    guard hovering != isHovering else { return }
+                    isHovering = hovering
+                    if hovering {
+                        NSCursor.pointingHand.push()
+                    } else {
+                        NSCursor.pop()
+                    }
+                }
+        )
+    }
+}
+
+private extension View {
+    func linkHoverCursor(_ attributedText: AttributedString) -> some View {
+        modifier(LinkHoverCursorModifier(hasLink: attributedText.runs.contains { $0.link != nil }))
+    }
+}
+#else
+private extension View {
+    func linkHoverCursor(_ attributedText: AttributedString) -> some View {
+        self
+    }
+}
+#endif
 
 private struct ImageBlockView: View {
     let image: MarkdownImage

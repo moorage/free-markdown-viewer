@@ -266,6 +266,17 @@ final class Swift_Markdown_ViewerTests: XCTestCase {
         XCTAssertTrue(model.shouldRenderBlockContent)
     }
 
+    func testAppModelUsesStructuredRendererForTaskListDocument() {
+        let blocks = MarkdownRenderer.blocks(from: """
+        - [ ] pending item
+        - [x] completed item
+        """)
+
+        XCTAssertEqual(blocks.map(\.isTaskItem), [true, true])
+        XCTAssertEqual(blocks.map(\.isTaskCompleted), [false, true])
+        XCTAssertTrue(AppModel.shouldRenderStructuredContent(for: blocks))
+    }
+
     @MainActor
     func testAutomaticFolderPromptPolicySuppressesLaunchSceneOnly() {
         var policy = AutomaticFolderPromptPolicy()
@@ -856,6 +867,24 @@ final class Swift_Markdown_ViewerTests: XCTestCase {
         XCTAssertEqual(blocks.first?.children.first?.plainText, "child")
         XCTAssertEqual(blocks.first?.children.first?.children.map(\.kind), [.orderedListItem])
         XCTAssertEqual(blocks.first?.children.first?.children.first?.plainText, "nested ordered")
+    }
+
+    func testAppModelFiltersFilesByQuickFilterQuery() {
+        let files = [
+            MarkdownFileNode(path: WorkspacePath(rawValue: "docs/release/index.md"), name: "index.md"),
+            MarkdownFileNode(path: WorkspacePath(rawValue: "docs/release/app-store-submission.md"), name: "app-store-submission.md"),
+            MarkdownFileNode(path: WorkspacePath(rawValue: "notes/todo.md"), name: "todo.md"),
+        ]
+
+        XCTAssertEqual(
+            AppModel.filteredFiles(from: files, matching: "app store").map(\.path.rawValue),
+            ["docs/release/app-store-submission.md"]
+        )
+        XCTAssertEqual(
+            AppModel.filteredFiles(from: files, matching: "release").map(\.path.rawValue),
+            ["docs/release/index.md", "docs/release/app-store-submission.md"]
+        )
+        XCTAssertEqual(AppModel.filteredFiles(from: files, matching: "   ").count, files.count)
     }
 
     func testMarkdownRendererParsesDirectImageFixture() {

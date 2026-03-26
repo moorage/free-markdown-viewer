@@ -77,7 +77,7 @@ final class AppModel: ObservableObject {
     }
 
     var shouldRenderBlockContent: Bool {
-        containsStructuredBlocks(in: documentBlocks)
+        Self.shouldRenderStructuredContent(for: documentBlocks)
     }
 
     var shouldAutoPromptForFolderOnLaunch: Bool {
@@ -445,13 +445,15 @@ final class AppModel: ObservableObject {
         return flattened
     }
 
-    private func containsStructuredBlocks(in blocks: [MarkdownBlock]) -> Bool {
+    nonisolated static func shouldRenderStructuredContent(for blocks: [MarkdownBlock]) -> Bool {
         blocks.contains { block in
             switch block.kind {
             case .codeBlock, .table, .image, .animatedImage, .video:
                 return true
+            case .unorderedListItem, .orderedListItem:
+                return block.isTaskItem || shouldRenderStructuredContent(for: block.children)
             default:
-                return containsStructuredBlocks(in: block.children)
+                return shouldRenderStructuredContent(for: block.children)
             }
         }
     }
@@ -603,6 +605,27 @@ extension AppModel {
         }
 
         return files[targetIndex].path
+    }
+
+    nonisolated static func filteredFiles(
+        from files: [MarkdownFileNode],
+        matching query: String
+    ) -> [MarkdownFileNode] {
+        let trimmedQuery = normalizedQuickFilterText(query)
+        guard !trimmedQuery.isEmpty else { return files }
+
+        return files.filter { file in
+            normalizedQuickFilterText(file.name).contains(trimmedQuery) ||
+            normalizedQuickFilterText(file.path.rawValue).contains(trimmedQuery)
+        }
+    }
+
+    private nonisolated static func normalizedQuickFilterText(_ text: String) -> String {
+        text
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            .replacingOccurrences(of: "[-_/\\.]+", with: " ", options: .regularExpression)
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 
