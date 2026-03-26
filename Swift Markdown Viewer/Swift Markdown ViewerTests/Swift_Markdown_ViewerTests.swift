@@ -671,6 +671,20 @@ final class Swift_Markdown_ViewerTests: XCTestCase {
         XCTAssertFalse(rendered.contains("```"))
     }
 
+    func testSelectableDocumentFormatterPreservesRelativeMarkdownLinks() {
+        let blocks = MarkdownRenderer.blocks(from: "[Release notes](./release-notes.md)")
+        let rendered = SelectableDocumentFormatter.attributedText(from: blocks, fontScale: 1)
+        let nsRange = NSRange(location: 0, length: rendered.length)
+        var linkedURLs: [URL] = []
+
+        rendered.enumerateAttribute(.link, in: nsRange) { value, _, _ in
+            guard let url = value as? URL else { return }
+            linkedURLs.append(url)
+        }
+
+        XCTAssertEqual(linkedURLs, [URL(string: "./release-notes.md")!])
+    }
+
     func testMarkdownRendererParsesIndentedCodeBlockFromSpecExample() {
         let markdown = """
             a simple
@@ -694,8 +708,8 @@ final class Swift_Markdown_ViewerTests: XCTestCase {
 
         XCTAssertEqual(blocks.map(\.kind), [.table])
         XCTAssertEqual(blocks[0].plainText, "abc defghi bar baz")
-        XCTAssertEqual(blocks[0].table?.header, ["abc", "defghi"])
-        XCTAssertEqual(blocks[0].table?.rows, [["bar", "baz"]])
+        XCTAssertEqual(blocks[0].table?.header.map(\.plainText), ["abc", "defghi"])
+        XCTAssertEqual(blocks[0].table?.rows.map { $0.map(\.plainText) }, [["bar", "baz"]])
         XCTAssertEqual(blocks[0].table?.alignments, [.center, .trailing])
     }
 
@@ -710,15 +724,29 @@ final class Swift_Markdown_ViewerTests: XCTestCase {
         let blocks = MarkdownRenderer.blocks(from: markdown)
 
         XCTAssertEqual(blocks.map(\.kind), [.table])
-        XCTAssertEqual(blocks[0].table?.header, ["Root", "Region", "Purpose"])
+        XCTAssertEqual(blocks[0].table?.header.map(\.plainText), ["Root", "Region", "Purpose"])
         XCTAssertEqual(
-            blocks[0].table?.rows,
+            blocks[0].table?.rows.map { $0.map(\.plainText) },
             [
                 ["infra/bootstrap/state", "ca-central-1", "Terraform remote state bucket, lock table, and KMS key"],
                 ["infra/live/prod/mx-central-1", "mx-central-1", "Primary production stack in Mexico"],
             ]
         )
         XCTAssertEqual(blocks[0].table?.alignments, [.leading, .leading, .leading])
+    }
+
+    func testMarkdownRendererPreservesRelativeLinksInsideTables() throws {
+        let markdown = """
+        | Document |
+        | --- |
+        | [Submission](./app-store-submission.md) |
+        """
+
+        let blocks = MarkdownRenderer.blocks(from: markdown)
+        let cell = try XCTUnwrap(blocks.first?.table?.rows.first?.first)
+
+        XCTAssertEqual(cell.plainText, "Submission")
+        XCTAssertEqual(cell.attributedText?.runs.first?.link, URL(string: "./app-store-submission.md"))
     }
 
     func testMarkdownRendererPreservesBlockSemanticsAroundTable() {
@@ -741,7 +769,7 @@ final class Swift_Markdown_ViewerTests: XCTestCase {
         XCTAssertEqual(blocks.map(\.kind), [.heading, .paragraph, .table, .heading, .paragraph])
         XCTAssertEqual(blocks[0].plainText, "Heading")
         XCTAssertEqual(blocks[1].plainText, "Intro paragraph.")
-        XCTAssertEqual(blocks[2].table?.header, ["abc", "defghi"])
+        XCTAssertEqual(blocks[2].table?.header.map(\.plainText), ["abc", "defghi"])
         XCTAssertEqual(blocks[3].plainText, "Follow-up")
         XCTAssertEqual(blocks[4].plainText, "Tail paragraph.")
     }
@@ -758,8 +786,60 @@ final class Swift_Markdown_ViewerTests: XCTestCase {
         XCTAssertEqual(tabsBlocks.map(\.kind), [.codeBlock])
         XCTAssertEqual(tabsBlocks.first?.sourceText, "foo\tbaz\t\tbim")
         XCTAssertEqual(tableBlocks.map(\.kind), [.table])
-        XCTAssertEqual(tableBlocks.first?.table?.header, ["foo", "bar"])
-        XCTAssertEqual(tableBlocks.first?.table?.rows, [["baz", "bim"]])
+        XCTAssertEqual(tableBlocks.first?.table?.header.map(\.plainText), ["foo", "bar"])
+        XCTAssertEqual(tableBlocks.first?.table?.rows.map { $0.map(\.plainText) }, [["baz", "bim"]])
+    }
+
+    @MainActor
+    func testAppModelOpensRelativeMarkdownLinkWithinWorkspace() throws {
+        let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let docsRoot = tempRoot.appendingPathComponent("docs", isDirectory: true)
+        try FileManager.default.createDirectory(at: docsRoot, withIntermediateDirectories: true)
+        try "# Index\n\n[Submission](./app-store-submission.md)\n".write(
+            to: docsRoot.appendingPathComponent("index.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "# Submission\n".write(
+            to: docsRoot.appendingPathComponent("app-store-submission.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let model = AppModel(
+            launchOptions: HarnessLaunchOptions(
+                fixtureRoot: tempRoot,
+                openFile: "docs/index.md",
+                uiTestOpenFolderURL: nil,
+                theme: nil,
+                windowSize: nil,
+                disableFileWatch: true,
+                dumpVisibleStateURL: nil,
+                dumpPerfStateURL: nil,
+                screenshotPathURL: nil,
+                commandDirectoryURL: nil,
+                uiTestMode: true,
+                platformTarget: .macos,
+                deviceClass: .mac
+            )
+        )
+        retainForTestLifetime(model)
+        model.bootstrap()
+
+        let loaded = expectation(description: "index file loads")
+        Task { @MainActor in
+            for _ in 0..<20 {
+                if model.selectedPath?.rawValue == "docs/index.md" {
+                    loaded.fulfill()
+                    return
+                }
+                try? await Task.sleep(nanoseconds: 50_000_000)
+            }
+        }
+        wait(for: [loaded], timeout: 2)
+
+        XCTAssertTrue(model.openMarkdownLink(URL(string: "./app-store-submission.md")!))
+        XCTAssertEqual(model.selectedPath?.rawValue, "docs/app-store-submission.md")
     }
 
     func testMarkdownRendererParsesNestedAndTaskListItems() {

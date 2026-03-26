@@ -44,10 +44,16 @@ enum MarkdownTableAlignment: String, Hashable, Sendable {
     case trailing
 }
 
+struct MarkdownTableCell: Hashable, Sendable {
+    let plainText: String
+    let sourceText: String
+    let attributedText: AttributedString?
+}
+
 struct MarkdownTable: Hashable, Sendable {
     let alignments: [MarkdownTableAlignment]
-    let header: [String]
-    let rows: [[String]]
+    let header: [MarkdownTableCell]
+    let rows: [[MarkdownTableCell]]
 }
 
 struct MarkdownImage: Hashable, Sendable {

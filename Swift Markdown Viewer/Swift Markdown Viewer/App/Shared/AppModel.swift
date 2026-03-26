@@ -138,6 +138,17 @@ final class AppModel: ObservableObject {
         screenshotWriter = writer
     }
 
+    func openMarkdownLink(_ url: URL) -> Bool {
+        guard let targetPath = resolveMarkdownLinkTarget(url) else {
+            return false
+        }
+        guard files.contains(where: { $0.path == targetPath }) else {
+            return false
+        }
+        openFile(targetPath)
+        return true
+    }
+
     func updateViewport(_ size: CGSize) {
         guard size.width > 0, size.height > 0 else { return }
         guard viewportSize != size else { return }
@@ -443,6 +454,51 @@ final class AppModel: ObservableObject {
                 return containsStructuredBlocks(in: block.children)
             }
         }
+    }
+
+    private func resolveMarkdownLinkTarget(_ url: URL) -> WorkspacePath? {
+        if let scheme = url.scheme, !scheme.isEmpty, !url.isFileURL {
+            return nil
+        }
+
+        let rawPath = url.path(percentEncoded: false)
+        if rawPath.isEmpty {
+            return nil
+        }
+
+        if url.isFileURL {
+            return workspacePath(forResolvedFileURL: url)
+        }
+
+        guard isMarkdownPath(rawPath) else {
+            return nil
+        }
+
+        let sourceDirectory = selectedPath.map { ($0.rawValue as NSString).deletingLastPathComponent } ?? ""
+        let resolvedPath = ((sourceDirectory as NSString).appendingPathComponent(rawPath) as NSString)
+            .standardizingPath
+        return WorkspacePath(rawValue: resolvedPath)
+    }
+
+    private func workspacePath(forResolvedFileURL url: URL) -> WorkspacePath? {
+        guard let workspaceRootURL else { return nil }
+
+        let canonicalRootPath = workspaceRootURL.resolvingSymlinksInPath().standardizedFileURL.path
+        let canonicalResolvedPath = url.resolvingSymlinksInPath().standardizedFileURL.path
+        guard canonicalResolvedPath == canonicalRootPath || canonicalResolvedPath.hasPrefix(canonicalRootPath + "/") else {
+            return nil
+        }
+
+        let relativePath = String(canonicalResolvedPath.dropFirst(canonicalRootPath.count))
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard !relativePath.isEmpty, isMarkdownPath(relativePath) else {
+            return nil
+        }
+        return WorkspacePath(rawValue: relativePath)
+    }
+
+    private func isMarkdownPath(_ path: String) -> Bool {
+        SupportedMarkdownExtensions.contains((path as NSString).pathExtension)
     }
 }
 

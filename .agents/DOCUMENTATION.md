@@ -8,9 +8,11 @@
   - `docs/exec-plans/active/2026-03-23-inline-animated-media.md`
   - `docs/exec-plans/active/2026-03-23-session-restore.md`
   - `docs/exec-plans/active/2026-03-24-app-store-readiness.md`
+  - `docs/exec-plans/active/2026-03-25-relative-markdown-links.md`
 - current milestone:
   - app-store readiness: icons are generated, iPhone/iPad folder import is implemented, bookmark-backed workspace restoration is in place, release/privacy/docs scaffolding exists, repeatable screenshot capture is in repo, and iPhone/iPad candidate screenshots have been generated
 - commands run:
+  - `xcodebuild -quiet -project "Swift Markdown Viewer/Swift Markdown Viewer.xcodeproj" -scheme "Swift Markdown Viewer" -configuration Debug -derivedDataPath /tmp/swift-markdown-viewer-relative-links -destination "platform=macOS,arch=arm64" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= "-only-testing:Swift Markdown ViewerTests/Swift_Markdown_ViewerTests/testSelectableDocumentFormatterPreservesRelativeMarkdownLinks" "-only-testing:Swift Markdown ViewerTests/Swift_Markdown_ViewerTests/testMarkdownRendererPreservesRelativeLinksInsideTables" "-only-testing:Swift Markdown ViewerTests/Swift_Markdown_ViewerTests/testAppModelOpensRelativeMarkdownLinkWithinWorkspace" test`
   - `./scripts/test-unit`
   - `xcodebuild -project "Swift Markdown Viewer/Swift Markdown Viewer.xcodeproj" -scheme "Swift Markdown Viewer" -sdk iphonesimulator -derivedDataPath /tmp/swift-markdown-viewer-app-store-ios-build4 CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build`
   - `python3 scripts/check_execplan.py`
@@ -19,6 +21,7 @@
   - `./scripts/capture-app-store-screenshots --platform ipad`
   - `./scripts/capture-app-store-screenshots --platform macos`
 - important outcomes:
+  - relative Markdown links now stay visible and navigable in both selectable documents and tables because `MarkdownRenderer` preserves attributed table cells, `SelectableDocumentFormatter` keeps `.link` runs, and `ViewerShellView` routes internal `.md` links through `AppModel.openMarkdownLink(_:)`
   - `WindowSceneRootView` now exposes a real iPhone/iPad folder picker via `fileImporter`, and `ViewerShellView` surfaces that action in the iOS top bar with the stable accessibility identifier `toolbar.openFolder`
   - workspace session persistence now carries bookmark-backed restoration data through `WorkspaceWindowSession.securityScopedBookmarkData` and the new `WorkspaceSecurityScope` helper instead of relying only on raw root paths
   - the app bundle now includes `PrivacyInfo.xcprivacy`, and the project file now declares low-risk App Store metadata including display name, export-compliance, macOS category, and opening-documents-in-place behavior

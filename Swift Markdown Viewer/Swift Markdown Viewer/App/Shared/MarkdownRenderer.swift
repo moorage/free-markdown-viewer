@@ -109,6 +109,13 @@ nonisolated enum MarkdownRenderer {
         return AttributedString(sourceText)
     }
 
+    nonisolated static func attributedText(for cell: MarkdownTableCell) -> AttributedString {
+        if let attributedText = cell.attributedText {
+            return attributedText
+        }
+        return attributedText(for: cell.sourceText)
+    }
+
     private nonisolated static func attributedBlocks(from attributed: AttributedString) -> [MarkdownBlock] {
         var roots: [BlockBuilder] = []
         var fallbackIndex = 0
@@ -1126,12 +1133,12 @@ nonisolated enum MarkdownRenderer {
         return blocks.isEmpty ? [emptyParagraph()] : blocks
     }
 
-    private nonisolated static func table(from lines: [String], at index: Int) -> (header: [String], alignments: [MarkdownTableAlignment], rows: [[String]], nextIndex: Int)? {
+    private nonisolated static func table(from lines: [String], at index: Int) -> (header: [MarkdownTableCell], alignments: [MarkdownTableAlignment], rows: [[MarkdownTableCell]], nextIndex: Int)? {
         guard index + 1 < lines.count else { return nil }
         guard let header = splitTableRow(lines[index]), !header.isEmpty else { return nil }
         guard let alignments = parseTableDivider(lines[index + 1]), alignments.count == header.count else { return nil }
 
-        var rows: [[String]] = []
+        var rows: [[MarkdownTableCell]] = []
         var cursor = index + 2
         while cursor < lines.count {
             guard let row = splitTableRow(lines[cursor]), row.count == header.count else { break }
@@ -1141,10 +1148,10 @@ nonisolated enum MarkdownRenderer {
         return (header, alignments, rows, cursor)
     }
 
-    private nonisolated static func splitTableRow(_ line: String) -> [String]? {
+    private nonisolated static func splitTableRow(_ line: String) -> [MarkdownTableCell]? {
         guard let rawCells = rawTableCells(from: line) else { return nil }
-        let cells = rawCells.map { normalizedInlineText($0) }
-        return cells.contains(where: { !$0.isEmpty }) ? cells : nil
+        let cells = rawCells.map(tableCell(from:))
+        return cells.contains(where: { !$0.plainText.isEmpty }) ? cells : nil
     }
 
     private nonisolated static func rawTableCells(from line: String) -> [String]? {
@@ -1185,11 +1192,12 @@ nonisolated enum MarkdownRenderer {
     }
 
     private nonisolated static func tableBlock(
-        from tableMatch: (header: [String], alignments: [MarkdownTableAlignment], rows: [[String]], nextIndex: Int),
+        from tableMatch: (header: [MarkdownTableCell], alignments: [MarkdownTableAlignment], rows: [[MarkdownTableCell]], nextIndex: Int),
         id: String
     ) -> MarkdownBlock {
         let tableText = ([tableMatch.header] + tableMatch.rows)
             .flatMap { $0 }
+            .map(\.plainText)
             .joined(separator: " ")
         return MarkdownBlock(
             id: id,
@@ -1210,6 +1218,16 @@ nonisolated enum MarkdownRenderer {
             video: nil,
             attributedText: nil,
             children: []
+        )
+    }
+
+    private nonisolated static func tableCell(from source: String) -> MarkdownTableCell {
+        let attributed = attributedText(for: source)
+        let plainText = normalizedInlineText(source)
+        return MarkdownTableCell(
+            plainText: plainText,
+            sourceText: source,
+            attributedText: attributed
         )
     }
 }

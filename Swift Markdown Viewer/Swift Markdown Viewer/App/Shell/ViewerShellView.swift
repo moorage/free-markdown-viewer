@@ -11,6 +11,7 @@ import UIKit
 struct ViewerShellView: View {
     @ObservedObject var model: AppModel
     let onOpenFolder: (() -> Void)?
+    @Environment(\.openURL) private var openURL
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
     @State private var compactShowsSidebar = true
@@ -161,7 +162,11 @@ struct ViewerShellView: View {
                 )
                     .padding(20)
             } else {
-                SelectableDocumentTextView(blocks: model.documentBlocks, fontScale: model.fontScale)
+                SelectableDocumentTextView(
+                    blocks: model.documentBlocks,
+                    fontScale: model.fontScale,
+                    onOpenLink: handleDocumentLink(_:)
+                )
                     .padding(20)
             }
 
@@ -169,6 +174,10 @@ struct ViewerShellView: View {
                 loadingOverlay
             }
         }
+        .environment(\.openURL, OpenURLAction { url in
+            handleDocumentLink(url)
+            return .handled
+        })
         #if os(macOS)
         .overlay(alignment: .topLeading) {
             Text(model.windowTitle)
@@ -395,6 +404,14 @@ struct ViewerShellView: View {
         guard horizontalSizeClass == .compact else { return }
         guard model.shouldPreferDetailInCompactNavigation else { return }
         columnVisibility = .detailOnly
+    }
+
+    private func handleDocumentLink(_ url: URL) {
+        if model.openMarkdownLink(url) {
+            showDetailIfNeeded()
+            return
+        }
+        openURL(url)
     }
 
     private func updatePreferredColumnVisibility() {
