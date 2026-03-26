@@ -12,7 +12,7 @@ This is a product-grounded draft, not legal advice. For App Store distribution, 
 
 ## Draft
 
-Markdown Viewer is provided for personal and lawful use.
+Swift Markdown Viewer is provided for personal and lawful use.
 
 You are responsible for the files and folders that you choose to open in the app and for ensuring that you have the rights to use that content.
 

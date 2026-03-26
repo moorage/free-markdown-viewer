@@ -31,3 +31,5 @@ xcuserdata/
 .pw-browsers
 seccomp_profile.json
 tmp
+distribution.cer
+CertificateSigningRequest.certSigningRequest

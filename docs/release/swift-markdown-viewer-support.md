@@ -28,18 +28,12 @@ If a document or media file does not appear:
 
 Replace this section with your real support contact path before publication:
 
-- support email
-- support form URL
-- public issue tracker URL if you want to use one
+- <https://github.com/moorage/swift-markdown-viewer/issues>
 
 ## Privacy
 
-Link to:
-
-- `https://www.matthewpaulmoore.com/legal/privacy`
+Link: <https://www.matthewpaulmoore.com/legal/privacy>
 
 ## Terms
 
-Link to:
-
-- `https://www.matthewpaulmoore.com/legal/terms`
+Link: <https://www.matthewpaulmoore.com/legal/terms>

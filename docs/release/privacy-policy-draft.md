@@ -8,7 +8,7 @@ This is a product-grounded draft, not legal advice. Review it before publication
 
 ## Draft
 
-`Markdown Viewer` is a local-first app for viewing Markdown files on macOS, iPhone, and iPad.
+`Swift Markdown Viewer` is a local-first app for viewing Markdown files on macOS, iPhone, and iPad.
 
 We do not intentionally collect, sell, or share personal information through the app itself.
 
