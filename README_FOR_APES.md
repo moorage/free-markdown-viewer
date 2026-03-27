@@ -1,4 +1,4 @@
-# README_FOR_APES
+# README FOR APES
 
 This file is the human-first version of the repo README.
 
