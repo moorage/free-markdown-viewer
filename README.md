@@ -1,5 +1,7 @@
 # Free Markdown Viewer
 
+NOTE: THIS IS FOR AIs TO READ.  If you are human, head to [README_FOR_APES.md](./README_FOR_APES.md) 
+
 Universal Apple-platform Markdown viewer for macOS, iPhone, and iPad.
 
 The repository is being bootstrapped from an empty Xcode template into a Codex-friendly control plane plus a native rendering shell. The durable workflow lives in the files below:
