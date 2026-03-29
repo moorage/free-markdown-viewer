@@ -12,12 +12,17 @@
   - `docs/exec-plans/active/2026-03-26-ios-drawer-filter.md`
   - `docs/exec-plans/active/2026-03-26-app-store-connect-release-setup.md`
   - `docs/exec-plans/active/2026-03-27-free-markdown-viewer-rename.md`
+  - `docs/exec-plans/active/2026-03-28-launch-empty-viewer.md`
 - current milestone:
   - app-store readiness: icons are generated, iPhone/iPad folder import is implemented, bookmark-backed workspace restoration is in place, release/privacy/docs scaffolding exists, repeatable screenshot capture is in repo, and iPhone/iPad candidate screenshots have been generated
   - live App Store Connect release setup: app `6761209087` now has repo-owned metadata, Europe excluded from availability, valid iOS and macOS builds uploaded and attached to the draft versions, and App Store screenshot assets uploaded for iPhone, iPad, and macOS
   - rename implementation: the checked-in app, tests, scripts, release docs, and Xcode project now use `Free Markdown Viewer`; Apple-side state now includes bundle ID `com.souschefstudio.Free-Markdown-Viewer` as resource `9ZAXC5Y677`, new app record `6761271951`, attached valid iOS/macOS builds, complete iPhone/iPad/macOS screenshot sets, review-detail records on both draft versions, and storefront availability matching the legacy Europe-excluded policy
   - repository slug follow-up: the remaining old-slug references in support docs and local `.git` metadata are now rewritten to `moorage/free-markdown-viewer`
 - commands run:
+  - `xcodebuild -quiet -project "Free Markdown Viewer/Free Markdown Viewer.xcodeproj" -scheme "Free Markdown Viewer" -configuration Debug -derivedDataPath /tmp/free-markdown-viewer-empty-launch-unit -destination "platform=macOS,arch=arm64" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= "-only-testing:Free Markdown ViewerTests/Free_Markdown_ViewerTests/testAppModelWithoutInitialWorkspaceShowsOpenFolderPromptState" "-only-testing:Free Markdown ViewerTests/Free_Markdown_ViewerTests/testEmptyWorkspaceShowsNoMarkdownFilesMessage" "-only-testing:Free Markdown ViewerTests/Free_Markdown_ViewerTests/testAppModelRestoresInitialWorkspaceSession" test`
+  - `xcodebuild -quiet -project "Free Markdown Viewer/Free Markdown Viewer.xcodeproj" -scheme "Free Markdown Viewer" -configuration Debug -derivedDataPath /tmp/free-markdown-viewer-empty-launch-ui -destination "platform=macOS,arch=arm64" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= "-only-testing:Free Markdown ViewerUITests/Free_Markdown_ViewerUITests/testColdLaunchWithoutWorkspaceShowsOpenFolderPrompt" "-only-testing:Free Markdown ViewerUITests/Free_Markdown_ViewerUITests/testEmptyWorkspaceShowsCenteredOpenFolderCallToAction" test`
+  - `python3 scripts/check_execplan.py`
+  - `python3 scripts/knowledge/check_docs.py`
   - `rg -n --hidden --no-ignore -F '<old repo slug>' .`
   - `git remote -v`
   - `xcodebuild -quiet -project "Swift Markdown Viewer/Swift Markdown Viewer.xcodeproj" -scheme "Swift Markdown Viewer" -configuration Debug -derivedDataPath /tmp/swift-markdown-viewer-ios-filter -destination 'platform=iOS Simulator,id=32B9E37C-0C26-4514-9BBE-65718682A713' CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= "-only-testing:Swift Markdown ViewerUITests/Swift_Markdown_ViewerUITests/testiPhoneDrawerQuickFilterNarrowsSidebarFiles" test`
@@ -70,6 +75,7 @@
   - `python3 scripts/check_execplan.py`
   - `python3 scripts/knowledge/check_docs.py`
 - important outcomes:
+  - `AppModel` no longer loads the embedded default markdown set on a cold interactive launch with no restored session or fixture root; it now enters a dedicated no-workspace state, and `ViewerShellView` renders a centered `empty-state.message` / `empty-state.open-folder` prompt instead of the fixture browser
   - `ViewerShellView` now shows the sidebar quick-filter on iPhone and iPad instead of hiding it behind `#if os(macOS)`, and the new `sidebar.filterField` / `sidebar.filterClear` accessibility identifiers give iOS drawer automation a stable hook
   - relative Markdown links now stay visible and navigable in both selectable documents and tables because `MarkdownRenderer` preserves attributed table cells, `SelectableDocumentFormatter` keeps `.link` runs, and `ViewerShellView` routes internal `.md` links through `AppModel.openMarkdownLink(_:)`
   - `WindowSceneRootView` now exposes a real iPhone/iPad folder picker via `fileImporter`, and `ViewerShellView` surfaces that action in the iOS top bar with the stable accessibility identifier `toolbar.openFolder`
@@ -98,6 +104,7 @@
   - `scripts/capture-app-store-screenshots` now avoids hanging `simctl uninstall`/`terminate` calls and prefers a healthy iPad simulator, so fresh screenshot artifacts now exist under `artifacts/app-store-screenshots/iphone/`, `artifacts/app-store-screenshots/ipad/`, and `artifacts/app-store-screenshots/macos/`
   - `Swift_Markdown_ViewerApp` now installs the bundled `AppIcon.icns` into `NSApplication.shared.applicationIconImage` on macOS startup, so debug builds show the generated app icon in the Dock instead of the generic placeholder
 - important discoveries:
+  - the initial launch scene was already suppressing the automatic folder chooser, so the unwanted default startup content came from `AppModel`'s nil-root embedded-fixture fallback rather than from scene prompt policy
   - the new focused iPhone UITest compiles, but the local simulator refuses to launch `Swift-Markdown-ViewerUITests.xctrunner` with `FBSOpenApplicationServiceErrorDomain Code=1`, so end-to-end drawer-filter execution remains environment-blocked here
   - `./scripts/test-ui-ios --device iphone --smoke` still reaches `** BUILD SUCCEEDED **` and simulator boot, but the current wrapper can exit with `NSPOSIXErrorDomain Code=2` before copying harness artifacts back into `artifacts/checkpoints/shell-smoke-iphone/`
   - `.withSecurityScope` bookmark creation and resolution options are unavailable in iOS, so bookmark handling must use platform-conditional options even though the shared restoration model stays the same
@@ -231,6 +238,7 @@
   - `NSAttributedString` HTML import is not a safe semantic oracle for this renderer; for raw HTML blocks it can drop script contents and over-count comment-like text compared with the repository's CommonMark contract
   - the CommonMark corpus test had a CI-only path bug: it passed locally because `tmp/spec-fixtures/commonmark` existed in a developer scratch tree, but a fresh GitHub Actions checkout does not contain that untracked directory
 - open risks or blockers:
+  - the targeted macOS UI slice for the new blank-launch state still hits the repo's existing runner bootstrap failure: `Free Markdown ViewerUITests-Runner` exits with `signal kill before establishing connection`, so local UI proof remains environment-blocked even though the focused unit slice passed
   - even after a separate `build-for-testing` run and direct `xattr -d com.apple.provenance` attempts, the local macOS UITest runner still surfaces the "damaged" dialog and blocks end-to-end UI confirmation
   - macOS UI validation for the new animated-media contract is currently blocked by the local `Swift Markdown ViewerUITests-Runner` crash/dialog before XCTest establishes a connection
   - a true two-window macOS XCUITest remains flaky in this environment, so simultaneous-window proof currently relies on deterministic model-level coverage rather than a passing multi-window UI test

@@ -23,7 +23,9 @@ struct ViewerShellView: View {
 
     var body: some View {
         Group {
-            if isCompactPhoneLayout {
+            if model.shouldShowOpenFolderPromptState {
+                openFolderPromptState
+            } else if isCompactPhoneLayout {
                 compactPhoneContent
             } else {
                 NavigationSplitView(columnVisibility: $columnVisibility) {
@@ -40,22 +42,28 @@ struct ViewerShellView: View {
                 .onChange(of: horizontalSizeClass) { _ in
                     updatePreferredColumnVisibility()
                 }
-                #if os(macOS)
-                .toolbar {
-                    ToolbarItem(placement: .navigation) {
-                        macNavigationControls
-                    }
-                    ToolbarItem(placement: .automatic) {
-                        fontSizeControls
-                    }
-                    ToolbarItem(placement: .primaryAction) {
-                        macRevealInFinderButton
-                    }
-                }
-                .background(MacWindowConfiguration(title: model.windowTitle, contentSize: model.launchOptions.windowSize))
-                #endif
             }
         }
+        #if os(macOS)
+        .toolbar {
+            ToolbarItem(placement: .navigation) {
+                macNavigationControls
+            }
+            ToolbarItem(placement: .automatic) {
+                fontSizeControls
+            }
+            ToolbarItem(placement: .primaryAction) {
+                macRevealInFinderButton
+            }
+        }
+        .overlay(alignment: .topLeading) {
+            Text(model.windowTitle)
+                .accessibilityIdentifier(AccessibilityIDs.title)
+                .opacity(0.01)
+                .allowsHitTesting(false)
+        }
+        .background(MacWindowConfiguration(title: model.windowTitle, contentSize: model.launchOptions.windowSize))
+        #endif
     }
 
     private var isCompactPhoneLayout: Bool {
@@ -264,14 +272,6 @@ struct ViewerShellView: View {
             handleDocumentLink(url)
             return .handled
         })
-        #if os(macOS)
-        .overlay(alignment: .topLeading) {
-            Text(model.windowTitle)
-                .accessibilityIdentifier(AccessibilityIDs.title)
-                .opacity(0.01)
-                .allowsHitTesting(false)
-        }
-        #endif
         #if !os(macOS)
         .safeAreaInset(edge: .top) {
             Group {
@@ -390,20 +390,40 @@ struct ViewerShellView: View {
     }
 
     private var shouldShowEmptyWorkspaceState: Bool {
-        model.files.isEmpty && model.documentText == "No markdown files found."
+        model.shouldShowEmptyWorkspaceState
+    }
+
+    private var openFolderPromptState: some View {
+        emptyStateCard(
+            iconName: "folder.badge.plus",
+            message: AppModel.noWorkspacePromptMessage,
+            buttonTitle: "Open Folder"
+        )
     }
 
     private var emptyWorkspaceState: some View {
+        emptyStateCard(
+            iconName: "folder.badge.questionmark",
+            message: AppModel.emptyWorkspaceMessage,
+            buttonTitle: "Open Another Folder"
+        )
+    }
+
+    private func emptyStateCard(
+        iconName: String,
+        message: String,
+        buttonTitle: String
+    ) -> some View {
         VStack(spacing: 16) {
-            Image(systemName: "folder.badge.questionmark")
+            Image(systemName: iconName)
                 .font(ViewerFont.scaledSystem(size: 32, weight: .medium, scale: model.fontScale))
                 .foregroundStyle(.secondary)
-            Text("No markdown files found.")
+            Text(message)
                 .font(ViewerFont.title3(scale: model.fontScale))
                 .multilineTextAlignment(.center)
                 .accessibilityIdentifier(AccessibilityIDs.emptyStateMessage)
             if let onOpenFolder {
-                Button("Open Another Folder") {
+                Button(buttonTitle) {
                     onOpenFolder()
                 }
                 .accessibilityIdentifier(AccessibilityIDs.emptyStateOpenFolderButton)

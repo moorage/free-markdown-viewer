@@ -44,7 +44,7 @@ enum EmbeddedFixtures {
 }
 
 enum SupportedMarkdownExtensions {
-    static let all: Set<String> = [
+    nonisolated static let all: Set<String> = [
         "md",
         "markdown",
         "mdown",
@@ -52,7 +52,7 @@ enum SupportedMarkdownExtensions {
         "mkdn",
     ]
 
-    static func contains(_ fileExtension: String) -> Bool {
+    nonisolated static func contains(_ fileExtension: String) -> Bool {
         all.contains(fileExtension.lowercased())
     }
 }

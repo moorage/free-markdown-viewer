@@ -8,6 +8,8 @@ final class AppModel: ObservableObject {
     static let minimumFontScale: CGFloat = 0.8
     static let maximumFontScale: CGFloat = 1.8
     private static let fontScaleStep: CGFloat = 0.1
+    static let noWorkspacePromptMessage = "Open a folder of markdown files to get started."
+    static let emptyWorkspaceMessage = "No markdown files found."
 
     @Published private(set) var files: [MarkdownFileNode] = []
     @Published private(set) var documentText = "Loading…"
@@ -16,7 +18,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var selectedPath: WorkspacePath?
     @Published private(set) var backStack: [NavigationEntry] = []
     @Published private(set) var forwardStack: [NavigationEntry] = []
-    @Published private(set) var workspaceRootDisplay = "Fixtures/docs"
+    @Published private(set) var workspaceRootDisplay = "No Folder Open"
     @Published private(set) var isReady = false
     @Published private(set) var fontScale: CGFloat = 1
     private(set) var viewportSize: CGSize = CGSize(width: 1100, height: 900)
@@ -60,7 +62,8 @@ final class AppModel: ObservableObject {
     }
 
     var windowTitle: String {
-        "\(workspaceRootDisplay) > \(selectedFileDisplayName)"
+        guard selectedPath != nil else { return workspaceRootDisplay }
+        return "\(workspaceRootDisplay) > \(selectedFileDisplayName)"
     }
 
     var selectedFileURL: URL? {
@@ -78,6 +81,18 @@ final class AppModel: ObservableObject {
 
     var shouldRenderBlockContent: Bool {
         Self.shouldRenderStructuredContent(for: documentBlocks)
+    }
+
+    var shouldShowOpenFolderPromptState: Bool {
+        workspaceRootURL == nil &&
+        files.isEmpty &&
+        documentText == Self.noWorkspacePromptMessage
+    }
+
+    var shouldShowEmptyWorkspaceState: Bool {
+        workspaceRootURL != nil &&
+        files.isEmpty &&
+        documentText == Self.emptyWorkspaceMessage
     }
 
     var shouldAutoPromptForFolderOnLaunch: Bool {
@@ -335,7 +350,7 @@ final class AppModel: ObservableObject {
                     selection: WorkspaceSecurityScope.selection(for: initialSession),
                     selectedPathOverride: restoredSelectedPath
                 )
-            } else {
+            } else if launchOptions.fixtureRoot != nil {
                 loadWorkspace(
                     selection: WorkspaceAccessSelection(
                         rootURL: launchOptions.fixtureRoot,
@@ -344,6 +359,8 @@ final class AppModel: ObservableObject {
                     ),
                     selectedPathOverride: restoredSelectedPath
                 )
+            } else {
+                showNoWorkspaceSelectedState()
             }
         }
 
@@ -396,10 +413,11 @@ final class AppModel: ObservableObject {
                 openFile(initialPath, recordHistory: false)
             } else {
                 selectedPath = nil
-                documentText = "No markdown files found."
+                documentText = Self.emptyWorkspaceMessage
                 documentBlocks = MarkdownRenderer.blocks(from: documentText)
                 isLoadingDocument = false
                 isReady = true
+                readyReference = Date()
             }
         } catch {
             files = []
@@ -410,7 +428,26 @@ final class AppModel: ObservableObject {
             documentBlocks = MarkdownRenderer.blocks(from: documentText)
             isLoadingDocument = false
             isReady = true
+            readyReference = Date()
         }
+    }
+
+    private func showNoWorkspaceSelectedState() {
+        cancelActiveDocumentLoad()
+        replaceActiveSecurityScopedWorkspace(with: nil)
+        hasResolvedWorkspaceSelection = true
+        workspaceProvider = nil
+        workspaceRootURL = nil
+        workspaceRootBookmarkData = nil
+        files = []
+        selectedPath = nil
+        backStack.removeAll()
+        forwardStack.removeAll()
+        documentText = Self.noWorkspacePromptMessage
+        documentBlocks = []
+        isLoadingDocument = false
+        isReady = true
+        readyReference = Date()
     }
 
     private func cancelActiveDocumentLoad() {

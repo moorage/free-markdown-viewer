@@ -34,6 +34,21 @@ final class Free_Markdown_ViewerUITests: XCTestCase {
     }
 
     @MainActor
+    func testColdLaunchWithoutWorkspaceShowsOpenFolderPrompt() throws {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--ui-test-mode", "1",
+        ]
+        app.launch()
+        app.activate()
+
+        XCTAssertTrue(app.windows.element(boundBy: 0).waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["empty-state.message"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["empty-state.message"].label, "Open a folder of markdown files to get started.")
+        XCTAssertTrue(app.buttons["empty-state.open-folder"].exists)
+    }
+
+    @MainActor
     func testOpenFolderCommandUpdatesSidebarAndTitle() throws {
         let app = XCUIApplication()
         let initialFixtureRoot = repoRootURL().appendingPathComponent("Fixtures/docs", isDirectory: true).path

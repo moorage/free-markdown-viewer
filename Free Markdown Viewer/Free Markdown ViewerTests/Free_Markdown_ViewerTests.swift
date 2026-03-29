@@ -118,6 +118,39 @@ final class Free_Markdown_ViewerTests: XCTestCase {
     }
 
     @MainActor
+    func testAppModelWithoutInitialWorkspaceShowsOpenFolderPromptState() async throws {
+        let model = AppModel(
+            launchOptions: HarnessLaunchOptions(
+                fixtureRoot: nil,
+                openFile: nil,
+                uiTestOpenFolderURL: nil,
+                theme: nil,
+                windowSize: nil,
+                disableFileWatch: true,
+                dumpVisibleStateURL: nil,
+                dumpPerfStateURL: nil,
+                screenshotPathURL: nil,
+                commandDirectoryURL: nil,
+                uiTestMode: true,
+                platformTarget: .macos,
+                deviceClass: .mac
+            )
+        )
+        retainForTestLifetime(model)
+
+        model.bootstrap()
+        try await Task.sleep(nanoseconds: 300_000_000)
+
+        XCTAssertTrue(model.files.isEmpty)
+        XCTAssertNil(model.currentWorkspaceRootURL)
+        XCTAssertNil(model.selectedPath)
+        XCTAssertTrue(model.shouldShowOpenFolderPromptState)
+        XCTAssertFalse(model.shouldShowEmptyWorkspaceState)
+        XCTAssertEqual(model.documentText, AppModel.noWorkspacePromptMessage)
+        XCTAssertEqual(model.windowTitle, "No Folder Open")
+    }
+
+    @MainActor
     func testAppModelSkipsAutoPromptDuringUITestLaunch() {
         let options = HarnessLaunchOptions(
             fixtureRoot: nil,
@@ -392,7 +425,9 @@ final class Free_Markdown_ViewerTests: XCTestCase {
 
         XCTAssertTrue(model.files.isEmpty)
         XCTAssertNil(model.selectedPath)
-        XCTAssertEqual(model.documentText, "No markdown files found.")
+        XCTAssertTrue(model.shouldShowEmptyWorkspaceState)
+        XCTAssertFalse(model.shouldShowOpenFolderPromptState)
+        XCTAssertEqual(model.documentText, AppModel.emptyWorkspaceMessage)
     }
 
     @MainActor
