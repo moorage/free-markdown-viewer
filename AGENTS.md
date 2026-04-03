@@ -6,7 +6,7 @@ Start here. Use this file as the durable control plane, then follow the repo-spe
 
 ## Repository shape
 
-- `Free Markdown Viewer/` - Xcode project, app code, unit tests, and UI tests
+- `Quick Markdown Viewer/` - Xcode project, app code, unit tests, and UI tests
 - `Fixtures/` - deterministic markdown/media fixtures and expected outputs
 - `scripts/` - shell wrappers, docs validation, repo-map generation, and capture helpers
 - `docs/` - product, architecture, reliability, security, harness, and ExecPlan docs

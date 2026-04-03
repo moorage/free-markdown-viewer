@@ -1,14 +1,14 @@
 //
-//  Free_Markdown_ViewerTests.swift
-//  Free Markdown ViewerTests
+//  Quick_Markdown_ViewerTests.swift
+//  Quick Markdown ViewerTests
 //
 //  Created by Matthew Moore on 3/19/26.
 //
 
 import XCTest
-@testable import Free_Markdown_Viewer
+@testable import Quick_Markdown_Viewer
 
-final class Free_Markdown_ViewerTests: XCTestCase {
+final class Quick_Markdown_ViewerTests: XCTestCase {
     private final class HTMLTextCollector: NSObject, XMLParserDelegate {
         var parts: [String] = []
 

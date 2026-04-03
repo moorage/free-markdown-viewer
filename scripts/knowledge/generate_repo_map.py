@@ -18,8 +18,8 @@ NAME_IGNORE = {
 
 PATH_PREFIX_IGNORE = {
     "tmp",
-    "Free Markdown Viewer/Free Markdown Viewer.xcodeproj/project.xcworkspace/xcuserdata",
-    "Free Markdown Viewer/Free Markdown Viewer.xcodeproj/xcuserdata",
+    "Quick Markdown Viewer/Quick Markdown Viewer.xcodeproj/project.xcworkspace/xcuserdata",
+    "Quick Markdown Viewer/Quick Markdown Viewer.xcodeproj/xcuserdata",
 }
 
 

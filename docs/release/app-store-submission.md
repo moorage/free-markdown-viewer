@@ -17,11 +17,13 @@ Recommended public URLs:
 
 Recommended mapping in App Store Connect:
 
-- App name: `Free Markdown Viewer`
+- App name: `Quick Markdown Viewer`
 - Pricing: `Free`
 - Support URL: `https://www.matthewpaulmoore.com/apps/free-markdown-viewer/support`
 - Marketing URL: `https://www.matthewpaulmoore.com/apps/free-markdown-viewer`
 - Privacy Policy URL: `https://www.matthewpaulmoore.com/legal/privacy`
+
+For this in-place rename, keep the live `free-markdown-viewer` URL slug until the `quick-markdown-viewer` pages actually exist. The visible app name changes to `Quick Markdown Viewer`, but the live support and marketing URLs stay on the published slug to avoid App Review dead links.
 
 ## Default legal posture
 
@@ -62,7 +64,7 @@ Draft source pages live here:
 
 - `docs/release/app-store-metadata.md`
 - `docs/release/screenshot-capture.md`
-- `docs/release/free-markdown-viewer-support.md`
+- `docs/release/quick-markdown-viewer-support.md`
 - `docs/release/privacy-policy-draft.md`
 - `docs/release/terms-of-use-draft.md`
 - `docs/release/app-review-notes.md`
@@ -104,7 +106,7 @@ Create the app record manually in App Store Connect. Apple currently requires th
 Recommended values for the first create step:
 
 - Platforms: `iOS` and `macOS`
-- App name: `Free Markdown Viewer`
+- App name: `Quick Markdown Viewer`
 - Primary language: `English (U.S.)`
 - Bundle ID: `com.souschefstudio.Free-Markdown-Viewer`
 - SKU: `FREEMD`

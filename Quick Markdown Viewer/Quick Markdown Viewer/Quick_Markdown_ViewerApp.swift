@@ -1,6 +1,6 @@
 //
-//  Free_Markdown_ViewerApp.swift
-//  Free Markdown Viewer
+//  Quick_Markdown_ViewerApp.swift
+//  Quick Markdown Viewer
 //
 //  Created by Matthew Moore on 3/19/26.
 //
@@ -11,7 +11,7 @@ import AppKit
 #endif
 
 @main
-struct Free_Markdown_ViewerApp: App {
+struct Quick_Markdown_ViewerApp: App {
     private let launchOptions: HarnessLaunchOptions
     @StateObject private var sessionStore: WorkspaceWindowSessionStore
 

@@ -1,6 +1,6 @@
 # Release Docs Index
 
-This directory collects the repo-owned documents used to prepare, validate, and publish an App Store release for Free Markdown Viewer.
+This directory collects the repo-owned documents used to prepare, validate, and publish an App Store release for Quick Markdown Viewer.
 
 ## Documents
 
@@ -24,7 +24,7 @@ This directory collects the repo-owned documents used to prepare, validate, and 
   - What it is: the instructions for generating repeatable candidate App Store screenshots from the repo-owned fixture set.
   - Why it's here: release screenshots need to be reproducible and reviewable, and this doc ties the capture command to the expected artifact layout.
 
-- [`free-markdown-viewer-support.md`](./free-markdown-viewer-support.md)
+- [`quick-markdown-viewer-support.md`](./quick-markdown-viewer-support.md)
   - What it is: draft content for the public support page linked from the App Store listing.
   - Why it's here: App Store submissions need a support destination, and this file keeps the support copy close to the product and release workflow.
 

@@ -1,13 +1,13 @@
 //
-//  Free_Markdown_ViewerUITests.swift
-//  Free Markdown ViewerUITests
+//  Quick_Markdown_ViewerUITests.swift
+//  Quick Markdown ViewerUITests
 //
 //  Created by Matthew Moore on 3/19/26.
 //
 
 import XCTest
 
-final class Free_Markdown_ViewerUITests: XCTestCase {
+final class Quick_Markdown_ViewerUITests: XCTestCase {
 
     override func setUpWithError() throws {
         continueAfterFailure = false

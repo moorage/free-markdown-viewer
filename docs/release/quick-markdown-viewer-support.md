@@ -1,4 +1,4 @@
-# Free Markdown Viewer Support
+# Quick Markdown Viewer Support
 
 Recommended live URL:
 
@@ -8,7 +8,7 @@ Suggested page content:
 
 ## Overview
 
-Free Markdown Viewer is a free app for viewing Markdown folders on macOS, iPhone, and iPad.
+Quick Markdown Viewer is a free app for viewing Markdown folders on macOS, iPhone, and iPad.
 
 ## Supported workflow
 

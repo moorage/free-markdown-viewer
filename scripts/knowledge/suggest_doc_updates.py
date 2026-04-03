@@ -9,8 +9,8 @@ ROOT = Path(__file__).resolve().parents[2]
 PATH_HINTS = {
     "scripts/": ["docs/harness.md", "AGENTS.md"],
     "docs/": ["docs/PLANS.md", "docs/QUALITY_SCORE.md"],
-    "Free Markdown Viewer/Free Markdown Viewer/": ["ARCHITECTURE.md", "docs/debug-contracts.md"],
-    "Free Markdown Viewer/Free Markdown ViewerUITests/": ["docs/harness.md", "docs/debug-contracts.md"],
+    "Quick Markdown Viewer/Quick Markdown Viewer/": ["ARCHITECTURE.md", "docs/debug-contracts.md"],
+    "Quick Markdown Viewer/Quick Markdown ViewerUITests/": ["docs/harness.md", "docs/debug-contracts.md"],
     "Fixtures/": ["docs/harness.md", "docs/debug-contracts.md"],
 }
 

@@ -25,7 +25,7 @@ Purpose:
 
 Primary code area:
 
-- `Free Markdown Viewer/Free Markdown Viewer/`
+- `Quick Markdown Viewer/Quick Markdown Viewer/`
 
 Stable concepts:
 
@@ -43,8 +43,8 @@ Purpose:
 
 Primary code areas:
 
-- `Free Markdown Viewer/Free Markdown ViewerTests/`
-- `Free Markdown Viewer/Free Markdown ViewerUITests/`
+- `Quick Markdown Viewer/Quick Markdown ViewerTests/`
+- `Quick Markdown Viewer/Quick Markdown ViewerUITests/`
 
 ### Fixtures and artifacts
 

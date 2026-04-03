@@ -1,4 +1,4 @@
-# Free Markdown Viewer
+# Quick Markdown Viewer
 
 NOTE: THIS IS FOR AIs TO READ.  If you are human, head to [README_FOR_APES.md](./README_FOR_APES.md) 
 
@@ -60,7 +60,7 @@ Capture a deterministic checkpoint:
 
 ## Repo map
 
-- `Free Markdown Viewer/` - Xcode project, app target, unit tests, and UI tests
+- `Quick Markdown Viewer/` - Xcode project, app target, unit tests, and UI tests
 - `Fixtures/` - deterministic markdown/media fixtures and expected outputs
 - `scripts/` - build, test, capture, docs, and knowledge tooling
 - `docs/` - durable planning, harness contracts, and internal reliability/security docs

@@ -10,6 +10,11 @@ patterns=(
   'Swift-Markdown-Viewer'
   'Swift_Markdown_Viewer'
   'SWIFTMD'
+  'Free Markdown Viewer'
+  'Free_Markdown_Viewer'
+  'com.matthewpaulmoore.Free-Markdown-ViewerTests'
+  'com.matthewpaulmoore.Free-Markdown-ViewerUITests'
+  'free-markdown-viewer-support.md'
 )
 
 scan_paths=(

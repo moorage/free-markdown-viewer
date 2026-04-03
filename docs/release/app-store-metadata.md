@@ -4,7 +4,7 @@ Use this file as the source for App Store Connect listing text and screenshot pl
 
 ## App identity
 
-- App name: `Free Markdown Viewer`
+- App name: `Quick Markdown Viewer`
 - Subtitle option 1: `Open Markdown folders fast`
 - Subtitle option 2: `Local-first Markdown reader`
 - Subtitle option 3: `Browse docs across Apple devices`
@@ -17,7 +17,7 @@ Open Markdown folders on Mac, iPhone, and iPad with a fast, local-first viewer t
 
 ## Description
 
-Free Markdown Viewer is a simple, local-first app for opening folders full of Markdown files and browsing them across macOS, iPhone, and iPad.
+Quick Markdown Viewer is a simple, local-first app for opening folders full of Markdown files and browsing them across macOS, iPhone, and iPad.
 
 Use it to read notes, documentation, knowledge bases, exported reports, and project folders without setting up an account or relying on a web service.
 
@@ -29,7 +29,7 @@ Features:
 - Adjust viewer font size for comfortable reading
 - Work entirely with files you choose from Finder or the Files app
 
-Free Markdown Viewer is designed to stay lightweight and direct:
+Quick Markdown Viewer is designed to stay lightweight and direct:
 
 - no account required
 - no subscription
@@ -50,6 +50,8 @@ Shorter alternative:
 
 - Marketing URL: `https://www.matthewpaulmoore.com/apps/free-markdown-viewer`
 - Support URL: `https://www.matthewpaulmoore.com/apps/free-markdown-viewer/support`
+
+The website slug stays on `free-markdown-viewer` for now because those pages are live today; only the visible app name is changing in this workstream.
 - Privacy Policy URL: `https://www.matthewpaulmoore.com/legal/privacy`
 - Terms URL: `https://www.matthewpaulmoore.com/legal/terms`
 
@@ -145,4 +147,4 @@ Suggested captions:
 - choose one subtitle
 - choose one keyword set
 - choose final screenshot captions
-- confirm `Free Markdown Viewer` is the final App Store name
+- confirm `Quick Markdown Viewer` is the final App Store name

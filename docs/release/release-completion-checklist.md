@@ -25,7 +25,7 @@ Publish these pages at the live URLs already referenced by the release docs:
 Starting draft files:
 
 - `docs/release/app-store-metadata.md`
-- `docs/release/free-markdown-viewer-support.md`
+- `docs/release/quick-markdown-viewer-support.md`
 - `docs/release/privacy-policy-draft.md`
 - `docs/release/terms-of-use-draft.md`
 - `docs/release/app-review-notes.md`
@@ -47,7 +47,7 @@ If you prefer, place `APPLE_DEVELOPMENT_TEAM` and App Store Connect API settings
 
 Use these defaults unless you want to rename the product:
 
-- App name: `Free Markdown Viewer`
+- App name: `Quick Markdown Viewer`
 - Platforms: `iOS` and `macOS`
 - Primary language: `English (U.S.)`
 - Bundle ID: `com.souschefstudio.Free-Markdown-Viewer`
@@ -55,6 +55,8 @@ Use these defaults unless you want to rename the product:
 - Pricing: `Free`
 - Support URL: `https://www.matthewpaulmoore.com/apps/free-markdown-viewer/support`
 - Marketing URL: `https://www.matthewpaulmoore.com/apps/free-markdown-viewer`
+
+Keep these URLs on the published `free-markdown-viewer` slug until matching `quick-markdown-viewer` pages are live.
 - Privacy Policy URL: `https://www.matthewpaulmoore.com/legal/privacy`
 - Category: `Productivity`
 - EULA: Apple standard EULA

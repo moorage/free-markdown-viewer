@@ -12,11 +12,13 @@
   - `docs/exec-plans/active/2026-03-26-ios-drawer-filter.md`
   - `docs/exec-plans/active/2026-03-26-app-store-connect-release-setup.md`
   - `docs/exec-plans/active/2026-03-27-free-markdown-viewer-rename.md`
+  - `docs/exec-plans/active/2026-04-03-quick-markdown-viewer-in-place-rename.md`
   - `docs/exec-plans/active/2026-03-28-launch-empty-viewer.md`
 - current milestone:
   - app-store readiness: icons are generated, iPhone/iPad folder import is implemented, bookmark-backed workspace restoration is in place, release/privacy/docs scaffolding exists, repeatable screenshot capture is in repo, and iPhone/iPad candidate screenshots have been generated
   - live App Store Connect release setup: app `6761209087` now has repo-owned metadata, Europe excluded from availability, valid iOS and macOS builds uploaded and attached to the draft versions, and App Store screenshot assets uploaded for iPhone, iPad, and macOS
   - rename implementation: the checked-in app, tests, scripts, release docs, and Xcode project now use `Free Markdown Viewer`; Apple-side state now includes bundle ID `com.souschefstudio.Free-Markdown-Viewer` as resource `9ZAXC5Y677`, new app record `6761271951`, attached valid iOS/macOS builds, complete iPhone/iPad/macOS screenshot sets, review-detail records on both draft versions, and storefront availability matching the legacy Europe-excluded policy
+  - quick rename follow-up: the checked-in product identity, project tree, tests, release docs, and shipped display name now use `Quick Markdown Viewer` while preserving bundle ID `com.souschefstudio.Free-Markdown-Viewer`; App Store Connect app `6761271951` is renamed in place, build `3` is uploaded for both platforms, and both iOS and macOS are back in `WAITING_FOR_REVIEW`
   - repository slug follow-up: the remaining old-slug references in support docs and local `.git` metadata are now rewritten to `moorage/free-markdown-viewer`
 - commands run:
   - `xcodebuild -quiet -project "Free Markdown Viewer/Free Markdown Viewer.xcodeproj" -scheme "Free Markdown Viewer" -configuration Debug -derivedDataPath /tmp/free-markdown-viewer-empty-launch-unit -destination "platform=macOS,arch=arm64" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= "-only-testing:Free Markdown ViewerTests/Free_Markdown_ViewerTests/testAppModelWithoutInitialWorkspaceShowsOpenFolderPromptState" "-only-testing:Free Markdown ViewerTests/Free_Markdown_ViewerTests/testEmptyWorkspaceShowsNoMarkdownFilesMessage" "-only-testing:Free Markdown ViewerTests/Free_Markdown_ViewerTests/testAppModelRestoresInitialWorkspaceSession" test`
@@ -54,6 +56,28 @@
   - `./scripts/app-store-connect request POST /v1/appStoreReviewDetails --body '{...appStoreVersion 90e1bb1e-5a62-4623-a866-08b2b16262e2...}'`
   - `./scripts/app-store-connect request GET /v1/apps/6761271951/relationships/appAvailabilityV2`
   - `python3 - <<'PY' ... compare /v2/appAvailabilities/6761209087 and /v2/appAvailabilities/6761271951 territory disable sets ... PY`
+  - `./scripts/app-store-connect patch-app-info-localization --id a83ddb48-e426-468e-bdca-02050428dc15 --name 'Quick Markdown Viewer'`
+  - `./scripts/app-store-connect patch-version-localization --id 46cadd66-1413-4ff7-a61d-dc892bee4197 ...Quick Markdown Viewer copy...`
+  - `./scripts/app-store-connect patch-version-localization --id 561918f2-9ec7-41d1-baa1-c619aa1b3591 ...Quick Markdown Viewer copy...`
+  - `./scripts/app-store-connect patch-review-detail --id 12b5d659-58b7-4adf-b736-66477a19bea9 ...Quick Markdown Viewer notes...`
+  - `./scripts/app-store-connect patch-review-detail --id d9779019-7bf4-4632-a046-f114d364782a ...Quick Markdown Viewer notes...`
+  - `./scripts/test-unit`
+  - `APPLE_DEVELOPMENT_TEAM=GG34PA8F4A ./scripts/archive-release --platform macos --allow-provisioning-updates`
+  - `APPLE_DEVELOPMENT_TEAM=GG34PA8F4A ./scripts/archive-release --platform ios --allow-provisioning-updates`
+  - `./scripts/export-app-store --platform ios --archive-path 'artifacts/archives/Quick Markdown Viewer-ios.xcarchive' --export-options-plist 'artifacts/export-options/ios-app-store-connect.plist' --allow-provisioning-updates`
+  - `./scripts/export-app-store --platform macos --archive-path 'artifacts/archives/Quick Markdown Viewer-macos.xcarchive' --export-options-plist 'artifacts/export-options/macos-app-store-connect.plist' --allow-provisioning-updates`
+  - `source scripts/lib/xcode-env.sh && xcrun altool --upload-package 'artifacts/exports/ios/Quick Markdown Viewer.ipa' --api-key "$ASC_KEY_ID" --api-issuer "$ASC_ISSUER_ID" --p8-file-path "$ASC_KEY_PATH" --api-key-subject user --wait --output-format json`
+  - `source scripts/lib/xcode-env.sh && xcrun altool --upload-package 'artifacts/exports/macos/Quick Markdown Viewer.pkg' --api-key "$ASC_KEY_ID" --api-issuer "$ASC_ISSUER_ID" --p8-file-path "$ASC_KEY_PATH" --api-key-subject user --wait --output-format json`
+  - `./scripts/app-store-connect request PATCH /v1/appStoreVersions/ad142231-153d-4b40-b149-bb55cd70b73e/relationships/build --body '{"data":{"type":"builds","id":"6206b37b-bed1-46bb-a89d-1c927bbf61fc"}}'`
+  - `./scripts/app-store-connect request DELETE /v1/appStoreVersionSubmissions/90e1bb1e-5a62-4623-a866-08b2b16262e2`
+  - `./scripts/app-store-connect request PATCH /v1/appStoreVersions/90e1bb1e-5a62-4623-a866-08b2b16262e2/relationships/build --body '{"data":{"type":"builds","id":"70ab9c3d-a03c-40fd-a53c-ecff7aaeb67c"}}'`
+  - `./scripts/app-store-connect request POST /v1/reviewSubmissions --body '{"data":{"type":"reviewSubmissions","attributes":{"platform":"IOS"},"relationships":{"app":{"data":{"type":"apps","id":"6761271951"}}}}}'`
+  - `./scripts/app-store-connect request POST /v1/reviewSubmissions --body '{"data":{"type":"reviewSubmissions","attributes":{"platform":"MAC_OS"},"relationships":{"app":{"data":{"type":"apps","id":"6761271951"}}}}}'`
+  - `./scripts/app-store-connect request POST /v1/reviewSubmissionItems --body '{"data":{"type":"reviewSubmissionItems","relationships":{"reviewSubmission":{"data":{"type":"reviewSubmissions","id":"10966674-994a-4ade-9028-f9030ca5d711"}},"appStoreVersion":{"data":{"type":"appStoreVersions","id":"90e1bb1e-5a62-4623-a866-08b2b16262e2"}}}}}'`
+  - `./scripts/app-store-connect request PATCH /v1/reviewSubmissions/10966674-994a-4ade-9028-f9030ca5d711 --body '{"data":{"type":"reviewSubmissions","id":"10966674-994a-4ade-9028-f9030ca5d711","attributes":{"submitted":true}}}'`
+  - `./scripts/app-store-connect request PATCH /v1/reviewSubmissions/3203801d-f3c9-4f8a-b411-b00b8fc317df --body '{"data":{"type":"reviewSubmissions","id":"3203801d-f3c9-4f8a-b411-b00b8fc317df","attributes":{"canceled":true}}}'`
+  - `./scripts/app-store-connect request POST /v1/reviewSubmissionItems --body '{"data":{"type":"reviewSubmissionItems","relationships":{"reviewSubmission":{"data":{"type":"reviewSubmissions","id":"bd40c20f-3460-4eaf-8915-ff494e2b844b"}},"appStoreVersion":{"data":{"type":"appStoreVersions","id":"ad142231-153d-4b40-b149-bb55cd70b73e"}}}}}'`
+  - `./scripts/app-store-connect request PATCH /v1/reviewSubmissions/bd40c20f-3460-4eaf-8915-ff494e2b844b --body '{"data":{"type":"reviewSubmissions","id":"bd40c20f-3460-4eaf-8915-ff494e2b844b","attributes":{"submitted":true}}}'`
   - `python3 scripts/check_execplan.py`
   - `python3 scripts/knowledge/check_docs.py`
   - `xcodebuild -quiet -project "Swift Markdown Viewer/Swift Markdown Viewer.xcodeproj" -scheme "Swift Markdown Viewer" -configuration Debug -derivedDataPath /tmp/swift-markdown-viewer-relative-links -destination "platform=macOS,arch=arm64" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= "-only-testing:Swift Markdown ViewerTests/Swift_Markdown_ViewerTests/testSelectableDocumentFormatterPreservesRelativeMarkdownLinks" "-only-testing:Swift Markdown ViewerTests/Swift_Markdown_ViewerTests/testMarkdownRendererPreservesRelativeLinksInsideTables" "-only-testing:Swift Markdown ViewerTests/Swift_Markdown_ViewerTests/testAppModelOpensRelativeMarkdownLinkWithinWorkspace" test`
@@ -88,6 +112,11 @@
   - the new app record's availability is now fully initialized as well, and its 42 disabled storefronts match the legacy record exactly with no missing or extra territory exclusions
   - repo-owned release docs now define the planned public URLs under `https://www.matthewpaulmoore.com/`, draft support/privacy/terms page content, and the recommendation to use Apple’s standard EULA
   - the last exact old-slug references are now gone from tracked docs and local Git metadata; `origin` points at `git@github.com:moorage/free-markdown-viewer.git`
+  - the repo-owned product identity is now renamed again in place from `Free Markdown Viewer` to `Quick Markdown Viewer`, including the Xcode project path, target/module names, app display name, support doc filename, and release metadata, while the bundle identifier intentionally stays `com.souschefstudio.Free-Markdown-Viewer`
+  - App Store Connect app `6761271951` now shows `Quick Markdown Viewer` in the app-info localization, both version localizations, and both review-note records, while the live marketing/support URLs intentionally remain on the existing `free-markdown-viewer` website slug because those pages already resolve
+  - fresh App Store-eligible build `3` uploads are now present for both platforms as iOS build `6206b37b-bed1-46bb-a89d-1c927bbf61fc` and macOS build `70ab9c3d-a03c-40fd-a53c-ecff7aaeb67c`
+  - the macOS app-store version `90e1bb1e-5a62-4623-a866-08b2b16262e2` is now attached to build `3` and resubmitted through review submission `10966674-994a-4ade-9028-f9030ca5d711`, which is back in `WAITING_FOR_REVIEW`
+  - the iOS rejected submission `3203801d-f3c9-4f8a-b411-b00b8fc317df` was successfully canceled, the fresh draft submission `bd40c20f-3460-4eaf-8915-ff494e2b844b` now carries the iOS version, and iOS is also back in `WAITING_FOR_REVIEW`
   - `scripts/archive-release` now provides a stable shell entry point for signed Release archives once `APPLE_DEVELOPMENT_TEAM` is configured locally
   - `scripts/app-store-connect` now provides a repo-owned App Store Connect API helper that authenticates with the local API key and can inspect live app and bundle-ID state without exposing the secret material in chat
   - live App Store Connect metadata for app `6761209087` now has `PRODUCTIVITY` as the primary category plus repo-owned subtitle, privacy policy URL, support URL, marketing URL, promotional text, description, and keywords applied through the API
@@ -111,11 +140,13 @@
   - the Xcode project’s filesystem-synchronized group model automatically copied the new `PrivacyInfo.xcprivacy` resource into the app bundle without requiring manual `PBXBuildFile` entries
   - the real app bundle identifier for release is still `com.souschefstudio.Swift-Markdown-Viewer`; the earlier `scripts/lib/xcode-env.sh` helper had drifted to a different identifier and needed to be corrected before live App Store Connect work
   - the App Store Connect REST API allows inspection and update flows for `apps`, but not app-record creation itself; the first app record still has to be created manually in the App Store Connect UI
+  - App Store review submission automation currently uses the public `reviewSubmissions` plus `reviewSubmissionItems` resources rather than the `appStoreVersionSubmissions` collection; on the wire the PATCH submit/cancel fields are `submitted` and `canceled`, even though the Swift SDK surfaces them as `isSubmitted` and `isCanceled`
   - even after the app record exists, the `appAvailabilityV2` relationship can still return `NOT_FOUND` until App Store Connect has initialized Pricing and Availability for the app, which blocks API-based storefront inclusion/exclusion
   - once Pricing and Availability is saved once in the App Store Connect UI, the actual availability data lives behind a mixed v1/v2 surface: discovery comes from `GET /v1/apps/{id}/relationships/appAvailabilityV2`, while the territory payload comes from `GET /v2/appAvailabilities/{id}/territoryAvailabilities`
   - `xcodebuild` export/authentication key support is stricter than the repo shell helpers: the ASC key path must be absolute before `-authenticationKeyPath` will be accepted, so repo-root-relative `.env` paths must be normalized
   - App Store Connect screenshot upload accepts `APP_IPHONE_67`, `APP_IPAD_PRO_3GEN_129`, and `APP_DESKTOP` for the current generated assets; the older `APP_IPAD_PRO_129` bucket rejects the modern 13-inch iPad captures with `IMAGE_INCORRECT_DIMENSIONS`
   - posting `appStoreReviewDetails` directly against a draft `appStoreVersion` works for the new record, but the relationship can lag in `include=appStoreReviewDetail` responses even when the direct `/appStoreReviewDetail` endpoint already resolves
+  - the public App Store Connect API allowed both resubmission flows end to end, but the iOS path required canceling the stale rejected submission and then waiting briefly for Apple’s backend to settle before the fresh draft submission would accept `submitted: true`
   - Apple currently returns `500 UNEXPECTED_ERROR` when deleting the empty obsolete `APP_IPAD_PRO_129` screenshot set, even after its failed screenshot record has been removed
   - the original preferred `iPad (A16)` simulator can wedge on `simctl` lifecycle commands in this environment, so screenshot automation is more reliable when the helper picks another available iPad first
   - the screenshot artifacts were being written as soon as the model flipped to ready, which was early enough for macOS window captures to catch the loading overlay instead of the final document content

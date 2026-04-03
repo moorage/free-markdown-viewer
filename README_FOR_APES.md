@@ -4,7 +4,7 @@ This file is the human-first version of the repo README.
 
 ## What this product is
 
-`Free Markdown Viewer` is a native Markdown reader for Apple platforms. The goal is simple:
+`Quick Markdown Viewer` is a native Markdown reader for Apple platforms. The goal is simple:
 
 - open a local folder full of Markdown files
 - browse those files from a sidebar

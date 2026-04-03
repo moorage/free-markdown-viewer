@@ -1,6 +1,6 @@
 //
 //  ContentView.swift
-//  Free Markdown Viewer
+//  Quick Markdown Viewer
 //
 //  Created by Matthew Moore on 3/19/26.
 //
