@@ -1,6 +1,7 @@
 # Running implementation notes
 
 - active ExecPlans:
+  - `docs/exec-plans/active/2026-04-10-macos-downloads-entitlement-removal.md`
   - `docs/exec-plans/active/2026-03-19-swift-codex-cli-harness.md`
   - `docs/exec-plans/active/2026-03-23-window-scoped-workspaces.md`
   - `docs/exec-plans/active/2026-03-23-async-document-loading.md`
@@ -15,6 +16,7 @@
   - `docs/exec-plans/active/2026-04-03-quick-markdown-viewer-in-place-rename.md`
   - `docs/exec-plans/active/2026-03-28-launch-empty-viewer.md`
 - current milestone:
+  - macOS submission entitlement follow-up: the Xcode target no longer requests Downloads-folder read access, the rebuilt macOS archive now carries only `com.apple.security.app-sandbox` plus `com.apple.security.files.user-selected.read-only`, build `4` remains the attached rejected build for macOS version `1.0`, and the current recovery is to strengthen the App Review explanation around the first-launch `Open Folder` flow rather than change the binary again
   - app-store readiness: icons are generated, iPhone/iPad folder import is implemented, bookmark-backed workspace restoration is in place, release/privacy/docs scaffolding exists, repeatable screenshot capture is in repo, and iPhone/iPad candidate screenshots have been generated
   - live App Store Connect release setup: app `6761209087` now has repo-owned metadata, Europe excluded from availability, valid iOS and macOS builds uploaded and attached to the draft versions, and App Store screenshot assets uploaded for iPhone, iPad, and macOS
   - rename implementation: the checked-in app, tests, scripts, release docs, and Xcode project now use `Free Markdown Viewer`; Apple-side state now includes bundle ID `com.souschefstudio.Free-Markdown-Viewer` as resource `9ZAXC5Y677`, new app record `6761271951`, attached valid iOS/macOS builds, complete iPhone/iPad/macOS screenshot sets, review-detail records on both draft versions, and storefront availability matching the legacy Europe-excluded policy
@@ -34,6 +36,12 @@
   - `./scripts/build --platform all`
   - `./scripts/test-unit`
   - `./scripts/test-integration`
+  - `./scripts/app-store-connect request GET /v1/appStoreVersions/90e1bb1e-5a62-4623-a866-08b2b16262e2 --query include=appStoreReviewDetail,build`
+  - `./scripts/app-store-connect patch-review-detail --id d9779019-7bf4-4632-a046-f114d364782a --notes '<explicit macOS Open Folder entitlement explanation>'`
+  - `./scripts/app-store-connect request GET /v1/appStoreReviewDetails/d9779019-7bf4-4632-a046-f114d364782a`
+  - `codesign -d --entitlements :- 'artifacts/archives/Quick Markdown Viewer-macos.xcarchive/Products/Applications/Quick Markdown Viewer.app'`
+  - `python3 scripts/check_execplan.py docs/exec-plans/active/2026-04-10-macos-downloads-entitlement-removal.md`
+  - `python3 scripts/knowledge/check_docs.py`
   - `python3 scripts/knowledge/generate_repo_map.py`
   - `./scripts/app-store-connect ensure-bundle-id --identifier com.souschefstudio.Free-Markdown-Viewer --name 'Free Markdown Viewer'`
   - `./scripts/app-store-connect inspect-bundle-id --identifier com.souschefstudio.Free-Markdown-Viewer`
@@ -213,6 +221,10 @@
   - the three new animated-media behavior tests fail as intended because the current app still exports `image` or paragraph-style visible blocks instead of `animatedImage` and `video`
   - the targeted macOS UI-test slice never reached the new assertions because `Swift Markdown ViewerUITests-Runner` exited before establishing an XCTest connection
   - `ViewerShellView` now replaces the raw empty placeholder document with a centered empty-state card and an `Open Another Folder` button wired to the existing folder picker action
+  - the current macOS App Review rejection on April 11, 2026 is for additional explanation of `com.apple.security.files.user-selected.read-only`, not for the previously removed Downloads entitlement
+  - the shipped macOS binary still signs with only `com.apple.security.app-sandbox` and `com.apple.security.files.user-selected.read-only`
+  - the live review-note wording before this turn was likely too generic because it did not explicitly call out the first-launch `Open Folder` panel, `File > Open Folder…`, or the need to read the reviewer-selected folder's Markdown and media files
+  - the live `appStoreReviewDetail` for macOS now explicitly states that first launch auto-presents `Open Folder`, that the same action is available from `File > Open Folder…` with `Command-O`, and that the entitlement exists only to read the folder and files the reviewer selects
   - the focused macOS UI slice passes for opening an empty workspace and showing both the empty-state message and recovery CTA
   - the focused macOS unit slice passes for the no-markdown workspace model state
   - `AppModel` now treats the first successful workspace load in a window as authoritative, so a new-window folder selection is no longer overwritten by the later bootstrap default load
