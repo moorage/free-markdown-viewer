@@ -44,8 +44,40 @@ final class Quick_Markdown_ViewerUITests: XCTestCase {
 
         XCTAssertTrue(app.windows.element(boundBy: 0).waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["empty-state.message"].waitForExistence(timeout: 5))
-        XCTAssertEqual(app.staticTexts["empty-state.message"].label, "Open a folder of markdown files to get started.")
+        XCTAssertTrue(app.staticTexts["Open a folder of markdown files to get started."].exists)
         XCTAssertTrue(app.buttons["empty-state.open-folder"].exists)
+        XCTAssertTrue(app.staticTexts["empty-state.commandLineTool.message"].exists)
+        XCTAssertTrue(app.staticTexts["Install `qmv` in ~/.local/bin to open folders from Terminal."].exists)
+        XCTAssertTrue(app.buttons["empty-state.commandLineTool.button"].exists)
+    }
+
+    @MainActor
+    func testInstallCommandLineToolButtonWritesLauncherAndHidesPrompt() throws {
+        let app = XCUIApplication()
+        let installURL = URL(fileURLWithPath: "/tmp").appendingPathComponent(UUID().uuidString).appendingPathComponent("qmv")
+
+        app.launchArguments = [
+            "--ui-test-mode", "1",
+            "--ui-test-reset-command-line-tool-install-state",
+            "--ui-test-install-command-line-tool", installURL.path,
+        ]
+        app.launch()
+        app.activate()
+
+        let installButton = app.buttons["empty-state.commandLineTool.button"]
+        XCTAssertTrue(app.windows.element(boundBy: 0).waitForExistence(timeout: 5))
+        XCTAssertTrue(installButton.waitForExistence(timeout: 5))
+
+        installButton.click()
+
+        let installPromptGone = NSPredicate(format: "exists == false")
+        let expectation = XCTNSPredicateExpectation(predicate: installPromptGone, object: installButton)
+        XCTAssertEqual(XCTWaiter().wait(for: [expectation], timeout: 5), .completed)
+        XCTAssertFalse(app.staticTexts["empty-state.commandLineTool.message"].exists)
+        XCTAssertTrue(app.staticTexts["command-line-tool.post-install.title"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["command-line-tool.post-install.message"].exists)
+        XCTAssertTrue(app.buttons["command-line-tool.post-install.copy"].exists)
+        XCTAssertTrue(app.buttons["command-line-tool.post-install.done"].exists)
     }
 
     @MainActor

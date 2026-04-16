@@ -10,7 +10,10 @@ struct WindowSceneRootView: View {
     @ObservedObject private var sessionStore: WorkspaceWindowSessionStore
     private let sceneID: String
     #if os(macOS)
+    @ObservedObject private var externalWorkspaceOpenCoordinator = ExternalWorkspaceOpenCoordinator.shared
+    @ObservedObject private var commandLineToolManager = MacCommandLineToolManager.shared
     @State private var hasAttemptedInitialFolderPrompt = false
+    @State private var postInstallGuide: CommandLineToolPostInstallGuide?
     @Environment(\.openWindow) private var openWindow
     #else
     @State private var isPresentingFolderImporter = false
@@ -33,7 +36,12 @@ struct WindowSceneRootView: View {
     }
 
     var body: some View {
-        ContentView(model: model, onOpenFolder: openFolderAction)
+        ContentView(
+            model: model,
+            onOpenFolder: openFolderAction,
+            onInstallCommandLineTool: installCommandLineToolAction,
+            shouldShowCommandLineToolPrompt: shouldShowCommandLineToolPrompt
+        )
             #if os(macOS)
             .focusedSceneValue(\.openFolderAction, OpenFolderAction(handler: openFolder))
             .focusedSceneValue(\.revealInFinderAction, revealInFinderAction)
@@ -41,10 +49,17 @@ struct WindowSceneRootView: View {
             .focusedSceneValue(\.decreaseFontSizeAction, DecreaseFontSizeAction(handler: model.decreaseFontSize))
             .onAppear {
                 sessionStore.scheduleAdditionalWindows(openWindow: openWindow)
+                commandLineToolManager.setInstallCommandLineToolPresenter(installCommandLineTool)
+                commandLineToolManager.refreshInstallState()
+                handleExternalWorkspaceOpen(requestID: externalWorkspaceOpenCoordinator.latestRequestID)
                 requestInitialFolderPromptIfNeeded()
             }
             .onDisappear {
+                commandLineToolManager.setInstallCommandLineToolPresenter(nil)
                 sessionStore.removeActiveSession(for: sceneID)
+            }
+            .onChange(of: externalWorkspaceOpenCoordinator.latestRequestID) { requestID in
+                handleExternalWorkspaceOpen(requestID: requestID)
             }
             #endif
             .onChange(of: model.selectedPath) { _ in
@@ -56,8 +71,23 @@ struct WindowSceneRootView: View {
             .onChange(of: scenePhase) { newPhase in
                 if newPhase != .active {
                     sessionStore.persistActiveSessions()
+                } else {
+                    #if os(macOS)
+                    commandLineToolManager.setInstallCommandLineToolPresenter(installCommandLineTool)
+                    commandLineToolManager.refreshInstallState()
+                    handleExternalWorkspaceOpen(requestID: externalWorkspaceOpenCoordinator.latestRequestID)
+                    #endif
                 }
             }
+            #if os(macOS)
+            .sheet(item: $postInstallGuide) { guide in
+                CommandLineToolPostInstallSheet(
+                    guide: guide,
+                    onCopy: copyPostInstallCommandToPasteboard,
+                    onDone: { postInstallGuide = nil }
+                )
+            }
+            #endif
             #if !os(macOS)
             .fileImporter(
                 isPresented: $isPresentingFolderImporter,
@@ -73,6 +103,14 @@ struct WindowSceneRootView: View {
     }
 
     #if os(macOS)
+    private var installCommandLineToolAction: (() -> Void)? {
+        installCommandLineTool
+    }
+
+    private var shouldShowCommandLineToolPrompt: Bool {
+        commandLineToolManager.shouldOfferInstallPrompt
+    }
+
     private var revealInFinderAction: RevealInFinderAction? {
         guard model.canRevealSelectedFileInFinder else { return nil }
         return RevealInFinderAction(handler: revealInFinder)
@@ -113,11 +151,112 @@ struct WindowSceneRootView: View {
         model.openFolder(at: selectedURL)
     }
 
+    private func installCommandLineTool() {
+        commandLineToolManager.clearLastError()
+        postInstallGuide = nil
+        NSApp.activate(ignoringOtherApps: true)
+
+        if let uiTestInstallURL = commandLineToolManager.pendingUITestInstallURL {
+            completeInstallCommandLineTool(at: uiTestInstallURL)
+            return
+        }
+
+        let installURL = commandLineToolManager.preferredInstallURL
+        if completeInstallCommandLineTool(at: installURL, presentErrors: false) {
+            return
+        }
+
+        guard commandLineToolManager.lastInstallFailureRequiresAccessGrant else {
+            commandLineToolManager.presentLastInstallErrorIfNeeded()
+            return
+        }
+
+        guard requestInstallCommandLineToolAccess() else {
+            return
+        }
+
+        _ = completeInstallCommandLineTool(at: installURL, presentErrors: true)
+    }
+
+    @discardableResult
+    private func completeInstallCommandLineTool(at installURL: URL, presentErrors: Bool = true) -> Bool {
+        guard commandLineToolManager.installCommandLineTool(at: installURL, presentErrors: presentErrors) else {
+            return false
+        }
+
+        let shellCommand = MacCommandLineToolManager.postInstallShellCommand()
+        postInstallGuide = CommandLineToolPostInstallGuide(
+            installURL: installURL,
+            shellCommand: shellCommand ?? "Bundled setup script is missing from this app build.",
+            isBundledScriptCommand: shellCommand != nil
+        )
+        return true
+    }
+
+    private func requestInstallCommandLineToolAccess() -> Bool {
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = "Allow Access to Install `qmv`"
+        alert.informativeText = "Quick Markdown Viewer always installs `qmv` to ~/.local/bin/qmv. macOS requires one-time access to your home folder so the app can create ~/.local/bin and write the launcher there."
+        alert.addButton(withTitle: "Choose Home Folder")
+        alert.addButton(withTitle: "Cancel")
+
+        guard alert.runModal() == .alertFirstButtonReturn else {
+            return false
+        }
+
+        let panel = NSOpenPanel()
+        panel.title = "Allow Access to Install `qmv`"
+        panel.message = "Choose your home folder so Quick Markdown Viewer can create ~/.local/bin/qmv."
+        panel.prompt = "Allow Access"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = commandLineToolManager.homeDirectoryURL
+
+        guard panel.runModal() == .OK, let selectedURL = panel.url else {
+            return false
+        }
+
+        return commandLineToolManager.rememberHomeDirectoryAccess(from: selectedURL)
+    }
+
+    private func copyPostInstallCommandToPasteboard(_ command: String) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(command, forType: .string)
+    }
+
+    private func handleExternalWorkspaceOpen(requestID: UUID?) {
+        guard let requestID, let rootURL = externalWorkspaceOpenCoordinator.claimRequest(id: requestID) else {
+            return
+        }
+
+        if shouldReuseCurrentWindowForExternalOpen {
+            model.openFolder(at: rootURL)
+        } else {
+            sessionStore.scheduleExternalWorkspaceWindow(for: rootURL, openWindow: openWindow)
+        }
+    }
+
+    private var shouldReuseCurrentWindowForExternalOpen: Bool {
+        model.currentWorkspaceRootURL == nil && model.selectedPath == nil
+    }
+
     private func revealInFinder() {
         guard let selectedFileURL = model.selectedFileURL else { return }
         NSWorkspace.shared.activateFileViewerSelecting([selectedFileURL])
     }
     #else
+    private var installCommandLineToolAction: (() -> Void)? {
+        nil
+    }
+
+    private var shouldShowCommandLineToolPrompt: Bool {
+        false
+    }
+
     private func openFolder() {
         if model.launchOptions.uiTestMode, let testFolderURL = UITestOpenFolderSelectionStore.shared.nextFolderURL() {
             model.openFolder(at: testFolderURL)
@@ -137,6 +276,70 @@ struct WindowSceneRootView: View {
 }
 
 #if os(macOS)
+private struct CommandLineToolPostInstallGuide: Identifiable, Equatable {
+    let installURL: URL
+    let shellCommand: String
+    let isBundledScriptCommand: Bool
+
+    var id: String {
+        installURL.path
+    }
+}
+
+private struct CommandLineToolPostInstallSheet: View {
+    let guide: CommandLineToolPostInstallGuide
+    let onCopy: (String) -> Void
+    let onDone: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Finish Terminal Setup")
+                .font(.title2.weight(.semibold))
+                .accessibilityIdentifier(AccessibilityIDs.commandLineToolPostInstallTitle)
+
+            Text(guide.isBundledScriptCommand ? "Run this short command in Terminal. It executes the setup script bundled inside Quick Markdown Viewer to add ~/.local/bin to PATH if needed, reload the right shell rc file, and verify `qmv` again." : "This app build is missing the bundled Terminal setup script.")
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier(AccessibilityIDs.commandLineToolPostInstallMessage)
+
+            ScrollView {
+                Text(guide.shellCommand)
+                    .font(.system(.body, design: .monospaced))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
+                    .padding(12)
+            }
+            .frame(minHeight: 240)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color(nsColor: .textBackgroundColor))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
+            )
+            .accessibilityIdentifier(AccessibilityIDs.commandLineToolPostInstallCommand)
+
+            HStack {
+                Spacer()
+                Button("Copy Command") {
+                    onCopy(guide.shellCommand)
+                }
+                .disabled(guide.isBundledScriptCommand == false)
+                .accessibilityIdentifier(AccessibilityIDs.commandLineToolPostInstallCopyButton)
+
+                Button("Done") {
+                    onDone()
+                }
+                .keyboardShortcut(.defaultAction)
+                .accessibilityIdentifier(AccessibilityIDs.commandLineToolPostInstallDoneButton)
+            }
+        }
+        .padding(20)
+        .frame(minWidth: 620, minHeight: 420)
+    }
+}
+
 struct OpenFolderAction {
     let handler: () -> Void
 
@@ -208,6 +411,7 @@ extension FocusedValues {
 }
 
 struct WindowOpenFolderCommands: Commands {
+    @ObservedObject var commandLineToolManager: MacCommandLineToolManager
     @FocusedValue(\.openFolderAction) private var openFolderAction
     @FocusedValue(\.revealInFinderAction) private var revealInFinderAction
     @FocusedValue(\.increaseFontSizeAction) private var increaseFontSizeAction
@@ -227,6 +431,13 @@ struct WindowOpenFolderCommands: Commands {
             }
             .keyboardShortcut("r", modifiers: [.command, .shift])
             .disabled(revealInFinderAction == nil)
+
+            Divider()
+
+            Button(commandLineToolManager.commandLineToolMenuTitle) {
+                commandLineToolManager.performPrimaryCommandLineToolMenuAction()
+            }
+            .disabled(commandLineToolManager.canPerformCommandLineToolMenuAction == false)
         }
 
         CommandGroup(after: .toolbar) {

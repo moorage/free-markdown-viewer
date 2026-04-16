@@ -10,8 +10,15 @@ import SwiftUI
 struct ContentView: View {
     @ObservedObject var model: AppModel
     let onOpenFolder: (() -> Void)?
+    let onInstallCommandLineTool: (() -> Void)?
+    let shouldShowCommandLineToolPrompt: Bool
 
     var body: some View {
-        AppRootView(model: model, onOpenFolder: onOpenFolder)
+        AppRootView(
+            model: model,
+            onOpenFolder: onOpenFolder,
+            onInstallCommandLineTool: onInstallCommandLineTool,
+            shouldShowCommandLineToolPrompt: shouldShowCommandLineToolPrompt
+        )
     }
 }

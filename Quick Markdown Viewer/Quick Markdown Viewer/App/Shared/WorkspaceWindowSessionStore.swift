@@ -118,6 +118,17 @@ final class WorkspaceWindowSessionStore: ObservableObject {
         pendingAdditionalSessions.removeAll()
     }
 
+    func scheduleExternalWorkspaceWindow(for rootURL: URL, openWindow: OpenWindowAction) {
+        let sceneID = UUID().uuidString
+        let bookmarkData = WorkspaceSecurityScope.bookmarkData(for: rootURL)
+        scheduledSessions[sceneID] = WorkspaceWindowSession(
+            rootPath: rootURL.path,
+            selectedFile: nil,
+            securityScopedBookmarkData: bookmarkData
+        )
+        openWindow(value: sceneID)
+    }
+
     func shouldSuppressAutomaticFolderPrompt(for sceneID: String) -> Bool {
         automaticFolderPromptPolicy.shouldSuppressAutomaticFolderPrompt(
             for: sceneID,

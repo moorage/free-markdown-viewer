@@ -6,6 +6,8 @@ import AppKit
 struct AppRootView: View {
     @ObservedObject var model: AppModel
     let onOpenFolder: (() -> Void)?
+    let onInstallCommandLineTool: (() -> Void)?
+    let shouldShowCommandLineToolPrompt: Bool
     #if os(macOS)
     @State private var liveWindow: NSWindow?
     #endif
@@ -13,7 +15,12 @@ struct AppRootView: View {
     var body: some View {
         GeometryReader { proxy in
             let renderSize = resolvedRenderSize(from: proxy.size)
-            ViewerShellView(model: model, onOpenFolder: onOpenFolder)
+            ViewerShellView(
+                model: model,
+                onOpenFolder: onOpenFolder,
+                onInstallCommandLineTool: onInstallCommandLineTool,
+                shouldShowCommandLineToolPrompt: shouldShowCommandLineToolPrompt
+            )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .task {
                     model.bootstrap()
@@ -27,7 +34,12 @@ struct AppRootView: View {
                     } else {
                         model.installScreenshotWriter { url in
                             try PlatformScreenshotWriter.write(
-                                content: ViewerShellView(model: model, onOpenFolder: onOpenFolder)
+                                content: ViewerShellView(
+                                    model: model,
+                                    onOpenFolder: onOpenFolder,
+                                    onInstallCommandLineTool: onInstallCommandLineTool,
+                                    shouldShowCommandLineToolPrompt: shouldShowCommandLineToolPrompt
+                                )
                                     .frame(width: renderSize.width, height: renderSize.height),
                                 to: url
                             )
@@ -36,7 +48,12 @@ struct AppRootView: View {
                     #else
                     model.installScreenshotWriter { url in
                         try PlatformScreenshotWriter.write(
-                            content: ViewerShellView(model: model, onOpenFolder: onOpenFolder)
+                            content: ViewerShellView(
+                                model: model,
+                                onOpenFolder: onOpenFolder,
+                                onInstallCommandLineTool: onInstallCommandLineTool,
+                                shouldShowCommandLineToolPrompt: shouldShowCommandLineToolPrompt
+                            )
                                 .frame(width: renderSize.width, height: renderSize.height),
                             to: url
                         )

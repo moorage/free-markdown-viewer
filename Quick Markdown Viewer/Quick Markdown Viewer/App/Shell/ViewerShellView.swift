@@ -11,6 +11,8 @@ import UIKit
 struct ViewerShellView: View {
     @ObservedObject var model: AppModel
     let onOpenFolder: (() -> Void)?
+    let onInstallCommandLineTool: (() -> Void)?
+    let shouldShowCommandLineToolPrompt: Bool
     @Environment(\.openURL) private var openURL
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.colorScheme) private var colorScheme
@@ -402,7 +404,10 @@ struct ViewerShellView: View {
         emptyStateCard(
             iconName: "folder.badge.plus",
             message: AppModel.noWorkspacePromptMessage,
-            buttonTitle: "Open Folder"
+            buttonTitle: "Open Folder",
+            secondaryMessage: shouldShowCommandLineToolPrompt ? MacCommandLineToolManager.installExplanation : nil,
+            secondaryButtonTitle: shouldShowCommandLineToolPrompt ? "Install `qmv`" : nil,
+            secondaryAction: shouldShowCommandLineToolPrompt ? onInstallCommandLineTool : nil
         )
     }
 
@@ -417,7 +422,10 @@ struct ViewerShellView: View {
     private func emptyStateCard(
         iconName: String,
         message: String,
-        buttonTitle: String
+        buttonTitle: String,
+        secondaryMessage: String? = nil,
+        secondaryButtonTitle: String? = nil,
+        secondaryAction: (() -> Void)? = nil
     ) -> some View {
         VStack(spacing: 16) {
             Image(systemName: iconName)
@@ -426,12 +434,27 @@ struct ViewerShellView: View {
             Text(message)
                 .font(ViewerFont.title3(scale: model.fontScale))
                 .multilineTextAlignment(.center)
+                .accessibilityLabel(Text(message))
                 .accessibilityIdentifier(AccessibilityIDs.emptyStateMessage)
             if let onOpenFolder {
                 Button(buttonTitle) {
                     onOpenFolder()
                 }
                 .accessibilityIdentifier(AccessibilityIDs.emptyStateOpenFolderButton)
+            }
+            if let secondaryMessage {
+                Text(secondaryMessage)
+                    .font(ViewerFont.footnote(scale: model.fontScale))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .accessibilityLabel(Text(secondaryMessage))
+                    .accessibilityIdentifier(AccessibilityIDs.emptyStateCommandLineToolMessage)
+            }
+            if let secondaryButtonTitle, let secondaryAction {
+                Button(secondaryButtonTitle) {
+                    secondaryAction()
+                }
+                .accessibilityIdentifier(AccessibilityIDs.emptyStateCommandLineToolButton)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
@@ -1107,6 +1130,10 @@ private enum ViewerFont {
 
     static func caption(scale: CGFloat) -> Font {
         Font(platformFont(forTextStyle: .caption1, scale: scale))
+    }
+
+    static func footnote(scale: CGFloat) -> Font {
+        Font(platformFont(forTextStyle: .footnote, scale: scale))
     }
 
     static func monospacedBody(scale: CGFloat) -> Font {

@@ -1,6 +1,7 @@
 # Running implementation notes
 
 - active ExecPlans:
+  - `docs/exec-plans/active/2026-04-16-macos-cli-open-folder-launcher.md`
   - `docs/exec-plans/active/2026-04-15-fenced-code-syntax-highlighting.md`
   - `docs/exec-plans/active/2026-04-10-macos-downloads-entitlement-removal.md`
   - `docs/exec-plans/active/2026-03-19-swift-codex-cli-harness.md`
@@ -17,6 +18,7 @@
   - `docs/exec-plans/active/2026-04-03-quick-markdown-viewer-in-place-rename.md`
   - `docs/exec-plans/active/2026-03-28-launch-empty-viewer.md`
 - current milestone:
+  - macOS CLI launcher: the macOS app now exposes `File > Install Command Line Tool…`, an empty-state `Install \`qmv\`` affordance, a generated `qmv` launcher that opens folders through Launch Services, and window-safe handling for CLI-triggered workspace opens while keeping silent App Store auto-install out of scope
   - fenced code syntax highlighting: fenced code blocks now highlight natively through `swift-tree-sitter`, a repo-owned `Packages/TreeSitterGrammars` package compiles only the requested grammar allowlist, highlighted output is cached by `(language, contentHash, theme)`, bundled `highlights.scm` assets drive token colors, indented or unknown-language blocks stay on the plain monospace fallback path, and the final hosted-unit-test teardown crash was fixed by making `MacWindowConfiguration` mutate `NSWindow` synchronously
   - macOS submission entitlement follow-up: the Xcode target no longer requests Downloads-folder read access, the rebuilt macOS archive now carries only `com.apple.security.app-sandbox` plus `com.apple.security.files.user-selected.read-only`, build `4` remains the attached rejected build for macOS version `1.0`, and the current recovery is to strengthen the App Review explanation around the first-launch `Open Folder` flow rather than change the binary again
   - app-store readiness: icons are generated, iPhone/iPad folder import is implemented, bookmark-backed workspace restoration is in place, release/privacy/docs scaffolding exists, repeatable screenshot capture is in repo, and iPhone/iPad candidate screenshots have been generated
@@ -235,6 +237,10 @@
   - the focused macOS unit slice passes for the no-markdown workspace model state
   - `AppModel` now treats the first successful workspace load in a window as authoritative, so a new-window folder selection is no longer overwritten by the later bootstrap default load
   - `Fixtures/window-workspaces/window-alpha/alpha.md` and `Fixtures/window-workspaces/window-beta/beta.md` now provide deterministic folder-backed workspace fixtures for window-isolation coverage
+  - the macOS `qmv` installer now always targets `~/.local/bin/qmv` instead of asking for an arbitrary PATH folder, and the empty-state copy now says `Install \`qmv\` in ~/.local/bin to open folders from Terminal.`
+  - when the sandbox blocks a direct write, the app now explains the one-time approval requirement, asks the user to choose their home folder, stores a security-scoped bookmark for that grant, then reuses it for reinstall/remove flows
+  - the post-install sheet now copies a short `/bin/sh .../qmv-finish-terminal-setup.sh` command that points at a bundled app resource instead of rendering the entire PATH-fix shell script inline
+  - the macOS app now ships with an explicit `Info-macOS.plist` that registers `public.folder` support, which is required for `open -b ... <folder>` and therefore for `qmv .` to open the requested workspace instead of the empty app window
   - the focused macOS unit slice passes for repeated UI-test open-folder arguments, selection-vs-bootstrap race protection, independent window-owned models, and fixture snapshot loading
   - the macOS UI `testOpenFolderCommandUpdatesSidebarAndTitle` slice still passes after the workspace-loading change
   - `SelectableDocumentTextView` now renders a block-derived attributed document surface, so users keep full-document selection without replacing the viewer with raw markdown source
@@ -269,6 +275,7 @@
   - preserving the text-only selectable surface while switching only media documents to block rendering is enough to add inline media without undoing the earlier cross-block selection work
   - `tmp/rickrolled.png` is an actual APNG despite the generic `.png` extension; the file contains `acTL`, `fcTL`, and `fdAT` chunks
   - the local macOS UI-test environment is currently blocked by a runner bootstrap failure that surfaces as a "damaged" `Swift Markdown ViewerUITests-Runner.app` dialog and an xcresult error of `Early unexpected exit ... signal kill before establishing connection`
+  - a fixed `~/.local/bin` destination does not bypass the macOS sandbox; the app still needs explicit user-approved access to the home folder before it can create `~/.local/bin` and write `qmv`
   - the live shared model still lacks dedicated animated-image and video block kinds, so the new contract can only be enforced today as red tests
   - exposing raw markdown in one native text view fixes selection but regresses the core product expectation, so the selectable surface has to be derived from parsed blocks rather than `documentText`
   - default actor isolation on `MarkdownRenderer` was not just a warning source; once parser work moved off the main actor it could abort host-based renderer tests, so the renderer helper itself needs to opt out of `MainActor`

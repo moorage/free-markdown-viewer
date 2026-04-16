@@ -5,6 +5,7 @@
 //  Created by Matthew Moore on 3/19/26.
 //
 
+import AppKit
 import XCTest
 @testable import Quick_Markdown_Viewer
 
@@ -41,6 +42,8 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
             "--fixture-root", "/tmp/fixtures",
             "--open-file", "basic_typography.md",
             "--ui-test-open-folder", "/tmp/selected-folder",
+            "--ui-test-install-command-line-tool", "/tmp/qmv",
+            "--ui-test-reset-command-line-tool-install-state",
             "--platform-target", "ios",
             "--device-class", "ipad",
             "--dump-visible-state", stateURL.path,
@@ -51,6 +54,8 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
         XCTAssertEqual(options.fixtureRoot?.path, "/tmp/fixtures")
         XCTAssertEqual(options.openFile, "basic_typography.md")
         XCTAssertEqual(options.uiTestOpenFolderURL?.path, "/tmp/selected-folder")
+        XCTAssertEqual(options.uiTestInstallCommandLineToolURL?.path, "/tmp/qmv")
+        XCTAssertTrue(options.uiTestResetCommandLineToolInstallState)
         XCTAssertEqual(options.platformTarget, .ios)
         XCTAssertEqual(options.deviceClass, .ipad)
         XCTAssertEqual(options.dumpVisibleStateURL?.path, stateURL.path)
@@ -72,6 +77,196 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
         )
         XCTAssertEqual(options.uiTestOpenFolderURL?.path, "/tmp/first-folder")
     }
+
+    #if os(macOS)
+    func testCommandLineToolLauncherScriptUsesBundleIdentifierAndDefaultTarget() {
+        let script = MacCommandLineToolManager.launcherScript()
+
+        XCTAssertTrue(script.contains("target=\"${1:-.}\""))
+        XCTAssertTrue(script.contains("/usr/bin/open -b \"com.souschefstudio.Free-Markdown-Viewer\""))
+        XCTAssertTrue(script.contains("usage: qmv [directory-or-markdown-file]"))
+    }
+
+    func testCommandLineToolDefaultInstallURLUsesLocalBinInHomeDirectory() {
+        let homeDirectory = URL(fileURLWithPath: "/Users/tester", isDirectory: true)
+
+        let installURL = MacCommandLineToolManager.defaultInstallURL(homeDirectory: homeDirectory)
+
+        XCTAssertEqual(installURL.path, "/Users/tester/.local/bin/qmv")
+    }
+
+    func testCommandLineToolInstallStateDetectsMatchingExecutableScript() throws {
+        let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        let installURL = tempRoot.appendingPathComponent("qmv")
+
+        try MacCommandLineToolManager.writeCommandLineTool(to: installURL)
+
+        let installState = MacCommandLineToolManager.detectInstallState(storedURL: installURL)
+        guard case let .installed(resolvedURL) = installState else {
+            return XCTFail("Expected installed state, got \(installState)")
+        }
+        XCTAssertEqual(resolvedURL, installURL)
+    }
+
+    func testCommandLineToolInstallStateDetectsStaleScript() throws {
+        let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        let installURL = tempRoot.appendingPathComponent("qmv")
+
+        try "echo stale\n".write(to: installURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: installURL.path)
+
+        let installState = MacCommandLineToolManager.detectInstallState(storedURL: installURL)
+        guard case let .stale(resolvedURL) = installState else {
+            return XCTFail("Expected stale state, got \(installState)")
+        }
+        XCTAssertEqual(resolvedURL, installURL)
+    }
+
+    func testCommandLineToolInstallStateFallsBackToNotInstalledWhenLauncherMissing() {
+        let missingURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("qmv")
+
+        let installState = MacCommandLineToolManager.detectInstallState(storedURL: missingURL)
+        guard case let .notInstalled(lastKnownURL) = installState else {
+            return XCTFail("Expected not-installed state, got \(installState)")
+        }
+        XCTAssertEqual(lastKnownURL, missingURL)
+    }
+
+    func testCommandLineToolInstallStateUsesInstallMenuTitleWhenMissing() {
+        let installState = MacCommandLineToolInstallState.notInstalled(lastKnownURL: nil)
+
+        XCTAssertEqual(installState.menuTitle, "Install Command Line Tool…")
+    }
+
+    func testCommandLineToolInstallExplanationMentionsLocalBin() {
+        XCTAssertEqual(
+            MacCommandLineToolManager.installExplanation,
+            "Install `qmv` in ~/.local/bin to open folders from Terminal."
+        )
+    }
+
+    func testCommandLineToolInstallStateUsesRemoveMenuTitleWhenInstalled() throws {
+        let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        let installURL = tempRoot.appendingPathComponent("qmv")
+        try MacCommandLineToolManager.writeCommandLineTool(to: installURL)
+
+        let installState = MacCommandLineToolInstallState.installed(installURL)
+
+        XCTAssertEqual(installState.menuTitle, "Remove Command Line Tool…")
+    }
+
+    func testCommandLineToolRemoveDeletesLauncherAndDetectsNotInstalledState() throws {
+        let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        let installURL = tempRoot.appendingPathComponent("qmv")
+        try MacCommandLineToolManager.writeCommandLineTool(to: installURL)
+        try MacCommandLineToolManager.removeCommandLineTool(at: installURL)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: installURL.path))
+
+        let installState = MacCommandLineToolManager.detectInstallState(storedURL: installURL)
+        guard case let .notInstalled(lastKnownURL) = installState else {
+            return XCTFail("Expected not-installed state after removal, got \(installState)")
+        }
+        XCTAssertEqual(lastKnownURL, installURL)
+    }
+
+    func testPostInstallShellCommandUsesBundledScriptPath() {
+        let scriptURL = URL(fileURLWithPath: "/Applications/Quick Markdown Viewer.app/Contents/Resources/qmv-finish-terminal-setup.sh")
+
+        let command = MacCommandLineToolManager.postInstallShellCommand(scriptURL: scriptURL)
+
+        XCTAssertEqual(
+            command,
+            "/bin/sh '/Applications/Quick Markdown Viewer.app/Contents/Resources/qmv-finish-terminal-setup.sh'"
+        )
+    }
+
+    func testPostInstallShellCommandEscapesSingleQuotesInScriptPath() {
+        let scriptURL = URL(fileURLWithPath: "/Applications/Matthew's Apps/Quick Markdown Viewer.app/Contents/Resources/qmv-finish-terminal-setup.sh")
+
+        let command = MacCommandLineToolManager.postInstallShellCommand(scriptURL: scriptURL)
+
+        XCTAssertEqual(
+            command,
+            "/bin/sh '/Applications/Matthew'\\''s Apps/Quick Markdown Viewer.app/Contents/Resources/qmv-finish-terminal-setup.sh'"
+        )
+    }
+
+    func testPostInstallShellCommandFindsBundledScriptInAppBundle() {
+        let command = MacCommandLineToolManager.postInstallShellCommand()
+
+        XCTAssertNotNil(command)
+        XCTAssertTrue(command?.contains("qmv-finish-terminal-setup.sh") == true)
+    }
+
+    func testBundledPostInstallScriptExplainsMissingLauncherClearly() throws {
+        let scriptURL = repoRootURL
+            .appendingPathComponent("Quick Markdown Viewer/Quick Markdown Viewer/Resources/qmv-finish-terminal-setup.sh")
+        let script = try String(contentsOf: scriptURL, encoding: .utf8)
+
+        XCTAssertTrue(script.contains("install_tool=\"$install_dir/qmv\""))
+        XCTAssertTrue(script.contains("qmv is not installed at $install_tool"))
+        XCTAssertTrue(script.contains("run Install Command Line Tool"))
+    }
+
+    func testExternalWorkspaceOpenCoordinatorNormalizesMarkdownFileToContainingFolder() throws {
+        let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        let markdownURL = tempRoot.appendingPathComponent("notes.md")
+        try "# Notes".write(to: markdownURL, atomically: true, encoding: .utf8)
+
+        XCTAssertEqual(
+            ExternalWorkspaceOpenCoordinator.normalizedWorkspaceURL(for: markdownURL)?.path,
+            tempRoot.path
+        )
+    }
+
+    func testExternalWorkspaceOpenCoordinatorRejectsUnsupportedFiles() throws {
+        let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        let textURL = tempRoot.appendingPathComponent("notes.txt")
+        try "not markdown".write(to: textURL, atomically: true, encoding: .utf8)
+
+        XCTAssertNil(ExternalWorkspaceOpenCoordinator.normalizedWorkspaceURL(for: textURL))
+    }
+
+    @MainActor
+    func testAppDelegateOpenFilesEnqueuesMarkdownWorkspace() throws {
+        let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        let markdownURL = tempRoot.appendingPathComponent("notes.md")
+        try "# Notes".write(to: markdownURL, atomically: true, encoding: .utf8)
+
+        let coordinator = ExternalWorkspaceOpenCoordinator.shared
+        let appDelegate = QuickMarkdownViewerAppDelegate()
+        appDelegate.application(NSApplication.shared, openFiles: [markdownURL.path])
+
+        guard let requestID = coordinator.latestRequestID else {
+            return XCTFail("Expected external workspace request")
+        }
+        XCTAssertEqual(coordinator.claimRequest(id: requestID)?.path, tempRoot.path)
+    }
+
+    @MainActor
+    func testAppDelegateOpenURLsEnqueuesDirectoryWorkspace() throws {
+        let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+
+        let coordinator = ExternalWorkspaceOpenCoordinator.shared
+        let appDelegate = QuickMarkdownViewerAppDelegate()
+        appDelegate.application(NSApplication.shared, open: [tempRoot])
+
+        guard let requestID = coordinator.latestRequestID else {
+            return XCTFail("Expected external workspace request")
+        }
+        XCTAssertEqual(coordinator.claimRequest(id: requestID)?.path, tempRoot.path)
+    }
+    #endif
 
     func testWorkspaceProviderFallsBackToEmbeddedDocs() throws {
         let provider = LocalWorkspaceProvider(rootURL: nil, embeddedDocs: EmbeddedFixtures.docs)

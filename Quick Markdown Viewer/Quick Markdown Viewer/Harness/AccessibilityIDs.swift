@@ -16,6 +16,13 @@ enum AccessibilityIDs {
     static let placeholderBlock = "block.placeholder.0"
     static let emptyStateMessage = "empty-state.message"
     static let emptyStateOpenFolderButton = "empty-state.open-folder"
+    static let emptyStateCommandLineToolMessage = "empty-state.commandLineTool.message"
+    static let emptyStateCommandLineToolButton = "empty-state.commandLineTool.button"
+    static let commandLineToolPostInstallTitle = "command-line-tool.post-install.title"
+    static let commandLineToolPostInstallMessage = "command-line-tool.post-install.message"
+    static let commandLineToolPostInstallCommand = "command-line-tool.post-install.command"
+    static let commandLineToolPostInstallCopyButton = "command-line-tool.post-install.copy"
+    static let commandLineToolPostInstallDoneButton = "command-line-tool.post-install.done"
 
     static func sidebarNode(_ path: String) -> String {
         "sidebar.node.\(path.replacingOccurrences(of: "/", with: "."))"

@@ -19,6 +19,8 @@ struct HarnessLaunchOptions {
     let fixtureRoot: URL?
     let openFile: String?
     let uiTestOpenFolderURLs: [URL]
+    let uiTestInstallCommandLineToolURL: URL?
+    let uiTestResetCommandLineToolInstallState: Bool
     let theme: String?
     let windowSize: CGSize?
     let disableFileWatch: Bool
@@ -53,6 +55,8 @@ struct HarnessLaunchOptions {
             fixtureRoot: fixtureRoot,
             openFile: openFile,
             uiTestOpenFolderURLs: uiTestOpenFolderURL.map { [$0] } ?? [],
+            uiTestInstallCommandLineToolURL: nil,
+            uiTestResetCommandLineToolInstallState: false,
             theme: theme,
             windowSize: windowSize,
             disableFileWatch: disableFileWatch,
@@ -70,6 +74,8 @@ struct HarnessLaunchOptions {
         fixtureRoot: URL?,
         openFile: String?,
         uiTestOpenFolderURLs: [URL],
+        uiTestInstallCommandLineToolURL: URL?,
+        uiTestResetCommandLineToolInstallState: Bool,
         theme: String?,
         windowSize: CGSize?,
         disableFileWatch: Bool,
@@ -84,6 +90,8 @@ struct HarnessLaunchOptions {
         self.fixtureRoot = fixtureRoot
         self.openFile = openFile
         self.uiTestOpenFolderURLs = uiTestOpenFolderURLs
+        self.uiTestInstallCommandLineToolURL = uiTestInstallCommandLineToolURL
+        self.uiTestResetCommandLineToolInstallState = uiTestResetCommandLineToolInstallState
         self.theme = theme
         self.windowSize = windowSize
         self.disableFileWatch = disableFileWatch
@@ -136,6 +144,8 @@ struct HarnessLaunchOptions {
             fixtureRoot: resolveURL(after: "--fixture-root"),
             openFile: value(after: "--open-file"),
             uiTestOpenFolderURLs: values(after: "--ui-test-open-folder").map(resolvedURL(from:)),
+            uiTestInstallCommandLineToolURL: resolveURL(after: "--ui-test-install-command-line-tool"),
+            uiTestResetCommandLineToolInstallState: arguments.contains("--ui-test-reset-command-line-tool-install-state"),
             theme: value(after: "--theme"),
             windowSize: windowSize,
             disableFileWatch: arguments.contains("--disable-file-watch"),
