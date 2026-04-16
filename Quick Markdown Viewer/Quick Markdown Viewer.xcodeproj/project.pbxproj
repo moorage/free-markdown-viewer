@@ -6,6 +6,26 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		A40000000000000000000001 /* SwiftTreeSitter in Frameworks */ = {isa = PBXBuildFile; productRef = A30000000000000000000001 /* SwiftTreeSitter */; };
+		A40000000000000000000002 /* TreeSitterBash in Frameworks */ = {isa = PBXBuildFile; productRef = A30000000000000000000002 /* TreeSitterBash */; };
+		A40000000000000000000003 /* TreeSitterJSON in Frameworks */ = {isa = PBXBuildFile; productRef = A30000000000000000000003 /* TreeSitterJSON */; };
+		A40000000000000000000004 /* TreeSitterPython in Frameworks */ = {isa = PBXBuildFile; productRef = A30000000000000000000004 /* TreeSitterPython */; };
+		A40000000000000000000005 /* TreeSitterJavaScript in Frameworks */ = {isa = PBXBuildFile; productRef = A30000000000000000000005 /* TreeSitterJavaScript */; };
+		A40000000000000000000006 /* TreeSitterTypeScript in Frameworks */ = {isa = PBXBuildFile; productRef = A30000000000000000000006 /* TreeSitterTypeScript */; };
+		A40000000000000000000007 /* TreeSitterC in Frameworks */ = {isa = PBXBuildFile; productRef = A30000000000000000000007 /* TreeSitterC */; };
+		A40000000000000000000008 /* TreeSitterCPP in Frameworks */ = {isa = PBXBuildFile; productRef = A30000000000000000000008 /* TreeSitterCPP */; };
+		A40000000000000000000009 /* TreeSitterCSharp in Frameworks */ = {isa = PBXBuildFile; productRef = A30000000000000000000009 /* TreeSitterCSharp */; };
+		A4000000000000000000000A /* TreeSitterCSS in Frameworks */ = {isa = PBXBuildFile; productRef = A3000000000000000000000A /* TreeSitterCSS */; };
+		A4000000000000000000000B /* TreeSitterHTML in Frameworks */ = {isa = PBXBuildFile; productRef = A3000000000000000000000B /* TreeSitterHTML */; };
+		A4000000000000000000000C /* TreeSitterXML in Frameworks */ = {isa = PBXBuildFile; productRef = A3000000000000000000000C /* TreeSitterXML */; };
+		A4000000000000000000000D /* TreeSitterGo in Frameworks */ = {isa = PBXBuildFile; productRef = A3000000000000000000000D /* TreeSitterGo */; };
+		A4000000000000000000000E /* TreeSitterRegex in Frameworks */ = {isa = PBXBuildFile; productRef = A3000000000000000000000E /* TreeSitterRegex */; };
+		A4000000000000000000000F /* TreeSitterRuby in Frameworks */ = {isa = PBXBuildFile; productRef = A3000000000000000000000F /* TreeSitterRuby */; };
+		A40000000000000000000010 /* TreeSitterRust in Frameworks */ = {isa = PBXBuildFile; productRef = A30000000000000000000010 /* TreeSitterRust */; };
+		A40000000000000000000011 /* TreeSitterSwift in Frameworks */ = {isa = PBXBuildFile; productRef = A30000000000000000000011 /* TreeSitterSwift */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		DDF3C5F22F6D23CF0040640B /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -52,6 +72,23 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A40000000000000000000001 /* SwiftTreeSitter in Frameworks */,
+				A40000000000000000000002 /* TreeSitterBash in Frameworks */,
+				A40000000000000000000003 /* TreeSitterJSON in Frameworks */,
+				A40000000000000000000004 /* TreeSitterPython in Frameworks */,
+				A40000000000000000000005 /* TreeSitterJavaScript in Frameworks */,
+				A40000000000000000000006 /* TreeSitterTypeScript in Frameworks */,
+				A40000000000000000000007 /* TreeSitterC in Frameworks */,
+				A40000000000000000000008 /* TreeSitterCPP in Frameworks */,
+				A40000000000000000000009 /* TreeSitterCSharp in Frameworks */,
+				A4000000000000000000000A /* TreeSitterCSS in Frameworks */,
+				A4000000000000000000000B /* TreeSitterHTML in Frameworks */,
+				A4000000000000000000000C /* TreeSitterXML in Frameworks */,
+				A4000000000000000000000D /* TreeSitterGo in Frameworks */,
+				A4000000000000000000000E /* TreeSitterRegex in Frameworks */,
+				A4000000000000000000000F /* TreeSitterRuby in Frameworks */,
+				A40000000000000000000010 /* TreeSitterRust in Frameworks */,
+				A40000000000000000000011 /* TreeSitterSwift in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -112,6 +149,23 @@
 			);
 			name = "Quick Markdown Viewer";
 			packageProductDependencies = (
+				A30000000000000000000001 /* SwiftTreeSitter */,
+				A30000000000000000000002 /* TreeSitterBash */,
+				A30000000000000000000003 /* TreeSitterJSON */,
+				A30000000000000000000004 /* TreeSitterPython */,
+				A30000000000000000000005 /* TreeSitterJavaScript */,
+				A30000000000000000000006 /* TreeSitterTypeScript */,
+				A30000000000000000000007 /* TreeSitterC */,
+				A30000000000000000000008 /* TreeSitterCPP */,
+				A30000000000000000000009 /* TreeSitterCSharp */,
+				A3000000000000000000000A /* TreeSitterCSS */,
+				A3000000000000000000000B /* TreeSitterHTML */,
+				A3000000000000000000000C /* TreeSitterXML */,
+				A3000000000000000000000D /* TreeSitterGo */,
+				A3000000000000000000000E /* TreeSitterRegex */,
+				A3000000000000000000000F /* TreeSitterRuby */,
+				A30000000000000000000010 /* TreeSitterRust */,
+				A30000000000000000000011 /* TreeSitterSwift */,
 			);
 			productName = "Quick Markdown Viewer";
 			productReference = DDF3C5E42F6D23CD0040640B /* Quick Markdown Viewer.app */;
@@ -195,6 +249,10 @@
 			);
 			mainGroup = DDF3C5DB2F6D23CD0040640B;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				A20000000000000000000001 /* XCRemoteSwiftPackageReference "swift-tree-sitter" */,
+				A20000000000000000000002 /* XCLocalSwiftPackageReference "../Packages/TreeSitterGrammars" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = DDF3C5E52F6D23CD0040640B /* Products */;
 			projectDirPath = "";
@@ -267,6 +325,112 @@
 			targetProxy = DDF3C5FC2F6D23CF0040640B /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		A20000000000000000000001 /* XCRemoteSwiftPackageReference "swift-tree-sitter" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/tree-sitter/swift-tree-sitter";
+			requirement = {
+				branch = main;
+				kind = branch;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		A20000000000000000000002 /* XCLocalSwiftPackageReference "../Packages/TreeSitterGrammars" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Packages/TreeSitterGrammars;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A30000000000000000000001 /* SwiftTreeSitter */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A20000000000000000000001 /* XCRemoteSwiftPackageReference "swift-tree-sitter" */;
+			productName = SwiftTreeSitter;
+		};
+		A30000000000000000000002 /* TreeSitterBash */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A20000000000000000000002 /* XCLocalSwiftPackageReference "../Packages/TreeSitterGrammars" */;
+			productName = TreeSitterBash;
+		};
+		A30000000000000000000003 /* TreeSitterJSON */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A20000000000000000000002 /* XCLocalSwiftPackageReference "../Packages/TreeSitterGrammars" */;
+			productName = TreeSitterJSON;
+		};
+		A30000000000000000000004 /* TreeSitterPython */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A20000000000000000000002 /* XCLocalSwiftPackageReference "../Packages/TreeSitterGrammars" */;
+			productName = TreeSitterPython;
+		};
+		A30000000000000000000005 /* TreeSitterJavaScript */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A20000000000000000000002 /* XCLocalSwiftPackageReference "../Packages/TreeSitterGrammars" */;
+			productName = TreeSitterJavaScript;
+		};
+		A30000000000000000000006 /* TreeSitterTypeScript */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A20000000000000000000002 /* XCLocalSwiftPackageReference "../Packages/TreeSitterGrammars" */;
+			productName = TreeSitterTypeScript;
+		};
+		A30000000000000000000007 /* TreeSitterC */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A20000000000000000000002 /* XCLocalSwiftPackageReference "../Packages/TreeSitterGrammars" */;
+			productName = TreeSitterC;
+		};
+		A30000000000000000000008 /* TreeSitterCPP */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A20000000000000000000002 /* XCLocalSwiftPackageReference "../Packages/TreeSitterGrammars" */;
+			productName = TreeSitterCPP;
+		};
+		A30000000000000000000009 /* TreeSitterCSharp */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A20000000000000000000002 /* XCLocalSwiftPackageReference "../Packages/TreeSitterGrammars" */;
+			productName = TreeSitterCSharp;
+		};
+		A3000000000000000000000A /* TreeSitterCSS */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A20000000000000000000002 /* XCLocalSwiftPackageReference "../Packages/TreeSitterGrammars" */;
+			productName = TreeSitterCSS;
+		};
+		A3000000000000000000000B /* TreeSitterHTML */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A20000000000000000000002 /* XCLocalSwiftPackageReference "../Packages/TreeSitterGrammars" */;
+			productName = TreeSitterHTML;
+		};
+		A3000000000000000000000C /* TreeSitterXML */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A20000000000000000000002 /* XCLocalSwiftPackageReference "../Packages/TreeSitterGrammars" */;
+			productName = TreeSitterXML;
+		};
+		A3000000000000000000000D /* TreeSitterGo */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A20000000000000000000002 /* XCLocalSwiftPackageReference "../Packages/TreeSitterGrammars" */;
+			productName = TreeSitterGo;
+		};
+		A3000000000000000000000E /* TreeSitterRegex */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A20000000000000000000002 /* XCLocalSwiftPackageReference "../Packages/TreeSitterGrammars" */;
+			productName = TreeSitterRegex;
+		};
+		A3000000000000000000000F /* TreeSitterRuby */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A20000000000000000000002 /* XCLocalSwiftPackageReference "../Packages/TreeSitterGrammars" */;
+			productName = TreeSitterRuby;
+		};
+		A30000000000000000000010 /* TreeSitterRust */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A20000000000000000000002 /* XCLocalSwiftPackageReference "../Packages/TreeSitterGrammars" */;
+			productName = TreeSitterRust;
+		};
+		A30000000000000000000011 /* TreeSitterSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A20000000000000000000002 /* XCLocalSwiftPackageReference "../Packages/TreeSitterGrammars" */;
+			productName = TreeSitterSwift;
+		};
+/* End XCSwiftPackageProductDependency section */
 
 /* Begin XCBuildConfiguration section */
 		DDF3C6032F6D23CF0040640B /* Debug */ = {

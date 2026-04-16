@@ -743,6 +743,108 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
         XCTAssertEqual(blocks[0].plainText, "a simple\n  indented code block")
     }
 
+    func testMarkdownRendererMarksIndentedCodeBlocksAsPlainFallback() throws {
+        let markdown = """
+            a simple
+              indented code block
+        """
+
+        let blocks = MarkdownRenderer.blocks(from: markdown)
+        let codeBlock = try XCTUnwrap(blocks.first?.codeBlock)
+
+        XCTAssertFalse(codeBlock.isFenced)
+        XCTAssertNil(codeBlock.language)
+        XCTAssertNil(CodeBlockSyntaxHighlighter.highlightedAttributedText(
+            for: codeBlock,
+            theme: SyntaxHighlightTheme(identifier: "system-light", style: .light),
+            fontScale: 1
+        ))
+    }
+
+    func testMarkdownRendererAnnotatesFencedCodeBlocksWithNormalizedLanguage() throws {
+        let markdown = """
+        ```sh
+        echo hello
+        ```
+        """
+
+        let blocks = MarkdownRenderer.blocks(from: markdown)
+        let codeBlock = try XCTUnwrap(blocks.first?.codeBlock)
+
+        XCTAssertTrue(codeBlock.isFenced)
+        XCTAssertEqual(codeBlock.infoString, "sh")
+        XCTAssertEqual(codeBlock.rawLanguage, "sh")
+        XCTAssertEqual(codeBlock.language, .bash)
+        XCTAssertNotNil(CodeBlockSyntaxHighlighter.highlightedAttributedText(
+            for: codeBlock,
+            theme: SyntaxHighlightTheme(identifier: "system-light", style: .light),
+            fontScale: 1
+        ))
+    }
+
+    func testMarkdownRendererFallsBackForUnknownFenceLanguage() throws {
+        let markdown = """
+        ```brainheck
+        ++--
+        ```
+        """
+
+        let blocks = MarkdownRenderer.blocks(from: markdown)
+        let codeBlock = try XCTUnwrap(blocks.first?.codeBlock)
+
+        XCTAssertTrue(codeBlock.isFenced)
+        XCTAssertEqual(codeBlock.infoString, "brainheck")
+        XCTAssertNil(codeBlock.language)
+        XCTAssertNil(CodeBlockSyntaxHighlighter.highlightedAttributedText(
+            for: codeBlock,
+            theme: SyntaxHighlightTheme(identifier: "system-light", style: .light),
+            fontScale: 1
+        ))
+    }
+
+    func testCodeBlockSyntaxHighlighterCachesByLanguageContentHashAndTheme() {
+        CodeBlockSyntaxHighlighter.resetCacheForTests()
+
+        let lightTheme = SyntaxHighlightTheme(identifier: "system-light", style: .light)
+        let darkTheme = SyntaxHighlightTheme(identifier: "system-dark", style: .dark)
+        let bashBlock = MarkdownCodeBlock(
+            code: "echo hello",
+            infoString: "bash",
+            rawLanguage: "bash",
+            language: .bash,
+            isFenced: true
+        )
+        let bashVariant = MarkdownCodeBlock(
+            code: "echo goodbye",
+            infoString: "bash",
+            rawLanguage: "bash",
+            language: .bash,
+            isFenced: true
+        )
+        let jsonBlock = MarkdownCodeBlock(
+            code: "{\"message\": \"hello\"}",
+            infoString: "json",
+            rawLanguage: "json",
+            language: .json,
+            isFenced: true
+        )
+
+        _ = CodeBlockSyntaxHighlighter.highlightedAttributedText(for: bashBlock, theme: lightTheme, fontScale: 1)
+        XCTAssertEqual(CodeBlockSyntaxHighlighter.cachedEntryCountForTests(), 1)
+
+        _ = CodeBlockSyntaxHighlighter.highlightedAttributedText(for: bashBlock, theme: lightTheme, fontScale: 1)
+        XCTAssertEqual(CodeBlockSyntaxHighlighter.cachedEntryCountForTests(), 1)
+
+        _ = CodeBlockSyntaxHighlighter.highlightedAttributedText(for: bashBlock, theme: darkTheme, fontScale: 1)
+        XCTAssertEqual(CodeBlockSyntaxHighlighter.cachedEntryCountForTests(), 2)
+
+        _ = CodeBlockSyntaxHighlighter.highlightedAttributedText(for: bashVariant, theme: lightTheme, fontScale: 1)
+        XCTAssertEqual(CodeBlockSyntaxHighlighter.cachedEntryCountForTests(), 3)
+
+        _ = CodeBlockSyntaxHighlighter.highlightedAttributedText(for: jsonBlock, theme: lightTheme, fontScale: 1)
+        XCTAssertEqual(CodeBlockSyntaxHighlighter.cachedEntryCountForTests(), 4)
+    }
+
     func testMarkdownRendererParsesTableFromSpecExample() {
         let markdown = """
         | abc | defghi |

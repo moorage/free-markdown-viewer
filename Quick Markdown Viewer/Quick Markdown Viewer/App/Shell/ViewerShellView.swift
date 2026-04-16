@@ -13,6 +13,7 @@ struct ViewerShellView: View {
     let onOpenFolder: (() -> Void)?
     @Environment(\.openURL) private var openURL
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.colorScheme) private var colorScheme
     @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
     @State private var compactShowsSidebar = true
     @State private var sidebarFilterText = ""
@@ -252,7 +253,11 @@ struct ViewerShellView: View {
                 DocumentBlockScrollView(
                     blocks: model.documentBlocks,
                     workspaceRootURL: model.currentWorkspaceRootURL,
-                    fontScale: model.fontScale
+                    fontScale: model.fontScale,
+                    syntaxTheme: SyntaxHighlightTheme.resolved(
+                        launchTheme: model.launchOptions.theme,
+                        colorScheme: colorScheme
+                    )
                 )
                     .padding(20)
             } else {
@@ -538,12 +543,18 @@ private struct DocumentBlockScrollView: View {
     let blocks: [MarkdownBlock]
     let workspaceRootURL: URL?
     let fontScale: CGFloat
+    let syntaxTheme: SyntaxHighlightTheme
 
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 16) {
                 ForEach(blocks) { block in
-                    MarkdownBlockView(block: block, workspaceRootURL: workspaceRootURL, fontScale: fontScale)
+                    MarkdownBlockView(
+                        block: block,
+                        workspaceRootURL: workspaceRootURL,
+                        fontScale: fontScale,
+                        syntaxTheme: syntaxTheme
+                    )
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -578,6 +589,7 @@ private struct MarkdownBlockView: View {
     let block: MarkdownBlock
     let workspaceRootURL: URL?
     let fontScale: CGFloat
+    let syntaxTheme: SyntaxHighlightTheme
 
     var body: some View {
         switch block.kind {
@@ -642,10 +654,21 @@ private struct MarkdownBlockView: View {
             }
         case .codeBlock:
             ScrollView(.horizontal, showsIndicators: false) {
-                Text(verbatim: block.sourceText)
-                    .font(ViewerFont.monospacedBody(scale: fontScale))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(14)
+                if let codeBlock = block.codeBlock,
+                   let highlighted = CodeBlockSyntaxHighlighter.highlightedAttributedText(
+                    for: codeBlock,
+                    theme: syntaxTheme,
+                    fontScale: fontScale
+                   ) {
+                    Text(highlighted)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(14)
+                } else {
+                    Text(verbatim: block.sourceText)
+                        .font(ViewerFont.monospacedBody(scale: fontScale))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(14)
+                }
             }
             .background(Color.secondary.opacity(0.08))
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -769,7 +792,12 @@ private struct MarkdownBlockView: View {
     private var childBlocks: some View {
         VStack(alignment: .leading, spacing: 12) {
             ForEach(block.children) { child in
-                MarkdownBlockView(block: child, workspaceRootURL: workspaceRootURL, fontScale: fontScale)
+                MarkdownBlockView(
+                    block: child,
+                    workspaceRootURL: workspaceRootURL,
+                    fontScale: fontScale,
+                    syntaxTheme: syntaxTheme
+                )
             }
         }
         .padding(.leading, 28)

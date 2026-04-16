@@ -70,6 +70,14 @@ struct MarkdownVideo: Hashable, Sendable {
     let resolvedURL: URL?
 }
 
+struct MarkdownCodeBlock: Hashable, Sendable {
+    let code: String
+    let infoString: String?
+    let rawLanguage: String?
+    let language: SyntaxHighlightLanguage?
+    let isFenced: Bool
+}
+
 struct MarkdownBlock: Identifiable, Hashable, Sendable {
     let id: String
     let kind: MarkdownBlockKind
@@ -85,6 +93,41 @@ struct MarkdownBlock: Identifiable, Hashable, Sendable {
     let video: MarkdownVideo?
     let attributedText: AttributedString?
     let children: [MarkdownBlock]
+    let codeBlock: MarkdownCodeBlock?
+
+    nonisolated init(
+        id: String,
+        kind: MarkdownBlockKind,
+        plainText: String,
+        sourceText: String,
+        level: Int?,
+        listItemIndex: Int?,
+        indentLevel: Int,
+        isTaskItem: Bool,
+        isTaskCompleted: Bool?,
+        table: MarkdownTable?,
+        image: MarkdownImage?,
+        video: MarkdownVideo?,
+        attributedText: AttributedString?,
+        children: [MarkdownBlock],
+        codeBlock: MarkdownCodeBlock? = nil
+    ) {
+        self.id = id
+        self.kind = kind
+        self.plainText = plainText
+        self.sourceText = sourceText
+        self.level = level
+        self.listItemIndex = listItemIndex
+        self.indentLevel = indentLevel
+        self.isTaskItem = isTaskItem
+        self.isTaskCompleted = isTaskCompleted
+        self.table = table
+        self.image = image
+        self.video = video
+        self.attributedText = attributedText
+        self.children = children
+        self.codeBlock = codeBlock
+    }
 }
 
 extension MarkdownBlock {
@@ -92,7 +135,8 @@ extension MarkdownBlock {
         kind: MarkdownBlockKind? = nil,
         image: MarkdownImage? = nil,
         video: MarkdownVideo? = nil,
-        children: [MarkdownBlock]? = nil
+        children: [MarkdownBlock]? = nil,
+        codeBlock: MarkdownCodeBlock? = nil
     ) -> MarkdownBlock {
         MarkdownBlock(
             id: id,
@@ -108,7 +152,8 @@ extension MarkdownBlock {
             image: image ?? self.image,
             video: video ?? self.video,
             attributedText: attributedText,
-            children: children ?? self.children
+            children: children ?? self.children,
+            codeBlock: codeBlock ?? self.codeBlock
         )
     }
 }

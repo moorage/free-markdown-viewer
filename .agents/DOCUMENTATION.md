@@ -1,6 +1,7 @@
 # Running implementation notes
 
 - active ExecPlans:
+  - `docs/exec-plans/active/2026-04-15-fenced-code-syntax-highlighting.md`
   - `docs/exec-plans/active/2026-04-10-macos-downloads-entitlement-removal.md`
   - `docs/exec-plans/active/2026-03-19-swift-codex-cli-harness.md`
   - `docs/exec-plans/active/2026-03-23-window-scoped-workspaces.md`
@@ -16,6 +17,7 @@
   - `docs/exec-plans/active/2026-04-03-quick-markdown-viewer-in-place-rename.md`
   - `docs/exec-plans/active/2026-03-28-launch-empty-viewer.md`
 - current milestone:
+  - fenced code syntax highlighting: fenced code blocks now highlight natively through `swift-tree-sitter`, a repo-owned `Packages/TreeSitterGrammars` package compiles only the requested grammar allowlist, highlighted output is cached by `(language, contentHash, theme)`, bundled `highlights.scm` assets drive token colors, indented or unknown-language blocks stay on the plain monospace fallback path, and the final hosted-unit-test teardown crash was fixed by making `MacWindowConfiguration` mutate `NSWindow` synchronously
   - macOS submission entitlement follow-up: the Xcode target no longer requests Downloads-folder read access, the rebuilt macOS archive now carries only `com.apple.security.app-sandbox` plus `com.apple.security.files.user-selected.read-only`, build `4` remains the attached rejected build for macOS version `1.0`, and the current recovery is to strengthen the App Review explanation around the first-launch `Open Folder` flow rather than change the binary again
   - app-store readiness: icons are generated, iPhone/iPad folder import is implemented, bookmark-backed workspace restoration is in place, release/privacy/docs scaffolding exists, repeatable screenshot capture is in repo, and iPhone/iPad candidate screenshots have been generated
   - live App Store Connect release setup: app `6761209087` now has repo-owned metadata, Europe excluded from availability, valid iOS and macOS builds uploaded and attached to the draft versions, and App Store screenshot assets uploaded for iPhone, iPad, and macOS
@@ -27,6 +29,10 @@
   - `xcodebuild -quiet -project "Free Markdown Viewer/Free Markdown Viewer.xcodeproj" -scheme "Free Markdown Viewer" -configuration Debug -derivedDataPath /tmp/free-markdown-viewer-empty-launch-ui -destination "platform=macOS,arch=arm64" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= "-only-testing:Free Markdown ViewerUITests/Free_Markdown_ViewerUITests/testColdLaunchWithoutWorkspaceShowsOpenFolderPrompt" "-only-testing:Free Markdown ViewerUITests/Free_Markdown_ViewerUITests/testEmptyWorkspaceShowsCenteredOpenFolderCallToAction" test`
   - `python3 scripts/check_execplan.py`
   - `python3 scripts/knowledge/check_docs.py`
+  - `xcodebuild -quiet -project "Quick Markdown Viewer/Quick Markdown Viewer.xcodeproj" -scheme "Quick Markdown Viewer" -configuration Debug -derivedDataPath /tmp/quick-markdown-viewer-syntax-highlighting-tests -destination "platform=macOS,arch=arm64" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= "-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testMarkdownRendererMarksIndentedCodeBlocksAsPlainFallback" "-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testMarkdownRendererAnnotatesFencedCodeBlocksWithNormalizedLanguage" "-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testMarkdownRendererFallsBackForUnknownFenceLanguage" "-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testCodeBlockSyntaxHighlighterCachesByLanguageContentHashAndTheme" test`
+  - `xcodebuild -quiet -project "Quick Markdown Viewer/Quick Markdown Viewer.xcodeproj" -scheme "Quick Markdown Viewer" -configuration Debug -derivedDataPath /tmp/quick-markdown-viewer-syntax-highlighting-regression-tests -destination "platform=macOS,arch=arm64" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= "-only-testing:Quick Markdown ViewerTests/testMarkdownRendererGroupsListChildrenFromCommonMarkFixture256" "-only-testing:Quick Markdown ViewerTests/testStateSnapshotFlattensNestedListChildren" "-only-testing:Quick Markdown ViewerTests/testMarkdownRendererParsesNestedAndTaskListItems" "-only-testing:Quick Markdown ViewerTests/testMarkdownRendererMatchesCommonMarkFixtureCorpusSemantics" "-only-testing:Quick Markdown ViewerTests/testMarkdownRendererMarksIndentedCodeBlocksAsPlainFallback" "-only-testing:Quick Markdown ViewerTests/testMarkdownRendererAnnotatesFencedCodeBlocksWithNormalizedLanguage" "-only-testing:Quick Markdown ViewerTests/testMarkdownRendererFallsBackForUnknownFenceLanguage" "-only-testing:Quick Markdown ViewerTests/testCodeBlockSyntaxHighlighterCachesByLanguageContentHashAndTheme" test`
+  - `./scripts/build --platform all`
+  - `./scripts/test-unit`
   - `rg -n --hidden --no-ignore -F '<old repo slug>' .`
   - `git remote -v`
   - `xcodebuild -quiet -project "Swift Markdown Viewer/Swift Markdown Viewer.xcodeproj" -scheme "Swift Markdown Viewer" -configuration Debug -derivedDataPath /tmp/swift-markdown-viewer-ios-filter -destination 'platform=iOS Simulator,id=32B9E37C-0C26-4514-9BBE-65718682A713' CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= "-only-testing:Swift Markdown ViewerUITests/Swift_Markdown_ViewerUITests/testiPhoneDrawerQuickFilterNarrowsSidebarFiles" test`

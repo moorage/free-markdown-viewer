@@ -61,10 +61,13 @@ nonisolated enum MarkdownRenderer {
 
     nonisolated static func blocks(from markdown: String) -> [MarkdownBlock] {
         let normalized = markdown.replacingOccurrences(of: "\r\n", with: "\n")
+        let parsedBlocks: [MarkdownBlock]
         if let segmentedBlocks = segmentedBlocks(from: normalized) {
-            return segmentedBlocks
+            parsedBlocks = segmentedBlocks
+        } else {
+            parsedBlocks = coreBlocks(from: normalized)
         }
-        return coreBlocks(from: normalized)
+        return MarkdownCodeBlockCatalog.annotate(blocks: parsedBlocks, source: normalized)
     }
 
     private nonisolated static func coreBlocks(from markdown: String) -> [MarkdownBlock] {
