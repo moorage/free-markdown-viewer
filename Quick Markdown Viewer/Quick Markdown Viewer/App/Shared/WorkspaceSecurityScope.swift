@@ -33,6 +33,14 @@ enum WorkspaceSecurityScope {
             )
         }
 
+        if case let .github(remoteSource) = session.source {
+            return WorkspaceAccessSelection(
+                rootURL: URL(fileURLWithPath: remoteSource.cachedRootPath, isDirectory: true),
+                bookmarkData: nil,
+                activeSecurityScopedURL: nil
+            )
+        }
+
         if let securityScopedBookmarkData = session.securityScopedBookmarkData,
            let resolvedSelection = resolvedSelection(from: securityScopedBookmarkData) {
             return resolvedSelection

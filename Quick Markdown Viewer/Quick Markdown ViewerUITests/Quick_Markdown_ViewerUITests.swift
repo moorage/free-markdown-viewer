@@ -52,6 +52,53 @@ final class Quick_Markdown_ViewerUITests: XCTestCase {
     }
 
     @MainActor
+    func testEmptyStateLoadsGitHubWorkspaceFromURL() throws {
+        let app = XCUIApplication()
+        let fixtureURL = try makeGitHubFixtureFile()
+        app.launchArguments = [
+            "--ui-test-mode", "1",
+            "--ui-test-github-fixture", fixtureURL.path,
+        ]
+        app.launch()
+        app.activate()
+
+        let field = app.textFields["empty-state.github-url.field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        field.typeText("https://github.com/moorage/free-markdown-viewer/tree/main/docs")
+
+        let loadButton = app.buttons["empty-state.github-url.load"]
+        XCTAssertTrue(loadButton.exists)
+        loadButton.tap()
+
+        XCTAssertTrue(app.buttons["sidebar.node.guide.md"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["moorage/free-markdown-viewer@main/docs > guide.md"].waitForExistence(timeout: 5))
+    }
+
+    #if os(iOS)
+    @MainActor
+    func testiPhoneEmptyStateLoadsGitHubWorkspaceFromURL() throws {
+        let app = XCUIApplication()
+        let fixtureURL = try makeGitHubFixtureFile()
+        app.launchArguments = [
+            "--platform-target", "ios",
+            "--device-class", "iphone",
+            "--ui-test-mode", "1",
+            "--ui-test-github-fixture", fixtureURL.path,
+        ]
+        app.launch()
+
+        let field = app.textFields["empty-state.github-url.field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        field.typeText("https://github.com/moorage/free-markdown-viewer")
+        app.buttons["empty-state.github-url.load"].tap()
+
+        XCTAssertTrue(app.staticTexts["moorage/free-markdown-viewer@main > README.md"].waitForExistence(timeout: 5))
+    }
+    #endif
+
+    @MainActor
     func testInstallCommandLineToolButtonWritesLauncherAndHidesPrompt() throws {
         let app = XCUIApplication()
         let installURL = URL(fileURLWithPath: "/tmp").appendingPathComponent(UUID().uuidString).appendingPathComponent("qmv")
@@ -244,6 +291,41 @@ final class Quick_Markdown_ViewerUITests: XCTestCase {
             try contents.write(to: fileURL, atomically: true, encoding: .utf8)
         }
         return folder
+    }
+
+    private func makeGitHubFixtureFile() throws -> URL {
+        let payload: [String: Any] = [
+            "repositories": [
+                "moorage/free-markdown-viewer": [
+                    "default_branch": "main"
+                ]
+            ],
+            "commits": [
+                "moorage/free-markdown-viewer": [
+                    "main": "sha-main"
+                ]
+            ],
+            "trees": [
+                "moorage/free-markdown-viewer": [
+                    "sha-main": [
+                        ["path": "README.md", "type": "blob"],
+                        ["path": "docs/guide.md", "type": "blob"]
+                    ]
+                ]
+            ],
+            "files": [
+                "moorage/free-markdown-viewer": [
+                    "sha-main": [
+                        "README.md": "# Repo Root\n\nWelcome.",
+                        "docs/guide.md": "# Guide\n\nLoaded from docs."
+                    ]
+                ]
+            ]
+        ]
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString)-github-ui-fixture.json")
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted])
+        try data.write(to: url, options: .atomic)
+        return url
     }
 
     private func waitForWindowCount(_ app: XCUIApplication, expected: Int, timeout: TimeInterval) -> Bool {

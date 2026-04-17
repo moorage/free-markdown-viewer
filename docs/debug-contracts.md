@@ -16,6 +16,8 @@ Supported debug launch arguments:
 - `--screenshot-path <path>`
 - `--harness-command-dir <path>`
 - `--ui-test-mode 1`
+- `--ui-test-github-fixture <path>`
+- `--ui-test-open-linked-media <url>`
 - `--platform-target macos|ios`
 - `--device-class mac|iphone|ipad`
 
@@ -30,12 +32,22 @@ Stable identifiers include:
 - `nav.forward`
 - `nav.title`
 - `toolbar.openFolder`
+- `toolbar.openGitHubURL`
+- `empty-state.github-url.field`
+- `empty-state.github-url.load`
+- `empty-state.github-url.error`
+- `github-url.sheet.field`
+- `github-url.sheet.load`
+- `github-url.sheet.error`
 - `document.scrollView`
 - `document.text`
 - `block.placeholder.0`
 - `block.image.<id>`
 - `block.video.<id>`
 - `video.playButton.<id>`
+- `media-preview.container`
+- `media-preview.close`
+- `media-preview.open-in-browser`
 
 ## State snapshot
 

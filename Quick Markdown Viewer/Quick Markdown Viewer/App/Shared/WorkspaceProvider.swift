@@ -1,10 +1,11 @@
 import Foundation
 
-protocol WorkspaceProvider {
+protocol WorkspaceProvider: Sendable {
     var displayRoot: String { get }
     nonisolated func loadRoot() throws -> Workspace
     nonisolated func readFile(at path: WorkspacePath) throws -> String
     nonisolated func resolveMediaURL(for path: WorkspacePath) throws -> URL
+    nonisolated func resolveMediaURL(for sourceURL: String, relativeTo documentPath: WorkspacePath?) throws -> URL
 }
 
 enum WorkspaceProviderError: Error {
@@ -103,6 +104,23 @@ struct LocalWorkspaceProvider: WorkspaceProvider, Sendable {
         throw WorkspaceProviderError.rootMissing(path.rawValue)
     }
 
+    nonisolated func resolveMediaURL(for sourceURL: String, relativeTo documentPath: WorkspacePath?) throws -> URL {
+        if let absoluteURL = Self.absoluteMediaURL(from: sourceURL) {
+            return absoluteURL
+        }
+
+        guard let rootURL else {
+            throw WorkspaceProviderError.rootMissing(sourceURL)
+        }
+
+        let documentDirectoryPath = documentPath.map { ($0.rawValue as NSString).deletingLastPathComponent } ?? ""
+        let workspaceRelativePath = documentDirectoryPath.isEmpty
+            ? (sourceURL as NSString)
+            : (documentDirectoryPath as NSString).appendingPathComponent(sourceURL) as NSString
+        let normalizedRelativePath = workspaceRelativePath.standardizingPath
+        return rootURL.appendingPathComponent(normalizedRelativePath).standardizedFileURL
+    }
+
     private nonisolated func markdownFiles(in rootURL: URL) throws -> [MarkdownFileNode] {
         guard FileManager.default.fileExists(atPath: rootURL.path) else {
             throw WorkspaceProviderError.rootMissing(rootURL.path)
@@ -136,5 +154,15 @@ struct LocalWorkspaceProvider: WorkspaceProvider, Sendable {
             return "Fixtures/docs"
         }
         return rootURL.lastPathComponent
+    }
+
+    nonisolated static func absoluteMediaURL(from sourceURL: String) -> URL? {
+        guard let url = URL(string: sourceURL), let scheme = url.scheme, !scheme.isEmpty else {
+            return nil
+        }
+        guard url.isFileURL || url.host != nil else {
+            return nil
+        }
+        return url
     }
 }

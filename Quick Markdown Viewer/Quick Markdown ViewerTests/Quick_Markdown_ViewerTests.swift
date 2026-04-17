@@ -18,6 +18,26 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
         }
     }
 
+    private struct FailingGitHubRemoteClient: GitHubRemoteClientProtocol {
+        let error: Error
+
+        func repositoryMetadata(owner: String, repository: String) async throws -> GitHubRepositoryMetadata {
+            throw error
+        }
+
+        func commitSHA(owner: String, repository: String, ref: String) async throws -> String {
+            throw error
+        }
+
+        func treeEntries(owner: String, repository: String, commitSHA: String) async throws -> [GitHubTreeEntry] {
+            throw error
+        }
+
+        func fileData(owner: String, repository: String, commitSHA: String, path: String) async throws -> Data {
+            throw error
+        }
+    }
+
     private static var retainedModels: [AppModel] = []
 
     private var repoRootURL: URL {
@@ -43,6 +63,8 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
             "--open-file", "basic_typography.md",
             "--ui-test-open-folder", "/tmp/selected-folder",
             "--ui-test-install-command-line-tool", "/tmp/qmv",
+            "--ui-test-github-fixture", "/tmp/github-fixture.json",
+            "--ui-test-open-linked-media", "https://example.com/rickrolled.gif",
             "--ui-test-reset-command-line-tool-install-state",
             "--platform-target", "ios",
             "--device-class", "ipad",
@@ -55,6 +77,8 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
         XCTAssertEqual(options.openFile, "basic_typography.md")
         XCTAssertEqual(options.uiTestOpenFolderURL?.path, "/tmp/selected-folder")
         XCTAssertEqual(options.uiTestInstallCommandLineToolURL?.path, "/tmp/qmv")
+        XCTAssertEqual(options.uiTestGitHubFixtureURL?.path, "/tmp/github-fixture.json")
+        XCTAssertEqual(options.uiTestOpenLinkedMediaURL?.absoluteString, "https://example.com/rickrolled.gif")
         XCTAssertTrue(options.uiTestResetCommandLineToolInstallState)
         XCTAssertEqual(options.platformTarget, .ios)
         XCTAssertEqual(options.deviceClass, .ipad)
@@ -76,6 +100,88 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
             ["/tmp/first-folder", "/tmp/second-folder"]
         )
         XCTAssertEqual(options.uiTestOpenFolderURL?.path, "/tmp/first-folder")
+    }
+
+    @MainActor
+    func testResolvedDocumentLinkActionRecognizesRelativeMediaLinks() async throws {
+        let workspace = try makeTemporaryWorkspace(named: "Link Workspace", files: [
+            "docs/index.md": "# Links\n\n[Open image](../media/rickrolled.gif)\n\n[Open video](../media/rickrolled.mp4)",
+            "media/rickrolled.gif": "not used",
+            "media/rickrolled.mp4": "not used"
+        ])
+
+        let model = AppModel(
+            launchOptions: HarnessLaunchOptions(
+                fixtureRoot: workspace,
+                openFile: "docs/index.md",
+                uiTestOpenFolderURL: nil,
+                theme: nil,
+                windowSize: nil,
+                disableFileWatch: true,
+                dumpVisibleStateURL: nil,
+                dumpPerfStateURL: nil,
+                screenshotPathURL: nil,
+                commandDirectoryURL: nil,
+                uiTestMode: true,
+                platformTarget: .macos,
+                deviceClass: .mac
+            )
+        )
+
+        retainForTestLifetime(model)
+        model.bootstrap()
+        try await Task.sleep(nanoseconds: 500_000_000)
+
+        guard case let .media(imageTarget) = model.resolvedDocumentLinkAction(for: URL(string: "../media/rickrolled.gif")!) else {
+            return XCTFail("Expected image media target")
+        }
+        XCTAssertEqual(imageTarget.kind, .image)
+        XCTAssertTrue(imageTarget.resolvedURL.isFileURL)
+        XCTAssertTrue(imageTarget.resolvedURL.path.hasSuffix("/media/rickrolled.gif"))
+
+        guard case let .media(videoTarget) = model.resolvedDocumentLinkAction(for: URL(string: "../media/rickrolled.mp4")!) else {
+            return XCTFail("Expected video media target")
+        }
+        XCTAssertEqual(videoTarget.kind, .video)
+        XCTAssertTrue(videoTarget.resolvedURL.path.hasSuffix("/media/rickrolled.mp4"))
+    }
+
+    @MainActor
+    func testNestedFixtureDocumentResolvesInlineImageRelativeToDocumentDirectory() async throws {
+        let model = AppModel(
+            launchOptions: HarnessLaunchOptions(
+                fixtureRoot: repoRootURL,
+                openFile: "Fixtures/docs/animated_gif.md",
+                uiTestOpenFolderURL: nil,
+                theme: nil,
+                windowSize: nil,
+                disableFileWatch: true,
+                dumpVisibleStateURL: nil,
+                dumpPerfStateURL: nil,
+                screenshotPathURL: nil,
+                commandDirectoryURL: nil,
+                uiTestMode: true,
+                platformTarget: .macos,
+                deviceClass: .mac
+            )
+        )
+
+        retainForTestLifetime(model)
+        model.bootstrap()
+        try await Task.sleep(nanoseconds: 800_000_000)
+
+        guard let imageBlock = model.documentBlocks.first(where: { $0.image != nil }),
+              let image = imageBlock.image else {
+            return XCTFail("Expected an inline image block")
+        }
+
+        XCTAssertEqual(model.selectedPath?.rawValue, "Fixtures/docs/animated_gif.md")
+        XCTAssertEqual(image.sourceURL, "../media/rickrolled.gif")
+        XCTAssertEqual(
+            image.resolvedURL?.path,
+            repoRootURL.appendingPathComponent("Fixtures/media/rickrolled.gif").path
+        )
+        XCTAssertNil(image.loadError)
     }
 
     #if os(macOS)
@@ -797,6 +903,109 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
         XCTAssertEqual(workspace.files.map(\.path.rawValue), ["draft.mkd", "notes.markdown"])
     }
 
+    func testGitHubWorkspaceURLResolvesDefaultBranchForRepoRoot() async throws {
+        let fixtureURL = try makeGitHubFixtureFile()
+        let (service, _) = try makeGitHubWorkspaceService(fixtureURL: fixtureURL)
+
+        let workspace = try await service.loadWorkspace(from: "https://github.com/moorage/free-markdown-viewer/")
+
+        XCTAssertEqual(workspace.descriptor.requestedRef, "main")
+        XCTAssertEqual(workspace.descriptor.resolvedCommitSHA, "sha-main")
+        let provider = GitHubWorkspaceProvider(cachedRootURL: workspace.cacheRootURL, descriptor: workspace.descriptor)
+        let root = try provider.loadRoot()
+        XCTAssertEqual(root.files.map(\.path.rawValue), ["docs/guide.md", "README.md"])
+    }
+
+    func testGitHubWorkspaceURLResolvesBranchAndTagTreeRefs() async throws {
+        let fixtureURL = try makeGitHubFixtureFile()
+        let (service, _) = try makeGitHubWorkspaceService(fixtureURL: fixtureURL)
+
+        let branchWorkspace = try await service.loadWorkspace(
+            from: "https://github.com/moorage/free-markdown-viewer/tree/main/docs"
+        )
+        XCTAssertEqual(branchWorkspace.descriptor.requestedRef, "main")
+        XCTAssertEqual(branchWorkspace.descriptor.subdirectory, "docs")
+        XCTAssertEqual(
+            try String(contentsOf: branchWorkspace.cacheRootURL.appendingPathComponent("guide.md"), encoding: .utf8),
+            "# Guide\n\nLoaded from docs."
+        )
+
+        let tagWorkspace = try await service.loadWorkspace(
+            from: "https://github.com/moorage/cxhere/tree/0.1.1"
+        )
+        XCTAssertEqual(tagWorkspace.descriptor.requestedRef, "0.1.1")
+        XCTAssertEqual(tagWorkspace.descriptor.resolvedCommitSHA, "sha-tag")
+        XCTAssertEqual(
+            try String(contentsOf: tagWorkspace.cacheRootURL.appendingPathComponent("CHANGELOG.md"), encoding: .utf8),
+            "# Changelog\n\nTag release."
+        )
+    }
+
+    func testGitHubWorkspaceCacheReopensWhenOffline() async throws {
+        let fixtureURL = try makeGitHubFixtureFile()
+        let (onlineService, cacheDirectoryURL) = try makeGitHubWorkspaceService(fixtureURL: fixtureURL)
+        let cachedWorkspace = try await onlineService.loadWorkspace(from: "https://github.com/moorage/free-markdown-viewer")
+        let offlineService = GitHubWorkspaceService(
+            remoteClient: FailingGitHubRemoteClient(error: GitHubWorkspaceError.httpStatus(503)),
+            cacheDirectoryURL: cacheDirectoryURL
+        )
+        let reopenedWorkspace = try await offlineService.loadWorkspace(from: "https://github.com/moorage/free-markdown-viewer")
+
+        XCTAssertEqual(reopenedWorkspace.cacheRootURL.path, cachedWorkspace.cacheRootURL.path)
+        XCTAssertEqual(reopenedWorkspace.descriptor.resolvedCommitSHA, "sha-main")
+    }
+
+    @MainActor
+    func testRestoredGitHubWorkspaceSessionUsesCachedSnapshot() async throws {
+        let fixtureURL = try makeGitHubFixtureFile()
+        let options = HarnessLaunchOptions(
+            fixtureRoot: nil,
+            openFile: nil,
+            uiTestOpenFolderURLs: [],
+            uiTestInstallCommandLineToolURL: nil,
+            uiTestGitHubFixtureURL: fixtureURL,
+            uiTestOpenLinkedMediaURL: nil,
+            uiTestResetCommandLineToolInstallState: false,
+            theme: nil,
+            windowSize: nil,
+            disableFileWatch: true,
+            dumpVisibleStateURL: nil,
+            dumpPerfStateURL: nil,
+            screenshotPathURL: nil,
+            commandDirectoryURL: nil,
+            uiTestMode: true,
+            platformTarget: .macos,
+            deviceClass: .mac
+        )
+        let (service, _) = try makeGitHubWorkspaceService(fixtureURL: fixtureURL)
+        let cachedWorkspace = try await service.loadWorkspace(from: "https://github.com/moorage/free-markdown-viewer/tree/main/docs")
+
+        let session = WorkspaceWindowSession(
+            source: .github(
+                GitHubWorkspaceSessionSource(
+                    originalURLString: cachedWorkspace.descriptor.originalURLString,
+                    cachedRootPath: cachedWorkspace.cacheRootURL.path,
+                    descriptor: cachedWorkspace.descriptor
+                )
+            ),
+            selectedFile: "guide.md"
+        )
+
+        let model = AppModel(
+            launchOptions: options,
+            initialSession: session,
+            githubWorkspaceLoader: service
+        )
+        retainForTestLifetime(model)
+        model.bootstrap()
+        try await Task.sleep(nanoseconds: 500_000_000)
+
+        XCTAssertEqual(model.selectedPath?.rawValue, "guide.md")
+        XCTAssertEqual(model.windowTitle, "\(cachedWorkspace.descriptor.displayRoot) > guide.md")
+        XCTAssertEqual(model.restorationSession?.selectedFile, "guide.md")
+        XCTAssertFalse(model.canRevealSelectedFileInFinder)
+    }
+
     @MainActor
     func testAppModelExposesCurrentDocumentURLForWorkspaceBackedFile() async throws {
         let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -1362,6 +1571,85 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
             }
             XCTFail("CommonMark semantic mismatches (\(failures.count)). Full report: \(reportURL.path)\n" + preview.joined(separator: "\n"))
         }
+    }
+
+    private func makeTemporaryWorkspace(named folderName: String, files: [String: String]) throws -> URL {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let folder = root.appendingPathComponent(folderName, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        for (path, contents) in files {
+            let fileURL = folder.appendingPathComponent(path)
+            try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try contents.write(to: fileURL, atomically: true, encoding: .utf8)
+        }
+        return folder
+    }
+
+    private func makeGitHubFixtureFile() throws -> URL {
+        let payload = GitHubFixtureDocument(
+            repositories: [
+                "moorage/free-markdown-viewer": GitHubRepositoryMetadata(defaultBranch: "main"),
+                "moorage/cxhere": GitHubRepositoryMetadata(defaultBranch: "main"),
+            ],
+            commits: [
+                "moorage/free-markdown-viewer": [
+                    "main": "sha-main",
+                ],
+                "moorage/cxhere": [
+                    "0.1.1": "sha-tag",
+                ],
+            ],
+            trees: [
+                "moorage/free-markdown-viewer": [
+                    "sha-main": [
+                        GitHubTreeEntry(path: "README.md", type: "blob"),
+                        GitHubTreeEntry(path: "docs/guide.md", type: "blob"),
+                        GitHubTreeEntry(path: "media/diagram.png", type: "blob"),
+                    ],
+                ],
+                "moorage/cxhere": [
+                    "sha-tag": [
+                        GitHubTreeEntry(path: "CHANGELOG.md", type: "blob"),
+                    ],
+                ],
+            ],
+            files: [
+                "moorage/free-markdown-viewer": [
+                    "sha-main": [
+                        "README.md": "# Repo Root\n\nWelcome.",
+                        "docs/guide.md": "# Guide\n\nLoaded from docs.",
+                    ],
+                ],
+                "moorage/cxhere": [
+                    "sha-tag": [
+                        "CHANGELOG.md": "# Changelog\n\nTag release.",
+                    ],
+                ],
+            ]
+        )
+
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString)-github-fixture.json")
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try encoder.encode(payload)
+        try data.write(to: url, options: Data.WritingOptions.atomic)
+        return url
+    }
+
+    private func makeGitHubWorkspaceService(
+        fixtureURL: URL,
+        cacheDirectoryURL: URL? = nil
+    ) throws -> (service: GitHubWorkspaceService, cacheDirectoryURL: URL) {
+        let resolvedCacheDirectoryURL = cacheDirectoryURL ?? FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let remoteClient = try FixtureGitHubRemoteClient(fixtureURL: fixtureURL)
+        return (
+            GitHubWorkspaceService(
+                remoteClient: remoteClient,
+                cacheDirectoryURL: resolvedCacheDirectoryURL
+            ),
+            resolvedCacheDirectoryURL
+        )
     }
 
     private func flattenedVisibleText(from blocks: [MarkdownBlock]) -> String {

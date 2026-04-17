@@ -1,6 +1,8 @@
 # Running implementation notes
 
 - active ExecPlans:
+  - `docs/exec-plans/active/2026-04-16-github-url-workspaces.md`
+  - `docs/exec-plans/active/2026-04-16-remote-inline-media-and-linked-preview.md`
   - `docs/exec-plans/active/2026-04-16-macos-cli-open-folder-launcher.md`
   - `docs/exec-plans/active/2026-04-15-fenced-code-syntax-highlighting.md`
   - `docs/exec-plans/active/2026-04-10-macos-downloads-entitlement-removal.md`
@@ -18,6 +20,8 @@
   - `docs/exec-plans/active/2026-04-03-quick-markdown-viewer-in-place-rename.md`
   - `docs/exec-plans/active/2026-03-28-launch-empty-viewer.md`
 - current milestone:
+  - GitHub URL workspaces: public-`github.com` repo-root and tree URLs now resolve through a cache-backed `GitHubWorkspaceService`, open from the empty state plus normal app chrome, restore through window sessions, and reuse local workspace semantics for Markdown navigation and relative media; focused unit coverage is green and the remaining gap is a macOS UI-runner bootstrap crash on the empty-state UI test
+  - remote inline media + linked preview: shared media models now distinguish local and remote sources, direct `https://` image/video URLs load inline with block-local failure text, direct media links open an in-app native preview with close/Escape/browser affordances, macOS carries `com.apple.security.network.client`, remote fetch behavior is covered by loopback-backed unit tests, and linked-preview interaction is covered by focused macOS UI tests with local fixture URLs
   - macOS CLI launcher: the macOS app now exposes `File > Install Command Line Tool…`, an empty-state `Install \`qmv\`` affordance, a generated `qmv` launcher that opens folders through Launch Services, and window-safe handling for CLI-triggered workspace opens while keeping silent App Store auto-install out of scope
   - fenced code syntax highlighting: fenced code blocks now highlight natively through `swift-tree-sitter`, a repo-owned `Packages/TreeSitterGrammars` package compiles only the requested grammar allowlist, highlighted output is cached by `(language, contentHash, theme)`, bundled `highlights.scm` assets drive token colors, indented or unknown-language blocks stay on the plain monospace fallback path, and the final hosted-unit-test teardown crash was fixed by making `MacWindowConfiguration` mutate `NSWindow` synchronously
   - macOS submission entitlement follow-up: the Xcode target no longer requests Downloads-folder read access, the rebuilt macOS archive now carries only `com.apple.security.app-sandbox` plus `com.apple.security.files.user-selected.read-only`, build `4` remains the attached rejected build for macOS version `1.0`, and the current recovery is to strengthen the App Review explanation around the first-launch `Open Folder` flow rather than change the binary again

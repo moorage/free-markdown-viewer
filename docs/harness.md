@@ -37,6 +37,7 @@ The app is responsible for:
 - writing `state.json`
 - writing `perf.json`
 - writing `window.png`
+- honoring `--ui-test-github-fixture <path>` so GitHub workspace tests can resolve deterministic repository metadata, refs, trees, and file payloads without touching the public network
 
 The scripts are responsible for:
 

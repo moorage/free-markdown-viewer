@@ -9,6 +9,7 @@ struct WindowSceneRootView: View {
     @StateObject private var model: AppModel
     @ObservedObject private var sessionStore: WorkspaceWindowSessionStore
     private let sceneID: String
+    @State private var isPresentingGitHubURLPrompt = false
     #if os(macOS)
     @ObservedObject private var externalWorkspaceOpenCoordinator = ExternalWorkspaceOpenCoordinator.shared
     @ObservedObject private var commandLineToolManager = MacCommandLineToolManager.shared
@@ -23,14 +24,16 @@ struct WindowSceneRootView: View {
     init(
         launchOptions: HarnessLaunchOptions,
         sceneID: String,
-        sessionStore: WorkspaceWindowSessionStore
+        sessionStore: WorkspaceWindowSessionStore,
+        githubWorkspaceLoader: any GitHubWorkspaceLoading
     ) {
         self.sceneID = sceneID
         self.sessionStore = sessionStore
         _model = StateObject(
             wrappedValue: AppModel(
                 launchOptions: launchOptions,
-                initialSession: sessionStore.claimLaunchSession(for: sceneID)
+                initialSession: sessionStore.claimLaunchSession(for: sceneID),
+                githubWorkspaceLoader: githubWorkspaceLoader
             )
         )
     }
@@ -39,11 +42,13 @@ struct WindowSceneRootView: View {
         ContentView(
             model: model,
             onOpenFolder: openFolderAction,
+            onOpenGitHubURLPrompt: openGitHubURLPromptAction,
             onInstallCommandLineTool: installCommandLineToolAction,
             shouldShowCommandLineToolPrompt: shouldShowCommandLineToolPrompt
         )
             #if os(macOS)
             .focusedSceneValue(\.openFolderAction, OpenFolderAction(handler: openFolder))
+            .focusedSceneValue(\.openGitHubURLAction, OpenGitHubURLAction(handler: openGitHubURLPrompt))
             .focusedSceneValue(\.revealInFinderAction, revealInFinderAction)
             .focusedSceneValue(\.increaseFontSizeAction, IncreaseFontSizeAction(handler: model.increaseFontSize))
             .focusedSceneValue(\.decreaseFontSizeAction, DecreaseFontSizeAction(handler: model.decreaseFontSize))
@@ -64,6 +69,14 @@ struct WindowSceneRootView: View {
             #endif
             .onChange(of: model.selectedPath) { _ in
                 sessionStore.updateActiveSession(model.restorationSession, for: sceneID)
+            }
+            .onChange(of: model.currentWorkspaceRootURL?.path) { _ in
+                if isPresentingGitHubURLPrompt,
+                   model.isLoadingWorkspace == false,
+                   model.githubURLLoadErrorMessage == nil,
+                   model.currentWorkspaceRootURL != nil {
+                    isPresentingGitHubURLPrompt = false
+                }
             }
             .onChange(of: model.windowTitle) { _ in
                 sessionStore.updateActiveSession(model.restorationSession, for: sceneID)
@@ -88,6 +101,12 @@ struct WindowSceneRootView: View {
                 )
             }
             #endif
+            .sheet(isPresented: $isPresentingGitHubURLPrompt) {
+                GitHubURLPromptSheet(
+                    model: model,
+                    onClose: { isPresentingGitHubURLPrompt = false }
+                )
+            }
             #if !os(macOS)
             .fileImporter(
                 isPresented: $isPresentingFolderImporter,
@@ -100,6 +119,10 @@ struct WindowSceneRootView: View {
 
     private var openFolderAction: (() -> Void)? {
         openFolder
+    }
+
+    private var openGitHubURLPromptAction: (() -> Void)? {
+        openGitHubURLPrompt
     }
 
     #if os(macOS)
@@ -149,6 +172,10 @@ struct WindowSceneRootView: View {
         }
 
         model.openFolder(at: selectedURL)
+    }
+
+    private func openGitHubURLPrompt() {
+        isPresentingGitHubURLPrompt = true
     }
 
     private func installCommandLineTool() {
@@ -236,7 +263,14 @@ struct WindowSceneRootView: View {
         if shouldReuseCurrentWindowForExternalOpen {
             model.openFolder(at: rootURL)
         } else {
-            sessionStore.scheduleExternalWorkspaceWindow(for: rootURL, openWindow: openWindow)
+            sessionStore.scheduleExternalWorkspaceWindow(
+                for: WorkspaceWindowSession(
+                    rootPath: rootURL.path,
+                    selectedFile: nil,
+                    securityScopedBookmarkData: WorkspaceSecurityScope.bookmarkData(for: rootURL)
+                ),
+                openWindow: openWindow
+            )
         }
     }
 
@@ -266,6 +300,10 @@ struct WindowSceneRootView: View {
         isPresentingFolderImporter = true
     }
 
+    private func openGitHubURLPrompt() {
+        isPresentingGitHubURLPrompt = true
+    }
+
     private func handleFolderImport(_ result: Result<[URL], Error>) {
         guard case let .success(selectedURLs) = result, let selectedURL = selectedURLs.first else {
             return
@@ -273,6 +311,42 @@ struct WindowSceneRootView: View {
         model.openFolder(at: selectedURL)
     }
     #endif
+}
+
+private struct GitHubURLPromptSheet: View {
+    @ObservedObject var model: AppModel
+    let onClose: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Open GitHub URL")
+                    .font(.title2.weight(.semibold))
+
+                Text("Load a public GitHub repository root or tree URL and browse its Markdown files like a local folder.")
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                GitHubURLLoadForm(
+                    model: model,
+                    textFieldAccessibilityID: AccessibilityIDs.githubURLSheetField,
+                    loadButtonAccessibilityID: AccessibilityIDs.githubURLSheetLoadButton,
+                    errorAccessibilityID: AccessibilityIDs.githubURLSheetErrorMessage
+                )
+
+                Spacer(minLength: 0)
+            }
+            .padding(20)
+            .frame(minWidth: 420, minHeight: 220, alignment: .topLeading)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") {
+                        onClose()
+                    }
+                }
+            }
+        }
+    }
 }
 
 #if os(macOS)
@@ -348,6 +422,14 @@ struct OpenFolderAction {
     }
 }
 
+struct OpenGitHubURLAction {
+    let handler: () -> Void
+
+    func callAsFunction() {
+        handler()
+    }
+}
+
 struct RevealInFinderAction {
     let handler: () -> Void
 
@@ -376,6 +458,10 @@ private struct OpenFolderActionKey: FocusedValueKey {
     typealias Value = OpenFolderAction
 }
 
+private struct OpenGitHubURLActionKey: FocusedValueKey {
+    typealias Value = OpenGitHubURLAction
+}
+
 private struct RevealInFinderActionKey: FocusedValueKey {
     typealias Value = RevealInFinderAction
 }
@@ -392,6 +478,11 @@ extension FocusedValues {
     var openFolderAction: OpenFolderAction? {
         get { self[OpenFolderActionKey.self] }
         set { self[OpenFolderActionKey.self] = newValue }
+    }
+
+    var openGitHubURLAction: OpenGitHubURLAction? {
+        get { self[OpenGitHubURLActionKey.self] }
+        set { self[OpenGitHubURLActionKey.self] = newValue }
     }
 
     var revealInFinderAction: RevealInFinderAction? {
@@ -413,6 +504,7 @@ extension FocusedValues {
 struct WindowOpenFolderCommands: Commands {
     @ObservedObject var commandLineToolManager: MacCommandLineToolManager
     @FocusedValue(\.openFolderAction) private var openFolderAction
+    @FocusedValue(\.openGitHubURLAction) private var openGitHubURLAction
     @FocusedValue(\.revealInFinderAction) private var revealInFinderAction
     @FocusedValue(\.increaseFontSizeAction) private var increaseFontSizeAction
     @FocusedValue(\.decreaseFontSizeAction) private var decreaseFontSizeAction
@@ -425,6 +517,12 @@ struct WindowOpenFolderCommands: Commands {
             }
             .keyboardShortcut("o", modifiers: [.command])
             .disabled(openFolderAction == nil)
+
+            Button("Open GitHub URL…") {
+                openGitHubURLAction?()
+            }
+            .keyboardShortcut("g", modifiers: [.command, .shift])
+            .disabled(openGitHubURLAction == nil)
 
             Button("Show in Finder") {
                 revealInFinderAction?()
@@ -455,4 +553,5 @@ struct WindowOpenFolderCommands: Commands {
         }
     }
 }
+
 #endif

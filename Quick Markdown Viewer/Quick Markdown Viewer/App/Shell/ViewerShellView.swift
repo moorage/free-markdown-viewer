@@ -11,14 +11,17 @@ import UIKit
 struct ViewerShellView: View {
     @ObservedObject var model: AppModel
     let onOpenFolder: (() -> Void)?
+    let onOpenGitHubURLPrompt: (() -> Void)?
     let onInstallCommandLineTool: (() -> Void)?
     let shouldShowCommandLineToolPrompt: Bool
     @Environment(\.openURL) private var openURL
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.colorScheme) private var colorScheme
+    @State private var mediaPreviewTarget: AppModel.MediaLinkTarget?
     @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
     @State private var compactShowsSidebar = true
     @State private var sidebarFilterText = ""
+    @State private var hasConsumedUITestMediaPreview = false
     #if os(macOS)
     @FocusState private var sidebarFocused: Bool
     @FocusState private var sidebarFilterFocused: Bool
@@ -47,6 +50,16 @@ struct ViewerShellView: View {
                 }
             }
         }
+        .onAppear(perform: handleUITestMediaPreviewIfNeeded)
+        .onChange(of: model.selectedPath) { _ in
+            handleUITestMediaPreviewIfNeeded()
+        }
+        .sheet(item: sheetMediaPreviewBinding) { target in
+            mediaPreview(for: target)
+        }
+        .popover(item: popoverMediaPreviewBinding) { target in
+            mediaPreview(for: target)
+        }
         #if os(macOS)
         .toolbar {
             ToolbarItem(placement: .navigation) {
@@ -67,6 +80,42 @@ struct ViewerShellView: View {
         }
         .background(MacWindowConfiguration(title: model.windowTitle, contentSize: model.launchOptions.windowSize))
         #endif
+    }
+
+    private var usesSheetPreview: Bool {
+        #if os(macOS)
+        true
+        #else
+        model.launchOptions.platformTarget == .ios && model.launchOptions.deviceClass == .iphone
+        #endif
+    }
+
+    private var sheetMediaPreviewBinding: Binding<AppModel.MediaLinkTarget?> {
+        Binding(
+            get: { usesSheetPreview ? mediaPreviewTarget : nil },
+            set: { newValue in
+                if usesSheetPreview {
+                    mediaPreviewTarget = newValue
+                } else if newValue == nil {
+                    mediaPreviewTarget = nil
+                }
+            }
+        )
+    }
+
+    private var popoverMediaPreviewBinding: Binding<AppModel.MediaLinkTarget?> {
+        Binding(
+            get: { usesSheetPreview ? nil : mediaPreviewTarget },
+            set: { newValue in
+                if usesSheetPreview {
+                    if newValue == nil {
+                        mediaPreviewTarget = nil
+                    }
+                } else {
+                    mediaPreviewTarget = newValue
+                }
+            }
+        )
     }
 
     private var isCompactPhoneLayout: Bool {
@@ -273,6 +322,8 @@ struct ViewerShellView: View {
 
             if model.isLoadingDocument {
                 loadingOverlay
+            } else if model.isLoadingWorkspace {
+                workspaceLoadingOverlay
             }
         }
         .environment(\.openURL, OpenURLAction { url in
@@ -321,6 +372,13 @@ struct ViewerShellView: View {
                 .accessibilityIdentifier(AccessibilityIDs.openFolderButton)
             }
 
+            if let onOpenGitHubURLPrompt {
+                Button(action: onOpenGitHubURLPrompt) {
+                    Label("Open GitHub URL", systemImage: "link")
+                }
+                .accessibilityIdentifier(AccessibilityIDs.openGitHubURLButton)
+            }
+
             fontSizeControls
 
             Text(model.windowTitle)
@@ -364,6 +422,13 @@ struct ViewerShellView: View {
                     .accessibilityIdentifier(AccessibilityIDs.openFolderButton)
                 }
 
+                if let onOpenGitHubURLPrompt {
+                    Button(action: onOpenGitHubURLPrompt) {
+                        Image(systemName: "link")
+                    }
+                    .accessibilityIdentifier(AccessibilityIDs.openGitHubURLButton)
+                }
+
                 Spacer(minLength: 0)
 
                 fontSizeControls
@@ -396,6 +461,22 @@ struct ViewerShellView: View {
         .allowsHitTesting(false)
     }
 
+    private var workspaceLoadingOverlay: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(.ultraThinMaterial)
+            VStack(spacing: 10) {
+                ProgressView()
+                    .controlSize(.regular)
+                Text("Loading workspace…")
+                    .font(ViewerFont.headline(scale: model.fontScale))
+            }
+            .padding(24)
+        }
+        .frame(width: 240, height: 140)
+        .allowsHitTesting(false)
+    }
+
     private var shouldShowEmptyWorkspaceState: Bool {
         model.shouldShowEmptyWorkspaceState
     }
@@ -405,6 +486,7 @@ struct ViewerShellView: View {
             iconName: "folder.badge.plus",
             message: AppModel.noWorkspacePromptMessage,
             buttonTitle: "Open Folder",
+            includeGitHubURLForm: true,
             secondaryMessage: shouldShowCommandLineToolPrompt ? MacCommandLineToolManager.installExplanation : nil,
             secondaryButtonTitle: shouldShowCommandLineToolPrompt ? "Install `qmv`" : nil,
             secondaryAction: shouldShowCommandLineToolPrompt ? onInstallCommandLineTool : nil
@@ -423,6 +505,7 @@ struct ViewerShellView: View {
         iconName: String,
         message: String,
         buttonTitle: String,
+        includeGitHubURLForm: Bool = false,
         secondaryMessage: String? = nil,
         secondaryButtonTitle: String? = nil,
         secondaryAction: (() -> Void)? = nil
@@ -441,6 +524,21 @@ struct ViewerShellView: View {
                     onOpenFolder()
                 }
                 .accessibilityIdentifier(AccessibilityIDs.emptyStateOpenFolderButton)
+            }
+            if includeGitHubURLForm {
+                Text("-or-")
+                    .font(ViewerFont.body(scale: model.fontScale))
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 20)
+
+                GitHubURLLoadForm(
+                    model: model,
+                    textFieldAccessibilityID: AccessibilityIDs.emptyStateGitHubURLField,
+                    loadButtonAccessibilityID: AccessibilityIDs.emptyStateGitHubURLLoadButton,
+                    errorAccessibilityID: AccessibilityIDs.emptyStateGitHubURLErrorMessage
+                )
+                .padding(.top, 8)
+                .frame(maxWidth: 420)
             }
             if let secondaryMessage {
                 Text(secondaryMessage)
@@ -540,11 +638,48 @@ struct ViewerShellView: View {
         columnVisibility = .detailOnly
     }
 
+    private func handleUITestMediaPreviewIfNeeded() {
+        guard model.launchOptions.uiTestMode else { return }
+        guard !hasConsumedUITestMediaPreview else { return }
+        guard let previewURL = model.launchOptions.uiTestOpenLinkedMediaURL else { return }
+        guard model.selectedPath != nil else { return }
+        hasConsumedUITestMediaPreview = true
+        handleDocumentLink(previewURL)
+    }
+
     private func handleDocumentLink(_ url: URL) {
-        if model.openMarkdownLink(url) {
+        switch model.resolvedDocumentLinkAction(for: url) {
+        case let .markdown(targetPath):
+            model.openFile(targetPath)
             showDetailIfNeeded()
+        case let .media(target):
+            mediaPreviewTarget = target
+        case let .external(targetURL):
+            openURL(targetURL)
+        }
+    }
+
+    @ViewBuilder
+    private func mediaPreview(for target: AppModel.MediaLinkTarget) -> some View {
+        LinkedMediaPreviewView(
+            target: target,
+            onClose: { mediaPreviewTarget = nil },
+            onOpenInBrowser: { openInBrowser(target.originalURL) }
+        )
+    }
+
+    private func openInBrowser(_ url: URL) {
+        #if os(macOS)
+        if let browserApplicationURL = NSWorkspace.shared.urlForApplication(toOpen: URL(string: "https://example.com")!) {
+            NSWorkspace.shared.open(
+                [url],
+                withApplicationAt: browserApplicationURL,
+                configuration: NSWorkspace.OpenConfiguration(),
+                completionHandler: nil
+            )
             return
         }
+        #endif
         openURL(url)
     }
 
@@ -880,10 +1015,19 @@ private struct ImageBlockView: View {
     let blockID: String
     let workspaceRootURL: URL?
     let fontScale: CGFloat
+    @State private var downloadedRemoteURL: URL?
+    @State private var remoteLoadError: String?
+
+    private var displayURL: URL? {
+        downloadedRemoteURL ?? image.resolvedURL
+    }
 
     private var imageLoadError: String? {
-        mediaLoadError(
-            resolvedURL: image.resolvedURL,
+        if let loadError = image.loadError ?? remoteLoadError {
+            return loadError
+        }
+        return mediaLoadError(
+            resolvedURL: displayURL,
             sourceURL: image.sourceURL,
             kindLabel: isAnimated ? "Animated image" : "Image",
             workspaceRootURL: workspaceRootURL,
@@ -899,7 +1043,7 @@ private struct ImageBlockView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if let resolvedURL = image.resolvedURL, imageLoadError == nil {
+            if let resolvedURL = displayURL, imageLoadError == nil {
                 InlineAnimatedImageSurface(url: resolvedURL)
                     .frame(maxWidth: .infinity, minHeight: 180, maxHeight: 320, alignment: .leading)
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -949,6 +1093,9 @@ private struct ImageBlockView: View {
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(AccessibilityIDs.imageBlock(blockID))
+        .task(id: image.sourceURL) {
+            await loadRemoteImageIfNeeded()
+        }
     }
 
     private var primaryLabel: String {
@@ -956,6 +1103,30 @@ private struct ImageBlockView: View {
             return isAnimated ? "Animated image" : "Image"
         }
         return image.altText
+    }
+
+    private func loadRemoteImageIfNeeded() async {
+        guard image.sourceKind == .remote else { return }
+        guard image.resolvedURL == nil else { return }
+        guard image.loadError == nil else { return }
+        guard let sourceURL = URL(string: image.sourceURL) else {
+            await MainActor.run {
+                remoteLoadError = "Image failed to load.\nsource: \(image.sourceURL)"
+            }
+            return
+        }
+
+        do {
+            let cachedURL = try await fetchRemoteImageToCache(remoteURL: sourceURL)
+            await MainActor.run {
+                downloadedRemoteURL = cachedURL
+                remoteLoadError = nil
+            }
+        } catch {
+            await MainActor.run {
+                remoteLoadError = "Image failed to load: \(error.localizedDescription)\nsource: \(image.sourceURL)"
+            }
+        }
     }
 }
 
@@ -1046,22 +1217,28 @@ private struct InlineVideoBlockView: View {
 
     private func configurePlayerIfNeeded() {
         guard player == nil, playerError == nil else { return }
+        if let loadError = video.loadError {
+            playerError = loadError
+            return
+        }
         guard let resolvedURL = video.resolvedURL else {
             playerError = unresolvedMediaError(sourceURL: video.sourceURL, kindLabel: "Video")
             return
         }
-        guard FileManager.default.fileExists(atPath: resolvedURL.path) else {
-            playerError = missingMediaError(resolvedURL: resolvedURL, sourceURL: video.sourceURL, kindLabel: "Video")
-            return
-        }
-        guard FileManager.default.isReadableFile(atPath: resolvedURL.path) else {
-            playerError = unreadableMediaError(
-                resolvedURL: resolvedURL,
-                sourceURL: video.sourceURL,
-                kindLabel: "Video",
-                workspaceRootURL: workspaceRootURL
-            )
-            return
+        if resolvedURL.isFileURL {
+            guard FileManager.default.fileExists(atPath: resolvedURL.path) else {
+                playerError = missingMediaError(resolvedURL: resolvedURL, sourceURL: video.sourceURL, kindLabel: "Video")
+                return
+            }
+            guard FileManager.default.isReadableFile(atPath: resolvedURL.path) else {
+                playerError = unreadableMediaError(
+                    resolvedURL: resolvedURL,
+                    sourceURL: video.sourceURL,
+                    kindLabel: "Video",
+                    workspaceRootURL: workspaceRootURL
+                )
+                return
+            }
         }
 
         Task {
@@ -1074,7 +1251,7 @@ private struct InlineVideoBlockView: View {
                         playerError = """
                         Video is not playable.
                         source: \(video.sourceURL)
-                        resolved: \(resolvedURL.path)
+                        resolved: \(resolvedLocationDescription(resolvedURL))
                         """
                     }
                     return
@@ -1092,7 +1269,7 @@ private struct InlineVideoBlockView: View {
                     playerError = """
                     Video failed to load: \(error.localizedDescription)
                     source: \(video.sourceURL)
-                    resolved: \(resolvedURL.path)
+                    resolved: \(resolvedLocationDescription(resolvedURL))
                     """
                 }
             }
@@ -1113,6 +1290,111 @@ private struct InlineVideoBlockView: View {
         }
         isPlaying.toggle()
     }
+}
+
+private struct LinkedMediaPreviewView: View {
+    let target: AppModel.MediaLinkTarget
+    let onClose: () -> Void
+    let onOpenInBrowser: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 12) {
+                Text(target.kind == .image ? "Image Preview" : "Video Preview")
+                    .font(.headline)
+                Spacer()
+                Button("Open in Browser", action: onOpenInBrowser)
+                    .accessibilityIdentifier(AccessibilityIDs.mediaPreviewOpenInBrowserButton)
+                Button("Close", action: onClose)
+                    .keyboardShortcut(.cancelAction)
+                    .accessibilityIdentifier(AccessibilityIDs.mediaPreviewCloseButton)
+            }
+
+            if target.kind == .image {
+                ImageBlockView(
+                    image: MarkdownImage(
+                        altText: "Linked image",
+                        sourceURL: target.originalURL.absoluteString,
+                        title: nil,
+                        sourceKind: target.originalURL.isFileURL ? .local : .remote,
+                        resolvedURL: target.originalURL.isFileURL ? target.resolvedURL : nil,
+                        loadError: nil
+                    ),
+                    isAnimated: isAnimatedImagePreviewCandidate(target.originalURL),
+                    blockID: "media-preview-image",
+                    workspaceRootURL: nil,
+                    fontScale: 1
+                )
+            } else {
+                InlineVideoBlockView(
+                    video: MarkdownVideo(
+                        altText: "Linked video",
+                        sourceURL: target.originalURL.absoluteString,
+                        title: nil,
+                        sourceKind: target.originalURL.isFileURL ? .local : .remote,
+                        resolvedURL: target.resolvedURL,
+                        loadError: nil
+                    ),
+                    blockID: "media-preview-video",
+                    workspaceRootURL: nil,
+                    fontScale: 1
+                )
+            }
+        }
+        .padding(20)
+        .frame(minWidth: 420, idealWidth: 560, maxWidth: 680)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(AccessibilityIDs.mediaPreviewContainer)
+    }
+
+    private func isAnimatedImagePreviewCandidate(_ url: URL) -> Bool {
+        url.pathExtension.lowercased() == "gif"
+    }
+}
+
+private func fetchRemoteImageToCache(remoteURL: URL) async throws -> URL {
+    let cacheDirectory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("qmv-remote-media-preview-cache", isDirectory: true)
+    try FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
+
+    let baseName = Data(remoteURL.absoluteString.utf8)
+        .base64EncodedString()
+        .replacingOccurrences(of: "/", with: "_")
+        .replacingOccurrences(of: "+", with: "-")
+        .replacingOccurrences(of: "=", with: "")
+    let fileExtension = remoteURL.pathExtension.isEmpty ? "bin" : remoteURL.pathExtension
+    let destinationURL = cacheDirectory.appendingPathComponent("\(baseName).\(fileExtension)")
+
+    if FileManager.default.fileExists(atPath: destinationURL.path) {
+        return destinationURL
+    }
+
+    let (temporaryURL, response) = try await URLSession.shared.download(from: remoteURL)
+    if let httpResponse = response as? HTTPURLResponse,
+       !(200...299).contains(httpResponse.statusCode) {
+        throw PreviewRemoteMediaError.httpStatus(httpResponse.statusCode)
+    }
+
+    if FileManager.default.fileExists(atPath: destinationURL.path) {
+        try? FileManager.default.removeItem(at: destinationURL)
+    }
+    try FileManager.default.moveItem(at: temporaryURL, to: destinationURL)
+    return destinationURL
+}
+
+private enum PreviewRemoteMediaError: LocalizedError {
+    case httpStatus(Int)
+
+    var errorDescription: String? {
+        switch self {
+        case let .httpStatus(statusCode):
+            return "HTTP \(statusCode)"
+        }
+    }
+}
+
+private func resolvedLocationDescription(_ url: URL) -> String {
+    url.isFileURL ? url.path : url.absoluteString
 }
 
 private enum ViewerFont {
@@ -1212,7 +1494,7 @@ private func missingMediaError(resolvedURL: URL, sourceURL: String, kindLabel: S
     """
     \(kindLabel) file is missing.
     source: \(sourceURL)
-    resolved: \(resolvedURL.path)
+    resolved: \(resolvedLocationDescription(resolvedURL))
     """
 }
 
@@ -1234,7 +1516,7 @@ func unreadableMediaError(
     return """
     \(kindLabel) file is not readable.
     source: \(sourceURL)
-    resolved: \(resolvedURL.path)
+    resolved: \(resolvedLocationDescription(resolvedURL))
     """
 }
 
@@ -1294,6 +1576,63 @@ private struct InlineVideoSurface: View {
 
     var body: some View {
         PlatformInlineVideoView(player: player)
+    }
+}
+
+struct GitHubURLLoadForm: View {
+    @ObservedObject var model: AppModel
+    let textFieldAccessibilityID: String
+    let loadButtonAccessibilityID: String
+    let errorAccessibilityID: String
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Text("Open a public GitHub repository or tree URL.")
+                .font(ViewerFont.body(scale: model.fontScale))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+
+            #if os(macOS)
+            TextField("https://github.com/owner/repo/tree/ref/path", text: $model.githubURLInput)
+                .textFieldStyle(.roundedBorder)
+                .accessibilityIdentifier(textFieldAccessibilityID)
+                .onSubmit {
+                    model.submitGitHubURLFromInput()
+                }
+            #else
+            TextField("https://github.com/owner/repo/tree/ref/path", text: $model.githubURLInput)
+                .textFieldStyle(.roundedBorder)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled(true)
+                .accessibilityIdentifier(textFieldAccessibilityID)
+                .onSubmit {
+                    model.submitGitHubURLFromInput()
+                }
+            #endif
+
+            HStack(spacing: 10) {
+                Button("Load") {
+                    model.submitGitHubURLFromInput()
+                }
+                .disabled(model.githubURLInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.isLoadingWorkspace)
+                .accessibilityIdentifier(loadButtonAccessibilityID)
+
+                if model.isLoadingWorkspace {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+            }
+
+            if let errorMessage = model.githubURLLoadErrorMessage, !errorMessage.isEmpty {
+                Text(errorMessage)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .multilineTextAlignment(.center)
+                    .accessibilityIdentifier(errorAccessibilityID)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
     }
 }
 

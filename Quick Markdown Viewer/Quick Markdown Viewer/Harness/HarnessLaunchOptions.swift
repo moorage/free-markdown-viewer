@@ -20,6 +20,8 @@ struct HarnessLaunchOptions {
     let openFile: String?
     let uiTestOpenFolderURLs: [URL]
     let uiTestInstallCommandLineToolURL: URL?
+    let uiTestGitHubFixtureURL: URL?
+    let uiTestOpenLinkedMediaURL: URL?
     let uiTestResetCommandLineToolInstallState: Bool
     let theme: String?
     let windowSize: CGSize?
@@ -56,6 +58,8 @@ struct HarnessLaunchOptions {
             openFile: openFile,
             uiTestOpenFolderURLs: uiTestOpenFolderURL.map { [$0] } ?? [],
             uiTestInstallCommandLineToolURL: nil,
+            uiTestGitHubFixtureURL: nil,
+            uiTestOpenLinkedMediaURL: nil,
             uiTestResetCommandLineToolInstallState: false,
             theme: theme,
             windowSize: windowSize,
@@ -75,6 +79,8 @@ struct HarnessLaunchOptions {
         openFile: String?,
         uiTestOpenFolderURLs: [URL],
         uiTestInstallCommandLineToolURL: URL?,
+        uiTestGitHubFixtureURL: URL?,
+        uiTestOpenLinkedMediaURL: URL?,
         uiTestResetCommandLineToolInstallState: Bool,
         theme: String?,
         windowSize: CGSize?,
@@ -91,6 +97,8 @@ struct HarnessLaunchOptions {
         self.openFile = openFile
         self.uiTestOpenFolderURLs = uiTestOpenFolderURLs
         self.uiTestInstallCommandLineToolURL = uiTestInstallCommandLineToolURL
+        self.uiTestGitHubFixtureURL = uiTestGitHubFixtureURL
+        self.uiTestOpenLinkedMediaURL = uiTestOpenLinkedMediaURL
         self.uiTestResetCommandLineToolInstallState = uiTestResetCommandLineToolInstallState
         self.theme = theme
         self.windowSize = windowSize
@@ -145,6 +153,8 @@ struct HarnessLaunchOptions {
             openFile: value(after: "--open-file"),
             uiTestOpenFolderURLs: values(after: "--ui-test-open-folder").map(resolvedURL(from:)),
             uiTestInstallCommandLineToolURL: resolveURL(after: "--ui-test-install-command-line-tool"),
+            uiTestGitHubFixtureURL: resolveURL(after: "--ui-test-github-fixture"),
+            uiTestOpenLinkedMediaURL: resolveURL(after: "--ui-test-open-linked-media"),
             uiTestResetCommandLineToolInstallState: arguments.contains("--ui-test-reset-command-line-tool-install-state"),
             theme: value(after: "--theme"),
             windowSize: windowSize,
@@ -160,6 +170,9 @@ struct HarnessLaunchOptions {
     }
 
     private nonisolated static func resolvedURL(from raw: String) -> URL {
+        if let absoluteURL = URL(string: raw), let scheme = absoluteURL.scheme, !scheme.isEmpty {
+            return absoluteURL
+        }
         let candidate = URL(fileURLWithPath: raw)
         if candidate.path.hasPrefix("/") {
             return candidate

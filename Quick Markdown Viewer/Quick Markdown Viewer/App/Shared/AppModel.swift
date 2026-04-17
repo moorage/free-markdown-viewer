@@ -11,10 +11,13 @@ final class AppModel: ObservableObject {
     static let noWorkspacePromptMessage = "Open a folder of markdown files to get started."
     static let emptyWorkspaceMessage = "No markdown files found."
 
+    @Published var githubURLInput = ""
     @Published private(set) var files: [MarkdownFileNode] = []
     @Published private(set) var documentText = "Loading…"
     @Published private(set) var documentBlocks: [MarkdownBlock] = []
     @Published private(set) var isLoadingDocument = false
+    @Published private(set) var isLoadingWorkspace = false
+    @Published private(set) var githubURLLoadErrorMessage: String?
     @Published private(set) var selectedPath: WorkspacePath?
     @Published private(set) var backStack: [NavigationEntry] = []
     @Published private(set) var forwardStack: [NavigationEntry] = []
@@ -25,24 +28,33 @@ final class AppModel: ObservableObject {
 
     let launchOptions: HarnessLaunchOptions
 
+    private let githubWorkspaceLoader: any GitHubWorkspaceLoading
     private let initialSession: WorkspaceWindowSession?
     private let startReference = Date()
     private var readyReference = Date()
     private var bootstrapTask: Task<Void, Never>?
+    private var workspaceLoadTask: Task<Void, Never>?
     private var documentLoadTask: Task<Void, Never>?
     private var commandServer: HarnessCommandServer?
     private var didWriteLaunchArtifacts = false
-    private var workspaceProvider: LocalWorkspaceProvider?
+    private var workspaceProvider: (any WorkspaceProvider)?
     private var workspaceRootURL: URL?
     private var screenshotWriter: ((URL) throws -> Void)?
     private var activeDocumentRequestID: UUID?
     private var hasResolvedWorkspaceSelection = false
     private var workspaceRootBookmarkData: Data?
     private var activeSecurityScopedWorkspaceURL: URL?
+    private var currentRestorationSession: WorkspaceWindowSession?
+    private var shouldAllowRevealInFinder = false
 
-    init(launchOptions: HarnessLaunchOptions, initialSession: WorkspaceWindowSession? = nil) {
+    init(
+        launchOptions: HarnessLaunchOptions,
+        initialSession: WorkspaceWindowSession? = nil,
+        githubWorkspaceLoader: any GitHubWorkspaceLoading = GitHubWorkspaceService.live()
+    ) {
         self.launchOptions = launchOptions
         self.initialSession = initialSession
+        self.githubWorkspaceLoader = githubWorkspaceLoader
     }
 
     deinit {
@@ -72,7 +84,7 @@ final class AppModel: ObservableObject {
     }
 
     var canRevealSelectedFileInFinder: Bool {
-        selectedFileURL != nil
+        shouldAllowRevealInFinder && selectedFileURL != nil
     }
 
     var currentWorkspaceRootURL: URL? {
@@ -129,16 +141,17 @@ final class AppModel: ObservableObject {
         model.documentBlocks = MarkdownRenderer.blocks(from: model.documentText)
         model.workspaceRootDisplay = "Fixtures/docs"
         model.workspaceRootURL = nil
+        model.currentRestorationSession = nil
+        model.shouldAllowRevealInFinder = false
         model.isReady = true
         return model
     }
 
     var restorationSession: WorkspaceWindowSession? {
-        guard let workspaceRootURL else { return nil }
+        guard let currentRestorationSession else { return nil }
         return WorkspaceWindowSession(
-            rootPath: workspaceRootURL.path,
-            selectedFile: selectedPath?.rawValue,
-            securityScopedBookmarkData: workspaceRootBookmarkData
+            source: currentRestorationSession.source,
+            selectedFile: selectedPath?.rawValue
         )
     }
 
@@ -153,13 +166,21 @@ final class AppModel: ObservableObject {
         screenshotWriter = writer
     }
 
+    func resolvedDocumentLinkAction(for url: URL) -> DocumentLinkAction {
+        if let targetPath = resolveMarkdownLinkTarget(url),
+           files.contains(where: { $0.path == targetPath }) {
+            return .markdown(targetPath)
+        }
+
+        if let mediaTarget = resolveMediaLinkTarget(url) {
+            return .media(mediaTarget)
+        }
+
+        return .external(resolvedExternalURL(for: url) ?? url)
+    }
+
     func openMarkdownLink(_ url: URL) -> Bool {
-        guard let targetPath = resolveMarkdownLinkTarget(url) else {
-            return false
-        }
-        guard files.contains(where: { $0.path == targetPath }) else {
-            return false
-        }
+        guard case let .markdown(targetPath) = resolvedDocumentLinkAction(for: url) else { return false }
         openFile(targetPath)
         return true
     }
@@ -242,7 +263,52 @@ final class AppModel: ObservableObject {
 
     func openFolder(at rootURL: URL) {
         cancelActiveDocumentLoad()
+        cancelActiveWorkspaceLoad()
         loadWorkspace(selection: WorkspaceSecurityScope.selection(for: rootURL))
+    }
+
+    func submitGitHubURLFromInput() {
+        openGitHubWorkspace(from: githubURLInput)
+    }
+
+    func openGitHubWorkspace(from rawURLString: String) {
+        openGitHubWorkspace(from: rawURLString, selectedPathOverride: nil)
+    }
+
+    private func openGitHubWorkspace(
+        from rawURLString: String,
+        selectedPathOverride: WorkspacePath?
+    ) {
+        let trimmedURL = rawURLString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedURL.isEmpty else {
+            githubURLLoadErrorMessage = "Enter a GitHub repository URL."
+            return
+        }
+
+        cancelActiveWorkspaceLoad()
+        githubURLInput = trimmedURL
+        githubURLLoadErrorMessage = nil
+        isLoadingWorkspace = true
+
+        workspaceLoadTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let cachedWorkspace = try await githubWorkspaceLoader.loadWorkspace(from: trimmedURL)
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    self.loadGitHubWorkspace(cachedWorkspace, selectedPathOverride: selectedPathOverride)
+                    self.isLoadingWorkspace = false
+                    self.workspaceLoadTask = nil
+                }
+            } catch {
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    self.githubURLLoadErrorMessage = error.localizedDescription
+                    self.isLoadingWorkspace = false
+                    self.workspaceLoadTask = nil
+                }
+            }
+        }
     }
 
     func fulfillLaunchArtifactRequestsIfNeeded() {
@@ -346,10 +412,18 @@ final class AppModel: ObservableObject {
         if !hasResolvedWorkspaceSelection {
             let restoredSelectedPath = initialSession?.selectedFile.map(WorkspacePath.init(rawValue:))
             if let initialSession {
-                loadWorkspace(
-                    selection: WorkspaceSecurityScope.selection(for: initialSession),
-                    selectedPathOverride: restoredSelectedPath
-                )
+                switch initialSession.source {
+                case .local:
+                    loadWorkspace(
+                        selection: WorkspaceSecurityScope.selection(for: initialSession),
+                        selectedPathOverride: restoredSelectedPath
+                    )
+                case let .github(remoteSource):
+                    loadGitHubWorkspaceFromSession(
+                        remoteSource,
+                        selectedPathOverride: restoredSelectedPath
+                    )
+                }
             } else if launchOptions.fixtureRoot != nil {
                 loadWorkspace(
                     selection: WorkspaceAccessSelection(
@@ -376,6 +450,7 @@ final class AppModel: ObservableObject {
         selectedPathOverride: WorkspacePath? = nil
     ) {
         replaceActiveSecurityScopedWorkspace(with: selection.activeSecurityScopedURL)
+        cancelActiveWorkspaceLoad()
         loadWorkspace(
             from: selection.rootURL,
             selectedPathOverride: selectedPathOverride,
@@ -389,11 +464,20 @@ final class AppModel: ObservableObject {
         rootBookmarkData: Data? = nil
     ) {
         cancelActiveDocumentLoad()
+        githubURLLoadErrorMessage = nil
         hasResolvedWorkspaceSelection = true
         let provider = LocalWorkspaceProvider(rootURL: rootURL, embeddedDocs: EmbeddedFixtures.docs)
         workspaceProvider = provider
         workspaceRootURL = rootURL
         workspaceRootBookmarkData = rootBookmarkData
+        shouldAllowRevealInFinder = rootURL != nil
+        currentRestorationSession = rootURL.map {
+            WorkspaceWindowSession(
+                rootPath: $0.path,
+                selectedFile: selectedPathOverride?.rawValue,
+                securityScopedBookmarkData: rootBookmarkData
+            )
+        }
         do {
             let workspace = try provider.loadRoot()
             files = workspace.files
@@ -424,6 +508,90 @@ final class AppModel: ObservableObject {
             selectedPath = nil
             workspaceRootURL = nil
             workspaceRootBookmarkData = nil
+            shouldAllowRevealInFinder = false
+            currentRestorationSession = nil
+            documentText = "Unable to load workspace: \(error.localizedDescription)"
+            documentBlocks = MarkdownRenderer.blocks(from: documentText)
+            isLoadingDocument = false
+            isReady = true
+            readyReference = Date()
+        }
+    }
+
+    private func loadGitHubWorkspaceFromSession(
+        _ sessionSource: GitHubWorkspaceSessionSource,
+        selectedPathOverride: WorkspacePath?
+    ) {
+        let cacheRootURL = URL(fileURLWithPath: sessionSource.cachedRootPath, isDirectory: true)
+        if FileManager.default.fileExists(atPath: cacheRootURL.path) {
+            loadGitHubWorkspace(
+                CachedGitHubWorkspace(
+                    descriptor: sessionSource.descriptor,
+                    cacheRootURL: cacheRootURL
+                ),
+                selectedPathOverride: selectedPathOverride
+            )
+            return
+        }
+
+        openGitHubWorkspace(from: sessionSource.originalURLString, selectedPathOverride: selectedPathOverride)
+    }
+
+    private func loadGitHubWorkspace(
+        _ cachedWorkspace: CachedGitHubWorkspace,
+        selectedPathOverride: WorkspacePath?
+    ) {
+        cancelActiveDocumentLoad()
+        hasResolvedWorkspaceSelection = true
+        replaceActiveSecurityScopedWorkspace(with: nil)
+        workspaceRootBookmarkData = nil
+        workspaceRootURL = cachedWorkspace.cacheRootURL
+        workspaceProvider = GitHubWorkspaceProvider(
+            cachedRootURL: cachedWorkspace.cacheRootURL,
+            descriptor: cachedWorkspace.descriptor
+        )
+        workspaceRootDisplay = cachedWorkspace.descriptor.displayRoot
+        shouldAllowRevealInFinder = false
+        currentRestorationSession = WorkspaceWindowSession(
+            source: .github(
+                GitHubWorkspaceSessionSource(
+                    originalURLString: cachedWorkspace.descriptor.originalURLString,
+                    cachedRootPath: cachedWorkspace.cacheRootURL.path,
+                    descriptor: cachedWorkspace.descriptor
+                )
+            ),
+            selectedFile: selectedPathOverride?.rawValue
+        )
+        githubURLLoadErrorMessage = nil
+
+        do {
+            let workspace = try workspaceProvider?.loadRoot()
+            files = workspace?.files ?? []
+            let initialPath: WorkspacePath?
+            if let selectedPathOverride,
+               files.contains(where: { $0.path == selectedPathOverride }) {
+                initialPath = selectedPathOverride
+            } else {
+                initialPath = files.first?.path
+            }
+            backStack.removeAll()
+            forwardStack.removeAll()
+            if let initialPath {
+                openFile(initialPath, recordHistory: false)
+            } else {
+                selectedPath = nil
+                documentText = Self.emptyWorkspaceMessage
+                documentBlocks = MarkdownRenderer.blocks(from: documentText)
+                isLoadingDocument = false
+                isReady = true
+                readyReference = Date()
+            }
+        } catch {
+            files = []
+            selectedPath = nil
+            workspaceRootURL = nil
+            shouldAllowRevealInFinder = false
+            currentRestorationSession = nil
             documentText = "Unable to load workspace: \(error.localizedDescription)"
             documentBlocks = MarkdownRenderer.blocks(from: documentText)
             isLoadingDocument = false
@@ -434,15 +602,19 @@ final class AppModel: ObservableObject {
 
     private func showNoWorkspaceSelectedState() {
         cancelActiveDocumentLoad()
+        cancelActiveWorkspaceLoad()
         replaceActiveSecurityScopedWorkspace(with: nil)
         hasResolvedWorkspaceSelection = true
         workspaceProvider = nil
         workspaceRootURL = nil
         workspaceRootBookmarkData = nil
+        currentRestorationSession = nil
+        shouldAllowRevealInFinder = false
         files = []
         selectedPath = nil
         backStack.removeAll()
         forwardStack.removeAll()
+        githubURLLoadErrorMessage = nil
         documentText = Self.noWorkspacePromptMessage
         documentBlocks = []
         isLoadingDocument = false
@@ -455,6 +627,12 @@ final class AppModel: ObservableObject {
         documentLoadTask?.cancel()
         documentLoadTask = nil
         isLoadingDocument = false
+    }
+
+    private func cancelActiveWorkspaceLoad() {
+        workspaceLoadTask?.cancel()
+        workspaceLoadTask = nil
+        isLoadingWorkspace = false
     }
 
     private func replaceActiveSecurityScopedWorkspace(with newURL: URL?) {
@@ -536,25 +714,62 @@ final class AppModel: ObservableObject {
         return WorkspacePath(rawValue: relativePath)
     }
 
+    private func resolveMediaLinkTarget(_ url: URL) -> MediaLinkTarget? {
+        guard let resolvedURL = resolvedExternalURL(for: url) else { return nil }
+        guard let kind = Self.mediaLinkKind(for: resolvedURL) else { return nil }
+        return MediaLinkTarget(resolvedURL: resolvedURL, originalURL: url.scheme == nil ? resolvedURL : url, kind: kind)
+    }
+
+    private func resolvedExternalURL(for url: URL) -> URL? {
+        if let scheme = url.scheme, !scheme.isEmpty {
+            return url
+        }
+
+        guard let workspaceProvider else { return nil }
+        return try? workspaceProvider.resolveMediaURL(
+            for: url.path(percentEncoded: false),
+            relativeTo: selectedPath
+        )
+    }
+
     private func isMarkdownPath(_ path: String) -> Bool {
         SupportedMarkdownExtensions.contains((path as NSString).pathExtension)
     }
 }
 
 extension AppModel {
+    enum DocumentLinkAction: Equatable {
+        case markdown(WorkspacePath)
+        case media(MediaLinkTarget)
+        case external(URL)
+    }
+
+    struct MediaLinkTarget: Identifiable, Equatable {
+        enum Kind: String {
+            case image
+            case video
+        }
+
+        let resolvedURL: URL
+        let originalURL: URL
+        let kind: Kind
+
+        var id: String { originalURL.absoluteString + "|" + kind.rawValue }
+    }
+
     private struct DocumentLoadResult: Sendable {
         let text: String
         let blocks: [MarkdownBlock]
     }
 
     private static func loadDocument(
-        provider: LocalWorkspaceProvider,
+        provider: any WorkspaceProvider,
         path: WorkspacePath
     ) async -> DocumentLoadResult {
         let detachedTask = Task.detached(priority: .userInitiated) {
             let text = (try? provider.readFile(at: path)) ?? "Unable to read \(path.rawValue)"
             let parsedBlocks = MarkdownRenderer.blocks(from: text)
-            let blocks = hydrateMedia(in: parsedBlocks, provider: provider)
+            let blocks = await hydrateMedia(in: parsedBlocks, provider: provider, documentPath: path)
             return DocumentLoadResult(text: text, blocks: blocks)
         }
 
@@ -567,16 +782,23 @@ extension AppModel {
 
     private nonisolated static func hydrateMedia(
         in blocks: [MarkdownBlock],
-        provider: LocalWorkspaceProvider
-    ) -> [MarkdownBlock] {
-        blocks.map { hydrateMedia(in: $0, provider: provider) }
+        provider: any WorkspaceProvider,
+        documentPath: WorkspacePath
+    ) async -> [MarkdownBlock] {
+        var hydratedBlocks: [MarkdownBlock] = []
+        hydratedBlocks.reserveCapacity(blocks.count)
+        for block in blocks {
+            hydratedBlocks.append(await hydrateMedia(in: block, provider: provider, documentPath: documentPath))
+        }
+        return hydratedBlocks
     }
 
     private nonisolated static func hydrateMedia(
         in block: MarkdownBlock,
-        provider: LocalWorkspaceProvider
-    ) -> MarkdownBlock {
-        let hydratedChildren = hydrateMedia(in: block.children, provider: provider)
+        provider: any WorkspaceProvider,
+        documentPath: WorkspacePath
+    ) async -> MarkdownBlock {
+        let hydratedChildren = await hydrateMedia(in: block.children, provider: provider, documentPath: documentPath)
 
         switch block.kind {
         case .image:
@@ -584,12 +806,18 @@ extension AppModel {
                 return block.replacing(children: hydratedChildren)
             }
 
-            let resolvedURL = try? provider.resolveMediaURL(for: WorkspacePath(rawValue: image.sourceURL))
+            let (resolvedURL, loadError) = await hydrateImageURL(
+                sourceURL: image.sourceURL,
+                provider: provider,
+                documentPath: documentPath
+            )
             let hydratedImage = MarkdownImage(
                 altText: image.altText,
                 sourceURL: image.sourceURL,
                 title: image.title,
-                resolvedURL: resolvedURL
+                sourceKind: mediaSourceKind(for: image.sourceURL),
+                resolvedURL: resolvedURL,
+                loadError: loadError
             )
             let hydratedKind: MarkdownBlockKind = resolvedURL.map(isAnimatedImage(at:)) == true ? .animatedImage : .image
             return block.replacing(
@@ -603,12 +831,18 @@ extension AppModel {
                 return block.replacing(children: hydratedChildren)
             }
 
-            let resolvedURL = try? provider.resolveMediaURL(for: WorkspacePath(rawValue: video.sourceURL))
+            let (resolvedURL, loadError) = hydrateVideoURL(
+                sourceURL: video.sourceURL,
+                provider: provider,
+                documentPath: documentPath
+            )
             let hydratedVideo = MarkdownVideo(
                 altText: video.altText,
                 sourceURL: video.sourceURL,
                 title: video.title,
-                resolvedURL: resolvedURL
+                sourceKind: mediaSourceKind(for: video.sourceURL),
+                resolvedURL: resolvedURL,
+                loadError: loadError
             )
             return block.replacing(video: hydratedVideo, children: hydratedChildren)
 
@@ -620,6 +854,146 @@ extension AppModel {
     private nonisolated static func isAnimatedImage(at url: URL) -> Bool {
         guard let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil) else { return false }
         return CGImageSourceGetCount(imageSource) > 1
+    }
+
+    private nonisolated static func hydrateImageURL(
+        sourceURL: String,
+        provider: any WorkspaceProvider,
+        documentPath: WorkspacePath
+    ) async -> (URL?, String?) {
+        switch resolveMediaSourceURL(sourceURL, provider: provider, documentPath: documentPath, kindLabel: "Image") {
+        case let .success(url):
+            if url.isFileURL {
+                return (url, nil)
+            }
+
+            do {
+                let cachedURL = try await fetchRemoteImageToCache(remoteURL: url)
+                return (cachedURL, nil)
+            } catch {
+                return (nil, remoteMediaFailureMessage(error: error, sourceURL: sourceURL, kindLabel: "Image"))
+            }
+
+        case let .failure(message):
+            return (nil, message)
+        }
+    }
+
+    private nonisolated static func hydrateVideoURL(
+        sourceURL: String,
+        provider: any WorkspaceProvider,
+        documentPath: WorkspacePath
+    ) -> (URL?, String?) {
+        switch resolveMediaSourceURL(sourceURL, provider: provider, documentPath: documentPath, kindLabel: "Video") {
+        case let .success(url):
+            return (url, nil)
+        case let .failure(message):
+            return (nil, message)
+        }
+    }
+
+    private enum MediaSourceResolutionResult {
+        case success(URL)
+        case failure(String)
+    }
+
+    private nonisolated static func resolveMediaSourceURL(
+        _ sourceURL: String,
+        provider: any WorkspaceProvider,
+        documentPath: WorkspacePath,
+        kindLabel: String
+    ) -> MediaSourceResolutionResult {
+        if let remoteURL = remoteMediaURL(from: sourceURL) {
+            if remoteURL.scheme?.lowercased() == "https" || isLoopbackHTTPURL(remoteURL) {
+                return .success(remoteURL)
+            }
+            return .failure(
+                "\(kindLabel) failed to load.\nsource: \(sourceURL)\nOnly https URLs are supported, except localhost URLs used for tests."
+            )
+        }
+
+        guard !sourceURL.lowercased().hasPrefix("data:") else {
+            return .failure("\(kindLabel) data URLs are not supported.\nsource: \(sourceURL)")
+        }
+
+        guard let resolvedURL = try? provider.resolveMediaURL(for: sourceURL, relativeTo: documentPath) else {
+            return .failure("\(kindLabel) path could not be resolved.\nsource: \(sourceURL)")
+        }
+
+        return .success(resolvedURL)
+    }
+
+    private nonisolated static func remoteMediaURL(from sourceURL: String) -> URL? {
+        guard let url = URL(string: sourceURL), let scheme = url.scheme, !scheme.isEmpty, !url.isFileURL else {
+            return nil
+        }
+        return url
+    }
+
+    private nonisolated static func isLoopbackHTTPURL(_ url: URL) -> Bool {
+        guard url.scheme?.lowercased() == "http" else { return false }
+        guard let host = url.host?.lowercased() else { return false }
+        return host == "127.0.0.1" || host == "localhost"
+    }
+
+    private nonisolated static func mediaSourceKind(for sourceURL: String) -> MarkdownMediaSourceKind {
+        remoteMediaURL(from: sourceURL) == nil ? .local : .remote
+    }
+
+    private nonisolated static func fetchRemoteImageToCache(remoteURL: URL) async throws -> URL {
+        let cacheDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("qmv-remote-media-cache", isDirectory: true)
+        try FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
+
+        let baseName = Data(remoteURL.absoluteString.utf8)
+            .base64EncodedString()
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "=", with: "")
+        let fileExtension = remoteURL.pathExtension.isEmpty ? "bin" : remoteURL.pathExtension
+        let destinationURL = cacheDirectory.appendingPathComponent("\(baseName).\(fileExtension)")
+
+        if FileManager.default.fileExists(atPath: destinationURL.path) {
+            return destinationURL
+        }
+
+        let (temporaryURL, response) = try await URLSession.shared.download(from: remoteURL)
+        if let httpResponse = response as? HTTPURLResponse,
+           !(200...299).contains(httpResponse.statusCode) {
+            throw RemoteMediaError.httpStatus(httpResponse.statusCode)
+        }
+
+        if FileManager.default.fileExists(atPath: destinationURL.path) {
+            try? FileManager.default.removeItem(at: destinationURL)
+        }
+        try FileManager.default.moveItem(at: temporaryURL, to: destinationURL)
+        return destinationURL
+    }
+
+    private enum RemoteMediaError: LocalizedError {
+        case httpStatus(Int)
+
+        var errorDescription: String? {
+            switch self {
+            case let .httpStatus(statusCode):
+                return "HTTP \(statusCode)"
+            }
+        }
+    }
+
+    private nonisolated static func remoteMediaFailureMessage(error: Error, sourceURL: String, kindLabel: String) -> String {
+        "\(kindLabel) failed to load: \(error.localizedDescription)\nsource: \(sourceURL)"
+    }
+
+    private nonisolated static func mediaLinkKind(for url: URL) -> MediaLinkTarget.Kind? {
+        let fileExtension = url.pathExtension.lowercased()
+        if ["png", "jpg", "jpeg", "gif", "webp", "bmp", "tiff", "tif", "heic", "heif"].contains(fileExtension) {
+            return .image
+        }
+        if ["mp4", "mov", "m4v", "webm"].contains(fileExtension) {
+            return .video
+        }
+        return nil
     }
 
     static func adjacentFilePath(

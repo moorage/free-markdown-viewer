@@ -5,13 +5,86 @@ import SwiftUI
 import AppKit
 #endif
 
+enum WorkspaceSessionSource: Codable, Equatable, Sendable {
+    case local(rootPath: String, securityScopedBookmarkData: Data?)
+    case github(GitHubWorkspaceSessionSource)
+}
+
 struct WorkspaceWindowSession: Codable, Equatable, Sendable {
-    let rootPath: String
+    let source: WorkspaceSessionSource
     let selectedFile: String?
-    let securityScopedBookmarkData: Data?
+
+    init(
+        source: WorkspaceSessionSource,
+        selectedFile: String?
+    ) {
+        self.source = source
+        self.selectedFile = selectedFile
+    }
+
+    init(
+        rootPath: String,
+        selectedFile: String?,
+        securityScopedBookmarkData: Data?
+    ) {
+        self.init(
+            source: .local(rootPath: rootPath, securityScopedBookmarkData: securityScopedBookmarkData),
+            selectedFile: selectedFile
+        )
+    }
 
     var rootURL: URL {
-        URL(fileURLWithPath: rootPath)
+        switch source {
+        case let .local(rootPath, _):
+            return URL(fileURLWithPath: rootPath)
+        case let .github(remoteSource):
+            return URL(fileURLWithPath: remoteSource.cachedRootPath, isDirectory: true)
+        }
+    }
+
+    var rootPath: String {
+        switch source {
+        case let .local(rootPath, _):
+            return rootPath
+        case let .github(remoteSource):
+            return remoteSource.cachedRootPath
+        }
+    }
+
+    var securityScopedBookmarkData: Data? {
+        switch source {
+        case let .local(_, bookmarkData):
+            return bookmarkData
+        case .github:
+            return nil
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case source
+        case selectedFile
+        case rootPath
+        case securityScopedBookmarkData
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        if let source = try container.decodeIfPresent(WorkspaceSessionSource.self, forKey: .source) {
+            self.source = source
+            selectedFile = try container.decodeIfPresent(String.self, forKey: .selectedFile)
+            return
+        }
+
+        let rootPath = try container.decode(String.self, forKey: .rootPath)
+        let bookmarkData = try container.decodeIfPresent(Data.self, forKey: .securityScopedBookmarkData)
+        source = .local(rootPath: rootPath, securityScopedBookmarkData: bookmarkData)
+        selectedFile = try container.decodeIfPresent(String.self, forKey: .selectedFile)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(source, forKey: .source)
+        try container.encodeIfPresent(selectedFile, forKey: .selectedFile)
     }
 }
 
@@ -118,14 +191,9 @@ final class WorkspaceWindowSessionStore: ObservableObject {
         pendingAdditionalSessions.removeAll()
     }
 
-    func scheduleExternalWorkspaceWindow(for rootURL: URL, openWindow: OpenWindowAction) {
+    func scheduleExternalWorkspaceWindow(for session: WorkspaceWindowSession, openWindow: OpenWindowAction) {
         let sceneID = UUID().uuidString
-        let bookmarkData = WorkspaceSecurityScope.bookmarkData(for: rootURL)
-        scheduledSessions[sceneID] = WorkspaceWindowSession(
-            rootPath: rootURL.path,
-            selectedFile: nil,
-            securityScopedBookmarkData: bookmarkData
-        )
+        scheduledSessions[sceneID] = session
         openWindow(value: sceneID)
     }
 

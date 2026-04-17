@@ -6,6 +6,7 @@ import AppKit
 struct AppRootView: View {
     @ObservedObject var model: AppModel
     let onOpenFolder: (() -> Void)?
+    let onOpenGitHubURLPrompt: (() -> Void)?
     let onInstallCommandLineTool: (() -> Void)?
     let shouldShowCommandLineToolPrompt: Bool
     #if os(macOS)
@@ -18,6 +19,7 @@ struct AppRootView: View {
             ViewerShellView(
                 model: model,
                 onOpenFolder: onOpenFolder,
+                onOpenGitHubURLPrompt: onOpenGitHubURLPrompt,
                 onInstallCommandLineTool: onInstallCommandLineTool,
                 shouldShowCommandLineToolPrompt: shouldShowCommandLineToolPrompt
             )
@@ -37,6 +39,7 @@ struct AppRootView: View {
                                 content: ViewerShellView(
                                     model: model,
                                     onOpenFolder: onOpenFolder,
+                                    onOpenGitHubURLPrompt: onOpenGitHubURLPrompt,
                                     onInstallCommandLineTool: onInstallCommandLineTool,
                                     shouldShowCommandLineToolPrompt: shouldShowCommandLineToolPrompt
                                 )
@@ -51,6 +54,7 @@ struct AppRootView: View {
                             content: ViewerShellView(
                                 model: model,
                                 onOpenFolder: onOpenFolder,
+                                onOpenGitHubURLPrompt: onOpenGitHubURLPrompt,
                                 onInstallCommandLineTool: onInstallCommandLineTool,
                                 shouldShowCommandLineToolPrompt: shouldShowCommandLineToolPrompt
                             )

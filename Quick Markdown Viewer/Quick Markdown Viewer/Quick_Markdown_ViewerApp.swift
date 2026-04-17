@@ -15,6 +15,7 @@ import Darwin
 @main
 struct Quick_Markdown_ViewerApp: App {
     private let launchOptions: HarnessLaunchOptions
+    private let githubWorkspaceLoader: GitHubWorkspaceService
     @StateObject private var sessionStore: WorkspaceWindowSessionStore
     #if os(macOS)
     @NSApplicationDelegateAdaptor(QuickMarkdownViewerAppDelegate.self) private var appDelegate
@@ -23,6 +24,7 @@ struct Quick_Markdown_ViewerApp: App {
     init() {
         let resolvedLaunchOptions = HarnessLaunchOptions.fromProcess()
         launchOptions = resolvedLaunchOptions
+        githubWorkspaceLoader = GitHubWorkspaceService.makeDefault(launchOptions: resolvedLaunchOptions)
         UITestOpenFolderSelectionStore.shared.configureIfNeeded(using: resolvedLaunchOptions)
         MacCommandLineToolManager.shared.configure(using: resolvedLaunchOptions)
         _sessionStore = StateObject(
@@ -38,7 +40,8 @@ struct Quick_Markdown_ViewerApp: App {
             WindowSceneRootView(
                 launchOptions: launchOptions,
                 sceneID: sceneID,
-                sessionStore: sessionStore
+                sessionStore: sessionStore,
+                githubWorkspaceLoader: githubWorkspaceLoader
             )
         } defaultValue: {
             UUID().uuidString
