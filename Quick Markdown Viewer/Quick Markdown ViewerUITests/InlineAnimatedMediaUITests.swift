@@ -32,15 +32,60 @@ final class InlineAnimatedMediaUITests: XCTestCase {
     }
 
     @MainActor
-    private func launchApp(opening fileName: String) -> XCUIApplication {
+    func testLinkedLocalVideoShowsPreviewAndPlayButton() throws {
+        let app = launchApp(
+            opening: "basic_typography.md",
+            previewURL: repoRootURL().appendingPathComponent("Fixtures/media/rickrolled.mp4").absoluteString
+        )
+        let closeButton = app.buttons["media-preview.close"]
+        let playButtons = elements(in: app, withIdentifierPrefix: "video.playButton.")
+
+        XCTAssertTrue(closeButton.waitForExistence(timeout: 5))
+        XCTAssertTrue(playButtons.firstMatch.waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testLinkedLocalImageShowsPreviewAndCloseButton() throws {
+        let app = launchApp(
+            opening: "basic_typography.md",
+            previewURL: repoRootURL().appendingPathComponent("Fixtures/media/rickrolled.gif").absoluteString
+        )
+
+        let closeButton = app.buttons["media-preview.close"]
+        XCTAssertTrue(closeButton.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["media-preview.open-in-browser"].exists)
+    }
+
+    @MainActor
+    func testLinkedLocalImagePreviewClosesOnEscape() throws {
+        let app = launchApp(
+            opening: "basic_typography.md",
+            previewURL: repoRootURL().appendingPathComponent("Fixtures/media/rickrolled.gif").absoluteString
+        )
+
+        let closeButton = app.buttons["media-preview.close"]
+        XCTAssertTrue(closeButton.waitForExistence(timeout: 5))
+
+        app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
+
+        let previewGone = NSPredicate(format: "exists == false")
+        let expectation = XCTNSPredicateExpectation(predicate: previewGone, object: closeButton)
+        XCTAssertEqual(XCTWaiter().wait(for: [expectation], timeout: 5), .completed)
+    }
+
+    @MainActor
+    private func launchApp(opening fileName: String, fixtureRoot: String? = nil, previewURL: String? = nil) -> XCUIApplication {
         let app = XCUIApplication()
-        let fixtureRoot = repoRootURL().appendingPathComponent("Fixtures/docs", isDirectory: true).path
+        let resolvedFixtureRoot = fixtureRoot ?? repoRootURL().appendingPathComponent("Fixtures/docs", isDirectory: true).path
 
         app.launchArguments = [
-            "--fixture-root", fixtureRoot,
+            "--fixture-root", resolvedFixtureRoot,
             "--open-file", fileName,
             "--ui-test-mode", "1",
         ]
+        if let previewURL {
+            app.launchArguments.append(contentsOf: ["--ui-test-open-linked-media", previewURL])
+        }
         app.launch()
         app.activate()
 
@@ -52,6 +97,18 @@ final class InlineAnimatedMediaUITests: XCTestCase {
     private func elements(in app: XCUIApplication, withIdentifierPrefix prefix: String) -> XCUIElementQuery {
         let predicate = NSPredicate(format: "identifier BEGINSWITH %@", prefix)
         return app.descendants(matching: .any).matching(predicate)
+    }
+
+    private func makeWorkspace(named folderName: String, files: [String: String]) throws -> URL {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let folder = root.appendingPathComponent(folderName, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        for (path, contents) in files {
+            let fileURL = folder.appendingPathComponent(path)
+            try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try contents.write(to: fileURL, atomically: true, encoding: .utf8)
+        }
+        return folder
     }
 
     private func repoRootURL(filePath: StaticString = #filePath) -> URL {

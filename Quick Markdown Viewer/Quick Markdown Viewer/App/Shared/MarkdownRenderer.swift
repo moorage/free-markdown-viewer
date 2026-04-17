@@ -924,7 +924,9 @@ nonisolated enum MarkdownRenderer {
                 altText: "",
                 sourceURL: String(line[sourceRange]),
                 title: titleRange.map { String(line[$0]) },
-                resolvedURL: nil
+                sourceKind: .local,
+                resolvedURL: nil,
+                loadError: nil
             )
         }
         return definitions
@@ -957,7 +959,9 @@ nonisolated enum MarkdownRenderer {
             altText: altText,
             sourceURL: definition.sourceURL,
             title: definition.title,
-            resolvedURL: nil
+            sourceKind: markdownMediaSourceKind(for: definition.sourceURL),
+            resolvedURL: nil,
+            loadError: nil
         )
     }
 
@@ -975,7 +979,9 @@ nonisolated enum MarkdownRenderer {
             altText: normalizedInlineText(String(line[altRange])),
             sourceURL: String(line[sourceRange]),
             title: titleRange.map { String(line[$0]) },
-            resolvedURL: nil
+            sourceKind: markdownMediaSourceKind(for: String(line[sourceRange])),
+            resolvedURL: nil,
+            loadError: nil
         )
     }
 
@@ -990,19 +996,23 @@ nonisolated enum MarkdownRenderer {
         }
 
         let sourceURL = String(line[sourceRange])
-        guard isLocalMediaReference(sourceURL) else { return nil }
 
         let titleRange = Range(match.range(at: 3), in: line)
         return MarkdownVideo(
             altText: normalizedInlineText(String(line[altRange])),
             sourceURL: sourceURL,
             title: titleRange.map { String(line[$0]) },
-            resolvedURL: nil
+            sourceKind: markdownMediaSourceKind(for: sourceURL),
+            resolvedURL: nil,
+            loadError: nil
         )
     }
 
-    private nonisolated static func isLocalMediaReference(_ sourceURL: String) -> Bool {
-        !(sourceURL.contains("://") || sourceURL.lowercased().hasPrefix("data:"))
+    private nonisolated static func markdownMediaSourceKind(for sourceURL: String) -> MarkdownMediaSourceKind {
+        if sourceURL.contains("://") || sourceURL.lowercased().hasPrefix("data:") {
+            return .remote
+        }
+        return .local
     }
 
     private nonisolated static func normalizedInlineText(_ source: String) -> String {

@@ -60,14 +60,23 @@ struct MarkdownImage: Hashable, Sendable {
     let altText: String
     let sourceURL: String
     let title: String?
+    let sourceKind: MarkdownMediaSourceKind
     let resolvedURL: URL?
+    let loadError: String?
 }
 
 struct MarkdownVideo: Hashable, Sendable {
     let altText: String
     let sourceURL: String
     let title: String?
+    let sourceKind: MarkdownMediaSourceKind
     let resolvedURL: URL?
+    let loadError: String?
+}
+
+enum MarkdownMediaSourceKind: String, Hashable, Sendable {
+    case local
+    case remote
 }
 
 struct MarkdownCodeBlock: Hashable, Sendable {

@@ -48,7 +48,8 @@ The current repo is aligned with a normal free app:
 
 - no StoreKit or in-app purchase flow
 - no login/account dependency
-- no analytics or network service requirement in the shipped code path
+- no analytics, account, or background network service requirement
+- shipped builds can optionally fetch direct image or video URLs referenced by user-authored Markdown
 - local-first document viewing
 
 Expected App Privacy answer if the shipped app remains unchanged:
