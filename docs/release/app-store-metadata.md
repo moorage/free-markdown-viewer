@@ -15,6 +15,16 @@ Use this file as the source for App Store Connect listing text and screenshot pl
 
 Open Markdown folders on Mac, iPhone, and iPad with a fast, local-first viewer that keeps documents readable and easy to navigate.
 
+## What's New
+
+Use this for the `What's New` field on the next App Store version:
+
+- Open public GitHub repositories and repository tree URLs directly in the app
+- Browse branch and tag snapshots with local caching for offline reopen
+- View remote images and video links referenced in Markdown files
+- On macOS, install the optional `qmv` command-line launcher from inside the app
+- Improved empty-state guidance for opening folders or loading GitHub workspaces
+
 ## Description
 
 Quick Markdown Viewer is a simple, local-first app for opening folders full of Markdown files and browsing them across macOS, iPhone, and iPad.
@@ -24,10 +34,13 @@ Use it to read notes, documentation, knowledge bases, exported reports, and proj
 Features:
 
 - Open a folder and browse Markdown files from a sidebar
+- Open public GitHub repository and repository tree URLs, including branch and tag paths
 - Read Markdown with native rendering for headings, lists, tables, code blocks, images, animated images, and local video
+- Render direct remote image and video links authored inside Markdown
 - Navigate quickly between files with back and forward history
 - Adjust viewer font size for comfortable reading
 - Work entirely with files you choose from Finder or the Files app
+- On macOS, optionally install the `qmv` command-line launcher to reopen folders from Terminal
 
 Quick Markdown Viewer is designed to stay lightweight and direct:
 
