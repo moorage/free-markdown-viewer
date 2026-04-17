@@ -1,6 +1,6 @@
 import Foundation
 
-struct GitHubWorkspaceDescriptor: Codable, Equatable, Sendable {
+nonisolated struct GitHubWorkspaceDescriptor: Codable, Equatable, Sendable {
     let originalURLString: String
     let owner: String
     let repository: String
@@ -39,23 +39,23 @@ struct GitHubWorkspaceDescriptor: Codable, Equatable, Sendable {
     }
 }
 
-struct CachedGitHubWorkspace: Equatable, Sendable {
+nonisolated struct CachedGitHubWorkspace: Equatable, Sendable {
     let descriptor: GitHubWorkspaceDescriptor
     let cacheRootURL: URL
 }
 
 protocol GitHubWorkspaceLoading: Sendable {
-    func loadWorkspace(from rawURLString: String) async throws -> CachedGitHubWorkspace
+    nonisolated func loadWorkspace(from rawURLString: String) async throws -> CachedGitHubWorkspace
 }
 
 protocol GitHubRemoteClientProtocol: Sendable {
-    func repositoryMetadata(owner: String, repository: String) async throws -> GitHubRepositoryMetadata
-    func commitSHA(owner: String, repository: String, ref: String) async throws -> String
-    func treeEntries(owner: String, repository: String, commitSHA: String) async throws -> [GitHubTreeEntry]
-    func fileData(owner: String, repository: String, commitSHA: String, path: String) async throws -> Data
+    nonisolated func repositoryMetadata(owner: String, repository: String) async throws -> GitHubRepositoryMetadata
+    nonisolated func commitSHA(owner: String, repository: String, ref: String) async throws -> String
+    nonisolated func treeEntries(owner: String, repository: String, commitSHA: String) async throws -> [GitHubTreeEntry]
+    nonisolated func fileData(owner: String, repository: String, commitSHA: String, path: String) async throws -> Data
 }
 
-struct GitHubRepositoryMetadata: Codable, Equatable, Sendable {
+nonisolated struct GitHubRepositoryMetadata: Codable, Equatable, Sendable {
     let defaultBranch: String
 
     enum CodingKeys: String, CodingKey {
@@ -63,12 +63,12 @@ struct GitHubRepositoryMetadata: Codable, Equatable, Sendable {
     }
 }
 
-struct GitHubTreeEntry: Codable, Equatable, Sendable {
+nonisolated struct GitHubTreeEntry: Codable, Equatable, Sendable {
     let path: String
     let type: String
 }
 
-enum GitHubWorkspaceError: LocalizedError, Equatable {
+nonisolated enum GitHubWorkspaceError: LocalizedError, Equatable {
     case invalidURL
     case unsupportedHost
     case unsupportedPath
@@ -103,7 +103,7 @@ enum GitHubWorkspaceError: LocalizedError, Equatable {
     }
 }
 
-struct GitHubWorkspaceProvider: WorkspaceProvider {
+nonisolated struct GitHubWorkspaceProvider: WorkspaceProvider {
     let cachedRootURL: URL
     let descriptor: GitHubWorkspaceDescriptor
 
@@ -186,18 +186,18 @@ struct GitHubWorkspaceProvider: WorkspaceProvider {
     }
 }
 
-struct GitHubWorkspaceSessionSource: Codable, Equatable, Sendable {
+nonisolated struct GitHubWorkspaceSessionSource: Codable, Equatable, Sendable {
     let originalURLString: String
     let cachedRootPath: String
     let descriptor: GitHubWorkspaceDescriptor
 }
 
-struct GitHubWorkspaceService: GitHubWorkspaceLoading {
-    private let remoteClient: any GitHubRemoteClientProtocol
-    private let fileManager: FileManager
-    private let cacheDirectoryURL: URL
+nonisolated struct GitHubWorkspaceService: GitHubWorkspaceLoading {
+    private nonisolated let remoteClient: any GitHubRemoteClientProtocol
+    private nonisolated(unsafe) let fileManager: FileManager
+    private nonisolated let cacheDirectoryURL: URL
 
-    init(
+    nonisolated init(
         remoteClient: any GitHubRemoteClientProtocol,
         fileManager: FileManager = .default,
         cacheDirectoryURL: URL? = nil
@@ -220,7 +220,7 @@ struct GitHubWorkspaceService: GitHubWorkspaceLoading {
         return .live(fileManager: fileManager)
     }
 
-    func loadWorkspace(from rawURLString: String) async throws -> CachedGitHubWorkspace {
+    nonisolated func loadWorkspace(from rawURLString: String) async throws -> CachedGitHubWorkspace {
         let request = try GitHubWorkspaceRequest.parse(rawURLString)
 
         do {
@@ -241,7 +241,7 @@ struct GitHubWorkspaceService: GitHubWorkspaceLoading {
         }
     }
 
-    private func resolveWorkspace(for request: GitHubWorkspaceRequest) async throws -> CachedGitHubWorkspace {
+    private nonisolated func resolveWorkspace(for request: GitHubWorkspaceRequest) async throws -> CachedGitHubWorkspace {
         let metadata = try await remoteClient.repositoryMetadata(owner: request.owner, repository: request.repository)
         let resolution = try await resolveReference(
             owner: request.owner,
@@ -296,7 +296,7 @@ struct GitHubWorkspaceService: GitHubWorkspaceLoading {
         )
     }
 
-    private func resolveReference(
+    private nonisolated func resolveReference(
         owner: String,
         repository: String,
         metadata: GitHubRepositoryMetadata,
@@ -341,7 +341,7 @@ struct GitHubWorkspaceService: GitHubWorkspaceLoading {
         throw GitHubWorkspaceError.refNotFound(treeSegments.joined(separator: "/"))
     }
 
-    private func entries(
+    private nonisolated func entries(
         in treeEntries: [GitHubTreeEntry],
         forSubdirectory subdirectory: String?
     ) throws -> [GitHubTreeEntry] {
@@ -361,7 +361,7 @@ struct GitHubWorkspaceService: GitHubWorkspaceLoading {
         return matchingEntries
     }
 
-    private func cacheMarkdownFiles(
+    private nonisolated func cacheMarkdownFiles(
         subtreeEntries: [GitHubTreeEntry],
         owner: String,
         repository: String,
@@ -398,7 +398,7 @@ struct GitHubWorkspaceService: GitHubWorkspaceLoading {
         }
     }
 
-    private func loadCachedWorkspace(forCanonicalURLString canonicalURLString: String) throws -> CachedGitHubWorkspace? {
+    private nonisolated func loadCachedWorkspace(forCanonicalURLString canonicalURLString: String) throws -> CachedGitHubWorkspace? {
         let aliases = try loadAliases()
         guard let alias = aliases[canonicalURLString] else { return nil }
 
@@ -413,14 +413,14 @@ struct GitHubWorkspaceService: GitHubWorkspaceLoading {
         )
     }
 
-    private func loadAliases() throws -> [String: GitHubWorkspaceAlias] {
+    private nonisolated func loadAliases() throws -> [String: GitHubWorkspaceAlias] {
         let aliasURL = aliasFileURL
         guard fileManager.fileExists(atPath: aliasURL.path) else { return [:] }
         let data = try Data(contentsOf: aliasURL)
         return try JSONDecoder().decode([String: GitHubWorkspaceAlias].self, from: data)
     }
 
-    private func storeAlias(_ alias: GitHubWorkspaceAlias) throws {
+    private nonisolated func storeAlias(_ alias: GitHubWorkspaceAlias) throws {
         try fileManager.createDirectory(at: cacheDirectoryURL, withIntermediateDirectories: true)
         var aliases = try loadAliases()
         aliases[alias.originalURLString] = alias
@@ -430,11 +430,11 @@ struct GitHubWorkspaceService: GitHubWorkspaceLoading {
         try data.write(to: aliasFileURL, options: Data.WritingOptions.atomic)
     }
 
-    private var aliasFileURL: URL {
+    private nonisolated var aliasFileURL: URL {
         cacheDirectoryURL.appendingPathComponent("aliases.json")
     }
 
-    private func displayRoot(
+    private nonisolated func displayRoot(
         owner: String,
         repository: String,
         requestedRef: String,
@@ -446,25 +446,25 @@ struct GitHubWorkspaceService: GitHubWorkspaceLoading {
         return "\(owner)/\(repository)@\(requestedRef)"
     }
 
-    private func workspaceRelativePath(for repositoryPath: String, subdirectory: String?) -> String {
+    private nonisolated func workspaceRelativePath(for repositoryPath: String, subdirectory: String?) -> String {
         guard let subdirectory, !subdirectory.isEmpty else { return repositoryPath }
         return String(repositoryPath.dropFirst(subdirectory.count + 1))
     }
 
-    private static func defaultCacheDirectoryURL(fileManager: FileManager) -> URL {
+    private nonisolated static func defaultCacheDirectoryURL(fileManager: FileManager) -> URL {
         let baseDirectory = fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first
             ?? fileManager.temporaryDirectory
         return baseDirectory.appendingPathComponent("GitHubWorkspaces", isDirectory: true)
     }
 }
 
-private struct GitHubWorkspaceRequest: Equatable, Sendable {
+nonisolated private struct GitHubWorkspaceRequest: Equatable, Sendable {
     let canonicalURLString: String
     let owner: String
     let repository: String
     let treeSegments: [String]?
 
-    static func parse(_ rawURLString: String) throws -> GitHubWorkspaceRequest {
+    nonisolated static func parse(_ rawURLString: String) throws -> GitHubWorkspaceRequest {
         guard let url = URL(string: rawURLString.trimmingCharacters(in: .whitespacesAndNewlines)),
               var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
             throw GitHubWorkspaceError.invalidURL
@@ -512,26 +512,26 @@ private struct GitHubWorkspaceRequest: Equatable, Sendable {
     }
 }
 
-private struct GitHubReferenceResolution: Equatable, Sendable {
+nonisolated private struct GitHubReferenceResolution: Equatable, Sendable {
     let requestedRef: String
     let commitSHA: String
     let subdirectory: String?
 }
 
-private struct GitHubWorkspaceAlias: Codable, Equatable, Sendable {
+nonisolated private struct GitHubWorkspaceAlias: Codable, Equatable, Sendable {
     let originalURLString: String
     let cachedRootPath: String
     let descriptor: GitHubWorkspaceDescriptor
 }
 
-private struct LiveGitHubRemoteClient: GitHubRemoteClientProtocol {
+nonisolated private struct LiveGitHubRemoteClient: GitHubRemoteClientProtocol {
     private let session: URLSession
 
-    init(session: URLSession = .shared) {
+    nonisolated init(session: URLSession = .shared) {
         self.session = session
     }
 
-    func repositoryMetadata(owner: String, repository: String) async throws -> GitHubRepositoryMetadata {
+    nonisolated func repositoryMetadata(owner: String, repository: String) async throws -> GitHubRepositoryMetadata {
         let url = try apiURL(path: "/repos/\(owner)/\(repository)")
         let request = configuredRequest(for: url)
         let (data, response) = try await session.data(for: request)
@@ -539,7 +539,7 @@ private struct LiveGitHubRemoteClient: GitHubRemoteClientProtocol {
         return try JSONDecoder().decode(GitHubRepositoryMetadata.self, from: data)
     }
 
-    func commitSHA(owner: String, repository: String, ref: String) async throws -> String {
+    nonisolated func commitSHA(owner: String, repository: String, ref: String) async throws -> String {
         let encodedRef = ref.addingPercentEncoding(withAllowedCharacters: .githubPathComponentAllowed) ?? ref
         let url = try apiURL(path: "/repos/\(owner)/\(repository)/commits/\(encodedRef)")
         let request = configuredRequest(for: url)
@@ -549,7 +549,7 @@ private struct LiveGitHubRemoteClient: GitHubRemoteClientProtocol {
         return payload.sha
     }
 
-    func treeEntries(owner: String, repository: String, commitSHA: String) async throws -> [GitHubTreeEntry] {
+    nonisolated func treeEntries(owner: String, repository: String, commitSHA: String) async throws -> [GitHubTreeEntry] {
         var components = URLComponents(string: "https://api.github.com/repos/\(owner)/\(repository)/git/trees/\(commitSHA)")!
         components.queryItems = [URLQueryItem(name: "recursive", value: "1")]
         let request = configuredRequest(for: components.url!)
@@ -559,7 +559,7 @@ private struct LiveGitHubRemoteClient: GitHubRemoteClientProtocol {
         return payload.tree
     }
 
-    func fileData(owner: String, repository: String, commitSHA: String, path: String) async throws -> Data {
+    nonisolated func fileData(owner: String, repository: String, commitSHA: String, path: String) async throws -> Data {
         let encodedPath = path
             .split(separator: "/")
             .map { segment in
@@ -572,14 +572,14 @@ private struct LiveGitHubRemoteClient: GitHubRemoteClientProtocol {
         return data
     }
 
-    private func apiURL(path: String) throws -> URL {
+    private nonisolated func apiURL(path: String) throws -> URL {
         guard let url = URL(string: "https://api.github.com\(path)") else {
             throw GitHubWorkspaceError.invalidURL
         }
         return url
     }
 
-    private func configuredRequest(for url: URL) -> URLRequest {
+    private nonisolated func configuredRequest(for url: URL) -> URLRequest {
         var request = URLRequest(url: url)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
@@ -587,7 +587,7 @@ private struct LiveGitHubRemoteClient: GitHubRemoteClientProtocol {
         return request
     }
 
-    private func validate(response: URLResponse) throws {
+    private nonisolated func validate(response: URLResponse) throws {
         guard let httpResponse = response as? HTTPURLResponse else { return }
         guard (200...299).contains(httpResponse.statusCode) else {
             throw GitHubWorkspaceError.httpStatus(httpResponse.statusCode)
@@ -595,23 +595,23 @@ private struct LiveGitHubRemoteClient: GitHubRemoteClientProtocol {
     }
 }
 
-private struct GitHubCommitPayload: Codable {
+nonisolated private struct GitHubCommitPayload: Codable {
     let sha: String
 }
 
-private struct GitHubTreePayload: Codable {
+nonisolated private struct GitHubTreePayload: Codable {
     let tree: [GitHubTreeEntry]
 }
 
-struct FixtureGitHubRemoteClient: GitHubRemoteClientProtocol {
+nonisolated struct FixtureGitHubRemoteClient: GitHubRemoteClientProtocol {
     private let fixture: GitHubFixtureDocument
 
-    init(fixtureURL: URL) throws {
+    nonisolated init(fixtureURL: URL) throws {
         let data = try Data(contentsOf: fixtureURL)
         fixture = try JSONDecoder().decode(GitHubFixtureDocument.self, from: data)
     }
 
-    func repositoryMetadata(owner: String, repository: String) async throws -> GitHubRepositoryMetadata {
+    nonisolated func repositoryMetadata(owner: String, repository: String) async throws -> GitHubRepositoryMetadata {
         let key = "\(owner)/\(repository)"
         guard let metadata = fixture.repositories[key] else {
             throw GitHubWorkspaceError.refNotFound(key)
@@ -619,7 +619,7 @@ struct FixtureGitHubRemoteClient: GitHubRemoteClientProtocol {
         return metadata
     }
 
-    func commitSHA(owner: String, repository: String, ref: String) async throws -> String {
+    nonisolated func commitSHA(owner: String, repository: String, ref: String) async throws -> String {
         let key = "\(owner)/\(repository)"
         guard let commitSHA = fixture.commits[key]?[ref] else {
             throw GitHubWorkspaceError.refNotFound(ref)
@@ -627,12 +627,12 @@ struct FixtureGitHubRemoteClient: GitHubRemoteClientProtocol {
         return commitSHA
     }
 
-    func treeEntries(owner: String, repository: String, commitSHA: String) async throws -> [GitHubTreeEntry] {
+    nonisolated func treeEntries(owner: String, repository: String, commitSHA: String) async throws -> [GitHubTreeEntry] {
         let key = "\(owner)/\(repository)"
         return fixture.trees[key]?[commitSHA] ?? []
     }
 
-    func fileData(owner: String, repository: String, commitSHA: String, path: String) async throws -> Data {
+    nonisolated func fileData(owner: String, repository: String, commitSHA: String, path: String) async throws -> Data {
         let key = "\(owner)/\(repository)"
         guard let contents = fixture.files[key]?[commitSHA]?[path] else {
             throw GitHubWorkspaceError.subdirectoryNotFound(path)
@@ -641,7 +641,7 @@ struct FixtureGitHubRemoteClient: GitHubRemoteClientProtocol {
     }
 }
 
-struct GitHubFixtureDocument: Codable {
+nonisolated struct GitHubFixtureDocument: Codable {
     let repositories: [String: GitHubRepositoryMetadata]
     let commits: [String: [String: String]]
     let trees: [String: [String: [GitHubTreeEntry]]]
@@ -649,7 +649,7 @@ struct GitHubFixtureDocument: Codable {
 }
 
 private extension CharacterSet {
-    static let githubPathComponentAllowed: CharacterSet = {
+    nonisolated static let githubPathComponentAllowed: CharacterSet = {
         var allowed = CharacterSet.urlPathAllowed
         allowed.remove(charactersIn: "/")
         return allowed

@@ -26,7 +26,9 @@ struct Quick_Markdown_ViewerApp: App {
         launchOptions = resolvedLaunchOptions
         githubWorkspaceLoader = GitHubWorkspaceService.makeDefault(launchOptions: resolvedLaunchOptions)
         UITestOpenFolderSelectionStore.shared.configureIfNeeded(using: resolvedLaunchOptions)
+        #if os(macOS)
         MacCommandLineToolManager.shared.configure(using: resolvedLaunchOptions)
+        #endif
         _sessionStore = StateObject(
             wrappedValue: WorkspaceWindowSessionStore(launchOptions: resolvedLaunchOptions)
         )

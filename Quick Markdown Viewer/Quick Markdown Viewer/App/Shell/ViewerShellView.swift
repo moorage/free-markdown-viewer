@@ -487,7 +487,7 @@ struct ViewerShellView: View {
             message: AppModel.noWorkspacePromptMessage,
             buttonTitle: "Open Folder",
             includeGitHubURLForm: true,
-            secondaryMessage: shouldShowCommandLineToolPrompt ? MacCommandLineToolManager.installExplanation : nil,
+            secondaryMessage: shouldShowCommandLineToolPrompt ? commandLineToolInstallExplanation : nil,
             secondaryButtonTitle: shouldShowCommandLineToolPrompt ? "Install `qmv`" : nil,
             secondaryAction: shouldShowCommandLineToolPrompt ? onInstallCommandLineTool : nil
         )
@@ -557,6 +557,14 @@ struct ViewerShellView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         .padding(24)
+    }
+
+    private var commandLineToolInstallExplanation: String {
+        #if os(macOS)
+        MacCommandLineToolManager.installExplanation
+        #else
+        ""
+        #endif
     }
 
     #if os(macOS)
