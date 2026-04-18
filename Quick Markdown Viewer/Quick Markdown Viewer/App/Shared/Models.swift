@@ -1,19 +1,58 @@
 import Foundation
 
-struct WorkspacePath: Hashable, Codable, Identifiable, Sendable {
+nonisolated struct WorkspacePath: Hashable, Codable, Identifiable, Sendable {
     let rawValue: String
 
     var id: String { rawValue }
 }
 
-struct MarkdownFileNode: Identifiable, Hashable, Sendable {
+nonisolated enum WorkspaceDocumentKind: String, Hashable, Codable, Sendable {
+    case markdown
+    case csv
+    case tsv
+
+    nonisolated var isDelimitedText: Bool {
+        switch self {
+        case .csv, .tsv:
+            return true
+        case .markdown:
+            return false
+        }
+    }
+
+    nonisolated var iconSystemName: String {
+        switch self {
+        case .markdown:
+            return "doc.text"
+        case .csv, .tsv:
+            return "tablecells"
+        }
+    }
+
+    nonisolated static func forPath(_ path: String) -> WorkspaceDocumentKind? {
+        let fileExtension = (path as NSString).pathExtension.lowercased()
+        switch fileExtension {
+        case "md", "markdown", "mdown", "mkd", "mkdn":
+            return .markdown
+        case "csv":
+            return .csv
+        case "tsv":
+            return .tsv
+        default:
+            return nil
+        }
+    }
+}
+
+nonisolated struct MarkdownFileNode: Identifiable, Hashable, Sendable {
     let path: WorkspacePath
     let name: String
+    let kind: WorkspaceDocumentKind
 
     var id: String { path.rawValue }
 }
 
-struct Workspace: Sendable {
+nonisolated struct Workspace: Sendable {
     let rootIdentifier: String
     let files: [MarkdownFileNode]
 }

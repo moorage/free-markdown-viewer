@@ -8,22 +8,28 @@ final class AppModel: ObservableObject {
     static let minimumFontScale: CGFloat = 0.8
     static let maximumFontScale: CGFloat = 1.8
     private static let fontScaleStep: CGFloat = 0.1
-    static let noWorkspacePromptMessage = "Open a folder of markdown files to get started."
-    static let emptyWorkspaceMessage = "No markdown files found."
+    static let noWorkspacePromptMessage = "Open a folder of Markdown, CSV, or TSV files to get started."
+    static let emptyWorkspaceMessage = "No Markdown, CSV, or TSV files found."
 
     @Published var githubURLInput = ""
     @Published private(set) var files: [MarkdownFileNode] = []
     @Published private(set) var documentText = "Loading…"
     @Published private(set) var documentBlocks: [MarkdownBlock] = []
+    @Published private(set) var selectedDocumentKind: WorkspaceDocumentKind = .markdown
     @Published private(set) var isLoadingDocument = false
     @Published private(set) var isLoadingWorkspace = false
+    @Published private(set) var isPreparingPrint = false
     @Published private(set) var githubURLLoadErrorMessage: String?
+    @Published private(set) var printErrorMessage: String?
+    @Published private(set) var lastPrintRequestScope: String?
+    @Published private(set) var lastPrintRequestStatus: String?
     @Published private(set) var selectedPath: WorkspacePath?
     @Published private(set) var backStack: [NavigationEntry] = []
     @Published private(set) var forwardStack: [NavigationEntry] = []
     @Published private(set) var workspaceRootDisplay = "No Folder Open"
     @Published private(set) var isReady = false
     @Published private(set) var fontScale: CGFloat = 1
+    @Published private(set) var tabularPresentation = TabularDocumentPresentation()
     private(set) var viewportSize: CGSize = CGSize(width: 1100, height: 900)
 
     let launchOptions: HarnessLaunchOptions
@@ -95,6 +101,10 @@ final class AppModel: ObservableObject {
         Self.shouldRenderStructuredContent(for: documentBlocks)
     }
 
+    var shouldShowTabularControls: Bool {
+        selectedDocumentKind.isDelimitedText
+    }
+
     var shouldShowOpenFolderPromptState: Bool {
         workspaceRootURL == nil &&
         files.isEmpty &&
@@ -127,6 +137,30 @@ final class AppModel: ObservableObject {
         fontScale > Self.minimumFontScale
     }
 
+    var canIncreaseColumnWidth: Bool {
+        tabularPresentation.columnWidth < TabularDocumentPresentation.maximumColumnWidth
+    }
+
+    var canDecreaseColumnWidth: Bool {
+        tabularPresentation.columnWidth > TabularDocumentPresentation.minimumColumnWidth
+    }
+
+    var canIncreaseRowHeight: Bool {
+        tabularPresentation.rowHeight < TabularDocumentPresentation.maximumRowHeight
+    }
+
+    var canDecreaseRowHeight: Bool {
+        tabularPresentation.rowHeight > TabularDocumentPresentation.minimumRowHeight
+    }
+
+    var canPrintSelectedDocument: Bool {
+        selectedPath != nil && isPreparingPrint == false
+    }
+
+    var canPrintAllDocuments: Bool {
+        files.isEmpty == false && isPreparingPrint == false
+    }
+
     var shouldPreferDetailInCompactNavigation: Bool {
         launchOptions.platformTarget == .ios &&
         launchOptions.deviceClass == .iphone &&
@@ -135,8 +169,11 @@ final class AppModel: ObservableObject {
 
     static var preview: AppModel {
         let model = AppModel(launchOptions: HarnessLaunchOptions.fromProcess(arguments: ["Preview"]))
-        model.files = EmbeddedFixtures.docs.keys.sorted().map { MarkdownFileNode(path: WorkspacePath(rawValue: $0), name: $0) }
+        model.files = EmbeddedFixtures.docs.keys.sorted().map {
+            MarkdownFileNode(path: WorkspacePath(rawValue: $0), name: $0, kind: WorkspaceDocumentKind.forPath($0) ?? .markdown)
+        }
         model.selectedPath = WorkspacePath(rawValue: "basic_typography.md")
+        model.selectedDocumentKind = .markdown
         model.documentText = EmbeddedFixtures.docs["basic_typography.md"] ?? ""
         model.documentBlocks = MarkdownRenderer.blocks(from: model.documentText)
         model.workspaceRootDisplay = "Fixtures/docs"
@@ -199,6 +236,26 @@ final class AppModel: ObservableObject {
         setFontScale(fontScale - Self.fontScaleStep)
     }
 
+    func toggleTabularWrapMode() {
+        tabularPresentation.toggleWrapMode()
+    }
+
+    func increaseColumnWidth() {
+        tabularPresentation.increaseColumnWidth()
+    }
+
+    func decreaseColumnWidth() {
+        tabularPresentation.decreaseColumnWidth()
+    }
+
+    func increaseRowHeight() {
+        tabularPresentation.increaseRowHeight()
+    }
+
+    func decreaseRowHeight() {
+        tabularPresentation.decreaseRowHeight()
+    }
+
     func openFile(_ path: WorkspacePath, recordHistory: Bool = true) {
         guard let workspaceProvider else { return }
         cancelActiveDocumentLoad()
@@ -207,7 +264,9 @@ final class AppModel: ObservableObject {
             forwardStack.removeAll()
         }
         selectedPath = path
+        selectedDocumentKind = files.first(where: { $0.path == path })?.kind ?? WorkspaceDocumentKind.forPath(path.rawValue) ?? .markdown
         isLoadingDocument = true
+        printErrorMessage = nil
 
         let requestID = UUID()
         activeDocumentRequestID = requestID
@@ -219,6 +278,7 @@ final class AppModel: ObservableObject {
 
             self.documentText = outcome.text
             self.documentBlocks = outcome.blocks
+            self.selectedDocumentKind = outcome.kind
             self.isLoadingDocument = false
             self.isReady = true
             self.readyReference = Date()
@@ -368,6 +428,66 @@ final class AppModel: ObservableObject {
                 }
             }
             return HarnessCommandResponse(id: request.id, status: "error", result: nil, error: "missing path")
+        case "printSelectedDocument":
+            guard let path = request.arguments?["path"] else {
+                return HarnessCommandResponse(id: request.id, status: "error", result: nil, error: "missing path")
+            }
+            do {
+                let composition = try await makePrintComposition(scope: .selectedFile)
+                let destinationURL = URL(fileURLWithPath: path)
+                try FileManager.default.createDirectory(at: destinationURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try composition.plainText.write(to: destinationURL, atomically: true, encoding: .utf8)
+                return HarnessCommandResponse(id: request.id, status: "ok", result: ["path": path], error: nil)
+            } catch {
+                return HarnessCommandResponse(id: request.id, status: "error", result: nil, error: error.localizedDescription)
+            }
+        case "printAllDocuments":
+            guard let path = request.arguments?["path"] else {
+                return HarnessCommandResponse(id: request.id, status: "error", result: nil, error: "missing path")
+            }
+            do {
+                let composition = try await makePrintComposition(scope: .allFiles)
+                let destinationURL = URL(fileURLWithPath: path)
+                try FileManager.default.createDirectory(at: destinationURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try composition.plainText.write(to: destinationURL, atomically: true, encoding: .utf8)
+                return HarnessCommandResponse(id: request.id, status: "ok", result: ["path": path], error: nil)
+            } catch {
+                return HarnessCommandResponse(id: request.id, status: "error", result: nil, error: error.localizedDescription)
+            }
+        case "exportPrintedDocument":
+            guard let path = request.arguments?["path"] else {
+                return HarnessCommandResponse(id: request.id, status: "error", result: nil, error: "missing path")
+            }
+            do {
+                let composition = try await makePrintComposition(scope: .selectedFile)
+                let destinationURL = URL(fileURLWithPath: path)
+                try await exportPrintPDF(composition, to: destinationURL)
+                return HarnessCommandResponse(id: request.id, status: "ok", result: ["path": path], error: nil)
+            } catch {
+                return HarnessCommandResponse(id: request.id, status: "error", result: nil, error: error.localizedDescription)
+            }
+        case "exportPrintedAllDocuments":
+            guard let path = request.arguments?["path"] else {
+                return HarnessCommandResponse(id: request.id, status: "error", result: nil, error: "missing path")
+            }
+            do {
+                let composition = try await makePrintComposition(scope: .allFiles)
+                let destinationURL = URL(fileURLWithPath: path)
+                try await exportPrintPDF(composition, to: destinationURL)
+                return HarnessCommandResponse(id: request.id, status: "ok", result: ["path": path], error: nil)
+            } catch {
+                return HarnessCommandResponse(id: request.id, status: "error", result: nil, error: error.localizedDescription)
+            }
+        case "readLastPrintRequest":
+            return HarnessCommandResponse(
+                id: request.id,
+                status: "ok",
+                result: [
+                    "scope": lastPrintRequestScope ?? "",
+                    "status": lastPrintRequestStatus ?? ""
+                ],
+                error: nil
+            )
         case "openWorkspace", "setWindowSize", "scrollToY", "scrollToBlock", "playMedia", "pauseMedia":
             return HarnessCommandResponse(id: request.id, status: "ok", result: request.arguments, error: nil)
         default:
@@ -497,6 +617,7 @@ final class AppModel: ObservableObject {
                 openFile(initialPath, recordHistory: false)
             } else {
                 selectedPath = nil
+                selectedDocumentKind = .markdown
                 documentText = Self.emptyWorkspaceMessage
                 documentBlocks = MarkdownRenderer.blocks(from: documentText)
                 isLoadingDocument = false
@@ -506,6 +627,7 @@ final class AppModel: ObservableObject {
         } catch {
             files = []
             selectedPath = nil
+            selectedDocumentKind = .markdown
             workspaceRootURL = nil
             workspaceRootBookmarkData = nil
             shouldAllowRevealInFinder = false
@@ -580,6 +702,7 @@ final class AppModel: ObservableObject {
                 openFile(initialPath, recordHistory: false)
             } else {
                 selectedPath = nil
+                selectedDocumentKind = .markdown
                 documentText = Self.emptyWorkspaceMessage
                 documentBlocks = MarkdownRenderer.blocks(from: documentText)
                 isLoadingDocument = false
@@ -589,6 +712,7 @@ final class AppModel: ObservableObject {
         } catch {
             files = []
             selectedPath = nil
+            selectedDocumentKind = .markdown
             workspaceRootURL = nil
             shouldAllowRevealInFinder = false
             currentRestorationSession = nil
@@ -612,6 +736,7 @@ final class AppModel: ObservableObject {
         shouldAllowRevealInFinder = false
         files = []
         selectedPath = nil
+        selectedDocumentKind = .markdown
         backStack.removeAll()
         forwardStack.removeAll()
         githubURLLoadErrorMessage = nil
@@ -733,7 +858,7 @@ final class AppModel: ObservableObject {
     }
 
     private func isMarkdownPath(_ path: String) -> Bool {
-        SupportedMarkdownExtensions.contains((path as NSString).pathExtension)
+        WorkspaceDocumentKind.forPath(path) == .markdown
     }
 }
 
@@ -758,8 +883,23 @@ extension AppModel {
     }
 
     private struct DocumentLoadResult: Sendable {
+        let kind: WorkspaceDocumentKind
         let text: String
         let blocks: [MarkdownBlock]
+    }
+
+    enum PrintError: LocalizedError {
+        case noSelectedDocument
+        case noPrintableDocuments
+
+        var errorDescription: String? {
+            switch self {
+            case .noSelectedDocument:
+                return "Select a document to print."
+            case .noPrintableDocuments:
+                return "Open a workspace with printable documents first."
+            }
+        }
     }
 
     private static func loadDocument(
@@ -768,15 +908,124 @@ extension AppModel {
     ) async -> DocumentLoadResult {
         let detachedTask = Task.detached(priority: .userInitiated) {
             let text = (try? provider.readFile(at: path)) ?? "Unable to read \(path.rawValue)"
-            let parsedBlocks = MarkdownRenderer.blocks(from: text)
-            let blocks = await hydrateMedia(in: parsedBlocks, provider: provider, documentPath: path)
-            return DocumentLoadResult(text: text, blocks: blocks)
+            let kind = WorkspaceDocumentKind.forPath(path.rawValue) ?? .markdown
+            let parsedBlocks = blocks(for: text, kind: kind)
+            let blocks: [MarkdownBlock]
+            if kind == .markdown {
+                blocks = await hydrateMedia(in: parsedBlocks, provider: provider, documentPath: path)
+            } else {
+                blocks = parsedBlocks
+            }
+            return DocumentLoadResult(kind: kind, text: text, blocks: blocks)
         }
 
         return await withTaskCancellationHandler {
             await detachedTask.value
         } onCancel: {
             detachedTask.cancel()
+        }
+    }
+
+    func makePrintComposition(scope: DocumentPrintScope) async throws -> DocumentPrintComposition {
+        let targetFiles: [MarkdownFileNode]
+        switch scope {
+        case .selectedFile:
+            guard let selectedPath, let selectedFile = files.first(where: { $0.path == selectedPath }) else {
+                throw PrintError.noSelectedDocument
+            }
+            targetFiles = [selectedFile]
+        case .allFiles:
+            guard files.isEmpty == false else {
+                throw PrintError.noPrintableDocuments
+            }
+            targetFiles = files
+        }
+
+        guard let provider = workspaceProvider else {
+            throw PrintError.noPrintableDocuments
+        }
+        let workspaceTitle = workspaceRootDisplay
+
+        isPreparingPrint = true
+        printErrorMessage = nil
+        defer { isPreparingPrint = false }
+
+        var sections: [DocumentPrintSection] = []
+        sections.reserveCapacity(targetFiles.count)
+        for file in targetFiles {
+            let result = await Self.loadDocument(provider: provider, path: file.path)
+            sections.append(
+                DocumentPrintSection(
+                    path: file.path,
+                    title: file.name,
+                    kind: result.kind,
+                    blocks: result.blocks
+                )
+            )
+        }
+
+        let composition = DocumentPrintComposition(
+            scope: scope,
+            workspaceTitle: workspaceTitle,
+            fontScale: Double(fontScale),
+            launchTheme: launchOptions.theme,
+            tabularPresentation: tabularPresentation,
+            sections: sections
+        )
+
+        return composition
+    }
+
+    func recordPrintError(_ error: Error) {
+        printErrorMessage = error.localizedDescription
+        lastPrintRequestStatus = "error"
+    }
+
+    func clearPrintError() {
+        printErrorMessage = nil
+    }
+
+    func recordPrintPresentationStarted(scope: DocumentPrintScope) {
+        lastPrintRequestScope = scope.rawValue
+        lastPrintRequestStatus = "started"
+    }
+
+    func recordPrintPresentationSucceeded() {
+        lastPrintRequestStatus = "presented"
+    }
+
+    private func exportPrintPDF(_ composition: DocumentPrintComposition, to destinationURL: URL) async throws {
+        try await MainActor.run {
+            try PlatformPrintPresenter.exportPDF(composition, to: destinationURL)
+        }
+    }
+
+    private nonisolated static func blocks(for text: String, kind: WorkspaceDocumentKind) -> [MarkdownBlock] {
+        switch kind {
+        case .markdown:
+            return MarkdownRenderer.blocks(from: text)
+        case .csv, .tsv:
+            guard let table = DelimitedTextDocumentParser.markdownTable(from: text, kind: kind) else {
+                return []
+            }
+            return [
+                MarkdownBlock(
+                    id: "tabular.document",
+                    kind: .table,
+                    plainText: text,
+                    sourceText: text,
+                    level: nil,
+                    listItemIndex: nil,
+                    indentLevel: 0,
+                    isTaskItem: false,
+                    isTaskCompleted: nil,
+                    table: table,
+                    image: nil,
+                    video: nil,
+                    attributedText: nil,
+                    children: []
+                )
+            ]
         }
     }
 

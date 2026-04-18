@@ -38,6 +38,8 @@ The app is responsible for:
 - writing `perf.json`
 - writing `window.png`
 - honoring `--ui-test-github-fixture <path>` so GitHub workspace tests can resolve deterministic repository metadata, refs, trees, and file payloads without touching the public network
+- honoring harness commands `printSelectedDocument` and `printAllDocuments` by writing the composed plain-text print artifact to the requested path without invoking native print UI
+- honoring harness commands `exportPrintedDocument` and `exportPrintedAllDocuments` by writing the real rendered print output as a PDF artifact for print-debugging without invoking native print UI
 
 The scripts are responsible for:
 

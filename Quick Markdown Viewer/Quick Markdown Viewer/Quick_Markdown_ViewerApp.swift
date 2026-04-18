@@ -94,7 +94,7 @@ final class ExternalWorkspaceOpenCoordinator: ObservableObject {
         if FileManager.default.fileExists(atPath: resolvedURL.path, isDirectory: &isDirectory), isDirectory.boolValue {
             return resolvedURL
         }
-        guard SupportedMarkdownExtensions.contains(resolvedURL.pathExtension) else { return nil }
+        guard SupportedDocumentExtensions.contains(resolvedURL.pathExtension) else { return nil }
         return resolvedURL.deletingLastPathComponent().resolvingSymlinksInPath().standardizedFileURL
     }
 }

@@ -7,6 +7,8 @@ struct AppRootView: View {
     @ObservedObject var model: AppModel
     let onOpenFolder: (() -> Void)?
     let onOpenGitHubURLPrompt: (() -> Void)?
+    let onPrintSelectedDocument: (() -> Void)?
+    let onPrintAllDocuments: (() -> Void)?
     let onInstallCommandLineTool: (() -> Void)?
     let shouldShowCommandLineToolPrompt: Bool
     #if os(macOS)
@@ -20,6 +22,8 @@ struct AppRootView: View {
                 model: model,
                 onOpenFolder: onOpenFolder,
                 onOpenGitHubURLPrompt: onOpenGitHubURLPrompt,
+                onPrintSelectedDocument: onPrintSelectedDocument,
+                onPrintAllDocuments: onPrintAllDocuments,
                 onInstallCommandLineTool: onInstallCommandLineTool,
                 shouldShowCommandLineToolPrompt: shouldShowCommandLineToolPrompt
             )
@@ -40,6 +44,8 @@ struct AppRootView: View {
                                     model: model,
                                     onOpenFolder: onOpenFolder,
                                     onOpenGitHubURLPrompt: onOpenGitHubURLPrompt,
+                                    onPrintSelectedDocument: onPrintSelectedDocument,
+                                    onPrintAllDocuments: onPrintAllDocuments,
                                     onInstallCommandLineTool: onInstallCommandLineTool,
                                     shouldShowCommandLineToolPrompt: shouldShowCommandLineToolPrompt
                                 )
@@ -55,6 +61,8 @@ struct AppRootView: View {
                                 model: model,
                                 onOpenFolder: onOpenFolder,
                                 onOpenGitHubURLPrompt: onOpenGitHubURLPrompt,
+                                onPrintSelectedDocument: onPrintSelectedDocument,
+                                onPrintAllDocuments: onPrintAllDocuments,
                                 onInstallCommandLineTool: onInstallCommandLineTool,
                                 shouldShowCommandLineToolPrompt: shouldShowCommandLineToolPrompt
                             )

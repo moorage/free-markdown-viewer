@@ -1,0 +1,5 @@
+Team,Project,Status,Quarter,Notes
+Reader,Table Controls,Shipped,Q2,"Default wrap mode keeps long notes readable without truncating the visible cell content."
+Platform,GitHub Workspaces,Shipped,Q2,"Supports repo roots, branches, tags, and cached local mirrors for offline reopening."
+QA,Regression Sweep,In Progress,Q2,"Running cross-platform smoke coverage for macOS, iPhone, and iPad."
+Release,App Store Update,Planned,Q3,"Bundle version, metadata, and screenshots will be refreshed before submission."

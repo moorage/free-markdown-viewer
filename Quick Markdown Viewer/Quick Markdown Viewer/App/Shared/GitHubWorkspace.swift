@@ -171,11 +171,12 @@ nonisolated struct GitHubWorkspaceProvider: WorkspaceProvider {
 
         var result: [MarkdownFileNode] = []
         while let fileURL = enumerator?.nextObject() as? URL {
-            guard SupportedMarkdownExtensions.contains(fileURL.pathExtension) else { continue }
+            guard SupportedDocumentExtensions.contains(fileURL.pathExtension) else { continue }
             let canonicalFilePath = canonicalPath(for: fileURL)
             guard canonicalFilePath.hasPrefix(canonicalRootPath + "/") else { continue }
             let relative = String(canonicalFilePath.dropFirst(canonicalRootPath.count + 1))
-            result.append(MarkdownFileNode(path: WorkspacePath(rawValue: relative), name: relative))
+            guard let kind = WorkspaceDocumentKind.forPath(relative) else { continue }
+            result.append(MarkdownFileNode(path: WorkspacePath(rawValue: relative), name: relative, kind: kind))
         }
 
         return result.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
@@ -370,7 +371,7 @@ nonisolated struct GitHubWorkspaceService: GitHubWorkspaceLoading {
         cacheRootURL: URL
     ) async throws {
         let markdownEntries = subtreeEntries.filter { entry in
-            SupportedMarkdownExtensions.contains((entry.path as NSString).pathExtension)
+            SupportedDocumentExtensions.contains((entry.path as NSString).pathExtension)
         }
 
         guard !markdownEntries.isEmpty else {

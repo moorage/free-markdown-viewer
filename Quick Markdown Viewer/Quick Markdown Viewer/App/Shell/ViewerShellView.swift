@@ -12,6 +12,8 @@ struct ViewerShellView: View {
     @ObservedObject var model: AppModel
     let onOpenFolder: (() -> Void)?
     let onOpenGitHubURLPrompt: (() -> Void)?
+    let onPrintSelectedDocument: (() -> Void)?
+    let onPrintAllDocuments: (() -> Void)?
     let onInstallCommandLineTool: (() -> Void)?
     let shouldShowCommandLineToolPrompt: Bool
     @Environment(\.openURL) private var openURL
@@ -65,18 +67,56 @@ struct ViewerShellView: View {
             ToolbarItem(placement: .navigation) {
                 macNavigationControls
             }
+            if model.shouldShowTabularControls {
+                ToolbarItem(placement: .automatic) {
+                    tabularControls
+                }
+            }
             ToolbarItem(placement: .automatic) {
                 fontSizeControls
+            }
+            if let macPrintControl {
+                ToolbarItem(placement: .automatic) {
+                    macPrintControl
+                }
             }
             ToolbarItem(placement: .primaryAction) {
                 macRevealInFinderButton
             }
         }
         .overlay(alignment: .topLeading) {
-            Text(model.windowTitle)
-                .accessibilityIdentifier(AccessibilityIDs.title)
-                .opacity(0.01)
-                .allowsHitTesting(false)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(model.windowTitle)
+                    .accessibilityIdentifier(AccessibilityIDs.title)
+                if model.launchOptions.uiTestMode {
+                    Text(model.lastPrintRequestScope ?? "none")
+                        .accessibilityIdentifier(AccessibilityIDs.printRequestScope)
+                    Text(model.lastPrintRequestStatus ?? "idle")
+                        .accessibilityIdentifier(AccessibilityIDs.printRequestStatus)
+                }
+            }
+            .opacity(0.01)
+            .allowsHitTesting(false)
+        }
+        .overlay(alignment: .topTrailing) {
+            if model.launchOptions.uiTestMode {
+                HStack(spacing: 4) {
+                    if let onPrintSelectedDocument {
+                        Button("Print") {
+                            onPrintSelectedDocument()
+                        }
+                        .accessibilityIdentifier(AccessibilityIDs.uiTestPrintSelectedAction)
+                    }
+                    if let onPrintAllDocuments {
+                        Button("Print All") {
+                            onPrintAllDocuments()
+                        }
+                        .accessibilityIdentifier(AccessibilityIDs.uiTestPrintAllAction)
+                    }
+                }
+                .padding(6)
+                .background(.thinMaterial)
+            }
         }
         .background(MacWindowConfiguration(title: model.windowTitle, contentSize: model.launchOptions.windowSize))
         #endif
@@ -305,6 +345,7 @@ struct ViewerShellView: View {
                     blocks: model.documentBlocks,
                     workspaceRootURL: model.currentWorkspaceRootURL,
                     fontScale: model.fontScale,
+                    tabularPresentation: model.shouldShowTabularControls ? model.tabularPresentation : nil,
                     syntaxTheme: SyntaxHighlightTheme.resolved(
                         launchTheme: model.launchOptions.theme,
                         colorScheme: colorScheme
@@ -379,6 +420,12 @@ struct ViewerShellView: View {
                 .accessibilityIdentifier(AccessibilityIDs.openGitHubURLButton)
             }
 
+            if model.shouldShowTabularControls {
+                tabularControls
+            }
+
+            printControls
+
             fontSizeControls
 
             Text(model.windowTitle)
@@ -428,6 +475,12 @@ struct ViewerShellView: View {
                     }
                     .accessibilityIdentifier(AccessibilityIDs.openGitHubURLButton)
                 }
+
+                if model.shouldShowTabularControls {
+                    tabularControls
+                }
+
+                printControls
 
                 Spacer(minLength: 0)
 
@@ -622,6 +675,112 @@ struct ViewerShellView: View {
         .labelStyle(.iconOnly)
     }
 
+    private var tabularControls: some View {
+        HStack(spacing: 8) {
+            Button(action: model.toggleTabularWrapMode) {
+                Image(systemName: "text.justify.left")
+            }
+            .accessibilityIdentifier(AccessibilityIDs.tableWrapToggleButton)
+            .accessibilityLabel(model.tabularPresentation.wrapMode == .wrap ? "Wrap Cells" : "Clip Cells")
+            .help(model.tabularPresentation.wrapMode == .wrap ? "Wrap Cells" : "Clip Cells")
+
+            Menu {
+                Button("Widen Columns") {
+                    model.increaseColumnWidth()
+                }
+                .disabled(!model.canIncreaseColumnWidth)
+
+                Button("Narrow Columns") {
+                    model.decreaseColumnWidth()
+                }
+                .disabled(!model.canDecreaseColumnWidth)
+
+                Button("Taller Rows") {
+                    model.increaseRowHeight()
+                }
+                .disabled(!model.canIncreaseRowHeight)
+
+                Button("Shorter Rows") {
+                    model.decreaseRowHeight()
+                }
+                .disabled(!model.canDecreaseRowHeight)
+            } label: {
+                Image(systemName: "slider.horizontal.3")
+            }
+            .accessibilityIdentifier(AccessibilityIDs.tableSizingMenuButton)
+            .accessibilityLabel("Table Size")
+        }
+        .labelStyle(.iconOnly)
+    }
+
+    private var printControls: some View {
+        #if os(macOS)
+        EmptyView()
+        #else
+        Menu {
+            if let onPrintSelectedDocument {
+                Button("Print") {
+                    onPrintSelectedDocument()
+                }
+                .disabled(!model.canPrintSelectedDocument)
+            }
+
+            if let onPrintAllDocuments {
+                Button("Print All") {
+                    onPrintAllDocuments()
+                }
+                .disabled(!model.canPrintAllDocuments)
+            }
+        } label: {
+            Image(systemName: "printer")
+        }
+        .accessibilityIdentifier(AccessibilityIDs.printMenuButton)
+        .accessibilityLabel("Print")
+        #endif
+    }
+
+    #if os(macOS)
+    private var macPrintControl: AnyView? {
+        guard let onPrintSelectedDocument, let onPrintAllDocuments else { return nil }
+        return AnyView(
+            HStack(spacing: 0) {
+                Button {
+                    onPrintSelectedDocument()
+                } label: {
+                    Image(systemName: "printer")
+                        .frame(width: 28, height: 22)
+                }
+                .buttonStyle(.plain)
+                .disabled(!model.canPrintSelectedDocument)
+                .accessibilityIdentifier(AccessibilityIDs.printSelectedButton)
+                .help("Print the selected document")
+
+                Divider()
+                    .frame(height: 16)
+
+                Button("All") {
+                    onPrintAllDocuments()
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 10)
+                .frame(height: 22)
+                .disabled(!model.canPrintAllDocuments)
+                .accessibilityIdentifier(AccessibilityIDs.printAllButton)
+                .help("Print every document in the workspace")
+            }
+            .padding(.horizontal, 2)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(Color.secondary.opacity(0.12))
+            )
+            .overlay(
+                Capsule(style: .continuous)
+                    .stroke(Color.secondary.opacity(0.18), lineWidth: 1)
+            )
+        )
+    }
+    #endif
+
     private var showsFilesButton: Bool {
         isCompactPhoneLayout && !compactShowsSidebar && model.selectedPath != nil
     }
@@ -705,29 +864,113 @@ struct ViewerShellView: View {
     }
 }
 
-private struct DocumentBlockScrollView: View {
+struct DocumentBlockScrollView: View {
     let blocks: [MarkdownBlock]
     let workspaceRootURL: URL?
     let fontScale: CGFloat
+    let tabularPresentation: TabularDocumentPresentation?
     let syntaxTheme: SyntaxHighlightTheme
 
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 16) {
-                ForEach(blocks) { block in
-                    MarkdownBlockView(
-                        block: block,
-                        workspaceRootURL: workspaceRootURL,
-                        fontScale: fontScale,
-                        syntaxTheme: syntaxTheme
-                    )
-                }
-            }
+            DocumentBlockStackView(
+                blocks: blocks,
+                workspaceRootURL: workspaceRootURL,
+                fontScale: fontScale,
+                tabularPresentation: tabularPresentation,
+                syntaxTheme: syntaxTheme,
+                usesLazyLayout: true,
+                isPrinting: false
+            )
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 4)
         }
         .textSelection(.enabled)
         .accessibilityIdentifier(AccessibilityIDs.scrollView)
+    }
+}
+
+struct PrintableDocumentCompositionView: View {
+    let composition: DocumentPrintComposition
+    let pageLayout: DocumentPrintPageLayout
+
+    private var syntaxTheme: SyntaxHighlightTheme {
+        SyntaxHighlightTheme.resolved(launchTheme: composition.launchTheme, colorScheme: .light)
+    }
+
+    private var printFontScale: CGFloat {
+        CGFloat(composition.fontScale) * ViewerFont.printBodyScaleMultiplier
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 28) {
+            if composition.scope == .allFiles {
+                Text(composition.workspaceTitle)
+                    .font(ViewerFont.scaledSystem(size: 24, weight: .semibold, scale: printFontScale))
+            }
+
+            ForEach(Array(composition.sections.enumerated()), id: \.element.path) { index, section in
+                VStack(alignment: .leading, spacing: 16) {
+                    Text(section.title)
+                        .font(ViewerFont.scaledSystem(size: 16, weight: .semibold, scale: printFontScale))
+                    DocumentBlockStackView(
+                        blocks: section.blocks,
+                        workspaceRootURL: nil,
+                        fontScale: printFontScale,
+                        tabularPresentation: nil,
+                        syntaxTheme: syntaxTheme,
+                        usesLazyLayout: false,
+                        isPrinting: true
+                    )
+                }
+
+                if index != composition.sections.indices.last {
+                    Divider()
+                }
+            }
+        }
+        .frame(width: pageLayout.printableRect.width, alignment: .leading)
+        .background(Color.white)
+        .foregroundStyle(Color.black)
+        .environment(\.colorScheme, .light)
+    }
+}
+
+private struct DocumentBlockStackView: View {
+    let blocks: [MarkdownBlock]
+    let workspaceRootURL: URL?
+    let fontScale: CGFloat
+    let tabularPresentation: TabularDocumentPresentation?
+    let syntaxTheme: SyntaxHighlightTheme
+    let usesLazyLayout: Bool
+    let isPrinting: Bool
+
+    var body: some View {
+        Group {
+            if usesLazyLayout {
+                LazyVStack(alignment: .leading, spacing: 16) {
+                    blockViews
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 16) {
+                    blockViews
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var blockViews: some View {
+        ForEach(blocks) { block in
+            MarkdownBlockView(
+                block: block,
+                workspaceRootURL: workspaceRootURL,
+                fontScale: fontScale,
+                tabularPresentation: tabularPresentation,
+                syntaxTheme: syntaxTheme,
+                isPrinting: isPrinting
+            )
+        }
     }
 }
 
@@ -737,7 +980,7 @@ private struct SidebarFileRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: "doc.text")
+            Image(systemName: file.kind.iconSystemName)
                 .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
             Text(file.name)
                 .font(ViewerFont.body(scale: 1))
@@ -751,11 +994,13 @@ private struct SidebarFileRow: View {
     }
 }
 
-private struct MarkdownBlockView: View {
+struct MarkdownBlockView: View {
     let block: MarkdownBlock
     let workspaceRootURL: URL?
     let fontScale: CGFloat
+    let tabularPresentation: TabularDocumentPresentation?
     let syntaxTheme: SyntaxHighlightTheme
+    let isPrinting: Bool
 
     var body: some View {
         switch block.kind {
@@ -819,53 +1064,12 @@ private struct MarkdownBlockView: View {
                     .linkHoverCursor(MarkdownRenderer.attributedText(for: block))
             }
         case .codeBlock:
-            ScrollView(.horizontal, showsIndicators: false) {
-                if let codeBlock = block.codeBlock,
-                   let highlighted = CodeBlockSyntaxHighlighter.highlightedAttributedText(
-                    for: codeBlock,
-                    theme: syntaxTheme,
-                    fontScale: fontScale
-                   ) {
-                    Text(highlighted)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(14)
-                } else {
-                    Text(verbatim: block.sourceText)
-                        .font(ViewerFont.monospacedBody(scale: fontScale))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(14)
-                }
-            }
+            codeBlockContent
             .background(Color.secondary.opacity(0.08))
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         case .table:
             if let table = block.table {
-                ScrollView(.horizontal, showsIndicators: true) {
-                    Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 10) {
-                        GridRow {
-                                ForEach(Array(table.header.enumerated()), id: \.offset) { column, cell in
-                                Text(MarkdownRenderer.attributedText(for: cell))
-                                    .font(ViewerFont.body(scale: fontScale))
-                                    .fontWeight(.semibold)
-                                    .frame(maxWidth: .infinity, alignment: alignment(for: table.alignments[column]))
-                                    .linkHoverCursor(MarkdownRenderer.attributedText(for: cell))
-                            }
-                        }
-                        Divider()
-                            .gridCellColumns(table.header.count)
-                        ForEach(Array(table.rows.enumerated()), id: \.offset) { _, row in
-                            GridRow {
-                                    ForEach(Array(row.enumerated()), id: \.offset) { column, cell in
-                                    Text(MarkdownRenderer.attributedText(for: cell))
-                                        .font(ViewerFont.body(scale: fontScale))
-                                        .frame(maxWidth: .infinity, alignment: alignment(for: table.alignments[column]))
-                                        .linkHoverCursor(MarkdownRenderer.attributedText(for: cell))
-                                }
-                            }
-                        }
-                    }
-                    .padding(14)
-                }
+                tableContent(table)
                 .background(Color.secondary.opacity(0.05))
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .overlay(
@@ -880,7 +1084,8 @@ private struct MarkdownBlockView: View {
                     isAnimated: block.kind == .animatedImage,
                     blockID: block.id,
                     workspaceRootURL: workspaceRootURL,
-                    fontScale: fontScale
+                    fontScale: fontScale,
+                    isPrinting: isPrinting
                 )
             }
         case .video:
@@ -962,14 +1167,163 @@ private struct MarkdownBlockView: View {
                     block: child,
                     workspaceRootURL: workspaceRootURL,
                     fontScale: fontScale,
-                    syntaxTheme: syntaxTheme
+                    tabularPresentation: tabularPresentation,
+                    syntaxTheme: syntaxTheme,
+                    isPrinting: isPrinting
                 )
             }
         }
         .padding(.leading, 28)
     }
 
+    @ViewBuilder
+    private var codeBlockContent: some View {
+        if isPrinting {
+            if let codeBlock = block.codeBlock,
+               let highlighted = CodeBlockSyntaxHighlighter.highlightedAttributedText(
+                for: codeBlock,
+                theme: syntaxTheme,
+                fontScale: fontScale
+               ) {
+                Text(highlighted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(14)
+            } else {
+                Text(verbatim: block.sourceText)
+                    .font(ViewerFont.monospacedBody(scale: fontScale))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(14)
+            }
+        } else {
+            ScrollView(.horizontal, showsIndicators: false) {
+                if let codeBlock = block.codeBlock,
+                   let highlighted = CodeBlockSyntaxHighlighter.highlightedAttributedText(
+                    for: codeBlock,
+                    theme: syntaxTheme,
+                    fontScale: fontScale
+                   ) {
+                    Text(highlighted)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(14)
+                } else {
+                    Text(verbatim: block.sourceText)
+                        .font(ViewerFont.monospacedBody(scale: fontScale))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(14)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func tableContent(_ table: MarkdownTable) -> some View {
+        if isPrinting {
+            VStack(alignment: .leading, spacing: 0) {
+                printableTableRow(
+                    table.header,
+                    alignments: table.alignments,
+                    isHeader: true
+                )
+                Divider()
+                ForEach(Array(table.rows.enumerated()), id: \.offset) { _, row in
+                    printableTableRow(
+                        row,
+                        alignments: table.alignments,
+                        isHeader: false
+                    )
+                    Divider()
+                }
+            }
+            .padding(14)
+        } else {
+            ScrollView(.horizontal, showsIndicators: true) {
+                Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 10) {
+                    GridRow {
+                        ForEach(Array(table.header.enumerated()), id: \.offset) { column, cell in
+                            tableCell(
+                                cell,
+                                columnAlignment: table.alignments[column],
+                                isHeader: true
+                            )
+                        }
+                    }
+                    Divider()
+                        .gridCellColumns(table.header.count)
+                    ForEach(Array(table.rows.enumerated()), id: \.offset) { _, row in
+                        GridRow {
+                            ForEach(Array(row.enumerated()), id: \.offset) { column, cell in
+                                tableCell(
+                                    cell,
+                                    columnAlignment: table.alignments[column],
+                                    isHeader: false
+                                )
+                            }
+                        }
+                    }
+                }
+                .padding(14)
+            }
+        }
+    }
+
+    private func printableTableRow(
+        _ row: [MarkdownTableCell],
+        alignments: [MarkdownTableAlignment],
+        isHeader: Bool
+    ) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            ForEach(Array(row.enumerated()), id: \.offset) { column, cell in
+                tableCell(
+                    cell,
+                    columnAlignment: alignments[column],
+                    isHeader: isHeader
+                )
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func tableCell(
+        _ cell: MarkdownTableCell,
+        columnAlignment: MarkdownTableAlignment,
+        isHeader: Bool
+    ) -> some View {
+        let attributedText = MarkdownRenderer.attributedText(for: cell)
+        if let tabularPresentation {
+            Text(attributedText)
+                .font(ViewerFont.body(scale: fontScale))
+                .fontWeight(isHeader ? .semibold : .regular)
+                .lineLimit(tabularPresentation.wrapMode == .wrap ? nil : 1)
+                .frame(
+                    width: tabularPresentation.columnWidth,
+                    height: tabularPresentation.rowHeight,
+                    alignment: alignment(for: columnAlignment)
+                )
+                .multilineTextAlignment(textAlignment(for: columnAlignment))
+                .clipped()
+                .linkHoverCursor(attributedText)
+        } else {
+            Text(attributedText)
+                .font(ViewerFont.body(scale: fontScale))
+                .fontWeight(isHeader ? .semibold : .regular)
+                .frame(maxWidth: .infinity, alignment: alignment(for: columnAlignment))
+                .linkHoverCursor(attributedText)
+        }
+    }
+
     private func alignment(for alignment: MarkdownTableAlignment) -> Alignment {
+        switch alignment {
+        case .leading:
+            return .leading
+        case .center:
+            return .center
+        case .trailing:
+            return .trailing
+        }
+    }
+
+    private func textAlignment(for alignment: MarkdownTableAlignment) -> TextAlignment {
         switch alignment {
         case .leading:
             return .leading
@@ -1023,6 +1377,7 @@ private struct ImageBlockView: View {
     let blockID: String
     let workspaceRootURL: URL?
     let fontScale: CGFloat
+    let isPrinting: Bool
     @State private var downloadedRemoteURL: URL?
     @State private var remoteLoadError: String?
 
@@ -1052,7 +1407,7 @@ private struct ImageBlockView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             if let resolvedURL = displayURL, imageLoadError == nil {
-                InlineAnimatedImageSurface(url: resolvedURL)
+                imageSurface(for: resolvedURL)
                     .frame(maxWidth: .infinity, minHeight: 180, maxHeight: 320, alignment: .leading)
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             } else {
@@ -1103,6 +1458,15 @@ private struct ImageBlockView: View {
         .accessibilityIdentifier(AccessibilityIDs.imageBlock(blockID))
         .task(id: image.sourceURL) {
             await loadRemoteImageIfNeeded()
+        }
+    }
+
+    @ViewBuilder
+    private func imageSurface(for resolvedURL: URL) -> some View {
+        if isPrinting {
+            PrintableStaticImageSurface(url: resolvedURL)
+        } else {
+            InlineAnimatedImageSurface(url: resolvedURL)
         }
     }
 
@@ -1331,7 +1695,8 @@ private struct LinkedMediaPreviewView: View {
                     isAnimated: isAnimatedImagePreviewCandidate(target.originalURL),
                     blockID: "media-preview-image",
                     workspaceRootURL: nil,
-                    fontScale: 1
+                    fontScale: 1,
+                    isPrinting: false
                 )
             } else {
                 InlineVideoBlockView(
@@ -1406,6 +1771,12 @@ private func resolvedLocationDescription(_ url: URL) -> String {
 }
 
 private enum ViewerFont {
+    static let printBodyScaleMultiplier: CGFloat = {
+        let bodyPointSize = basePlatformFont(forTextStyle: .body).pointSize
+        guard bodyPointSize > 0 else { return 1 }
+        return 12 / bodyPointSize
+    }()
+
     static func body(scale: CGFloat) -> Font {
         Font(platformFont(forTextStyle: .body, scale: scale))
     }
@@ -1577,6 +1948,58 @@ private struct InlineAnimatedImageSurface: View {
         PlatformAnimatedImageView(url: url)
             .frame(maxWidth: .infinity, maxHeight: 320, alignment: .leading)
     }
+}
+
+private struct PrintableStaticImageSurface: View {
+    let url: URL
+
+    var body: some View {
+        Group {
+            if let image = decodedImage {
+                image
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+            } else {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.secondary.opacity(0.08))
+                    .overlay {
+                        Image(systemName: "photo")
+                            .font(.system(size: 28, weight: .medium))
+                            .foregroundStyle(.secondary)
+                    }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: 320, alignment: .leading)
+        .background(Color.white)
+    }
+
+    private var decodedImage: Image? {
+        #if os(macOS)
+        guard let image = decodedPlatformImage else { return nil }
+        return Image(nsImage: image)
+        #elseif os(iOS)
+        guard let image = decodedPlatformImage else { return nil }
+        return Image(uiImage: image)
+        #endif
+    }
+
+    #if os(macOS)
+    private var decodedPlatformImage: NSImage? {
+        if url.isFileURL {
+            return NSImage(contentsOf: url)
+        }
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return NSImage(data: data)
+    }
+    #elseif os(iOS)
+    private var decodedPlatformImage: UIImage? {
+        if url.isFileURL {
+            return UIImage(contentsOfFile: url.path)
+        }
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return UIImage(data: data)
+    }
+    #endif
 }
 
 private struct InlineVideoSurface: View {

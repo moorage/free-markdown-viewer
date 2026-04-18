@@ -44,13 +44,15 @@ enum EmbeddedFixtures {
     ]
 }
 
-enum SupportedMarkdownExtensions {
+enum SupportedDocumentExtensions {
     nonisolated static let all: Set<String> = [
         "md",
         "markdown",
         "mdown",
         "mkd",
         "mkdn",
+        "csv",
+        "tsv",
     ]
 
     nonisolated static func contains(_ fileExtension: String) -> Bool {
@@ -78,7 +80,11 @@ struct LocalWorkspaceProvider: WorkspaceProvider, Sendable {
         }
 
         let files = embeddedDocs.keys.sorted().map { key in
-            MarkdownFileNode(path: WorkspacePath(rawValue: key), name: key)
+            MarkdownFileNode(
+                path: WorkspacePath(rawValue: key),
+                name: key,
+                kind: WorkspaceDocumentKind.forPath(key) ?? .markdown
+            )
         }
         return Workspace(rootIdentifier: "Fixtures/docs", files: files)
     }
@@ -136,11 +142,12 @@ struct LocalWorkspaceProvider: WorkspaceProvider, Sendable {
 
         var result: [MarkdownFileNode] = []
         while let fileURL = enumerator?.nextObject() as? URL {
-            guard SupportedMarkdownExtensions.contains(fileURL.pathExtension) else { continue }
+            guard SupportedDocumentExtensions.contains(fileURL.pathExtension) else { continue }
             let canonicalFilePath = canonicalPath(for: fileURL)
             guard canonicalFilePath.hasPrefix(canonicalRootPath + "/") else { continue }
             let relative = String(canonicalFilePath.dropFirst(canonicalRootPath.count + 1))
-            result.append(MarkdownFileNode(path: WorkspacePath(rawValue: relative), name: relative))
+            guard let kind = WorkspaceDocumentKind.forPath(relative) else { continue }
+            result.append(MarkdownFileNode(path: WorkspacePath(rawValue: relative), name: relative, kind: kind))
         }
         return result.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }

@@ -11,6 +11,8 @@ struct ContentView: View {
     @ObservedObject var model: AppModel
     let onOpenFolder: (() -> Void)?
     let onOpenGitHubURLPrompt: (() -> Void)?
+    let onPrintSelectedDocument: (() -> Void)?
+    let onPrintAllDocuments: (() -> Void)?
     let onInstallCommandLineTool: (() -> Void)?
     let shouldShowCommandLineToolPrompt: Bool
 
@@ -19,6 +21,8 @@ struct ContentView: View {
             model: model,
             onOpenFolder: onOpenFolder,
             onOpenGitHubURLPrompt: onOpenGitHubURLPrompt,
+            onPrintSelectedDocument: onPrintSelectedDocument,
+            onPrintAllDocuments: onPrintAllDocuments,
             onInstallCommandLineTool: onInstallCommandLineTool,
             shouldShowCommandLineToolPrompt: shouldShowCommandLineToolPrompt
         )

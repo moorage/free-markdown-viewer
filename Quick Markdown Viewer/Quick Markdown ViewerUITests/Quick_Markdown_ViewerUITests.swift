@@ -6,8 +6,25 @@
 //
 
 import XCTest
+#if os(iOS)
+import PDFKit
+import UIKit
+#endif
 
 final class Quick_Markdown_ViewerUITests: XCTestCase {
+
+    private struct UITestHarnessCommandRequest: Codable {
+        let id: String
+        let command: String
+        let arguments: [String: String]?
+    }
+
+    private struct UITestHarnessCommandResponse: Codable {
+        let id: String
+        let status: String
+        let result: [String: String]?
+        let error: String?
+    }
 
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -44,7 +61,7 @@ final class Quick_Markdown_ViewerUITests: XCTestCase {
 
         XCTAssertTrue(app.windows.element(boundBy: 0).waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["empty-state.message"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["Open a folder of markdown files to get started."].exists)
+        XCTAssertTrue(app.staticTexts["Open a folder of Markdown, CSV, or TSV files to get started."].exists)
         XCTAssertTrue(app.buttons["empty-state.open-folder"].exists)
         XCTAssertTrue(app.staticTexts["empty-state.commandLineTool.message"].exists)
         XCTAssertTrue(app.staticTexts["Install `qmv` in ~/.local/bin to open folders from Terminal."].exists)
@@ -176,9 +193,78 @@ final class Quick_Markdown_ViewerUITests: XCTestCase {
         app.windows.element(boundBy: 0).click()
         app.typeKey("o", modifierFlags: .command)
 
-        XCTAssertTrue(app.staticTexts["No markdown files found."].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["No Markdown, CSV, or TSV files found."].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["empty-state.open-folder"].exists)
     }
+
+    #if os(iOS)
+    @MainActor
+    func testiPhoneCSVDocumentShowsTabularAndPrintControls() throws {
+        let app = XCUIApplication()
+        let workspace = try makeWorkspace(named: "iPhone CSV Workspace", files: [
+            "table.csv": "Name,Count,Notes\nAlpha,1,First row\nBeta,2,Second row"
+        ])
+
+        app.launchArguments = [
+            "--fixture-root", workspace.path,
+            "--open-file", "table.csv",
+            "--platform-target", "ios",
+            "--device-class", "iphone",
+            "--ui-test-mode", "1",
+        ]
+        app.launch()
+
+        XCTAssertTrue(app.buttons["toolbar.tableWrap"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["toolbar.tableSizing"].exists)
+        XCTAssertTrue(app.buttons["toolbar.print"].exists)
+    }
+
+    @MainActor
+    func testiOSExportPrintedAllDocumentsWritesNonEmptyMultiPagePDF() throws {
+        let app = XCUIApplication()
+        let repeatedBody = (1...220).map { "Paragraph \($0)" }.joined(separator: "\n\n")
+        let workspace = try makeWorkspace(named: "iOS Print All Workspace", files: [
+            "alpha.md": "# Alpha\n\n\(repeatedBody)",
+            "beta.md": "# Beta\n\n\(repeatedBody)",
+            "gamma.md": "# Gamma\n\n\(repeatedBody)"
+        ])
+        let commandDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let outputURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("print-all-ios.pdf")
+        try FileManager.default.createDirectory(at: commandDirectory, withIntermediateDirectories: true)
+
+        let deviceClass = UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"
+        app.launchArguments = [
+            "--fixture-root", workspace.path,
+            "--open-file", "alpha.md",
+            "--platform-target", "ios",
+            "--device-class", deviceClass,
+            "--harness-command-dir", commandDirectory.path,
+            "--ui-test-mode", "1",
+        ]
+        app.launch()
+
+        XCTAssertTrue(app.staticTexts["iOS Print All Workspace > alpha.md"].waitForExistence(timeout: 5))
+
+        let response = try waitForHarnessResponse(
+            command: "exportPrintedAllDocuments",
+            arguments: ["path": outputURL.path],
+            in: commandDirectory,
+            timeout: 20
+        )
+
+        XCTAssertEqual(response.status, "ok")
+        let pdfData = try Data(contentsOf: outputURL)
+        XCTAssertTrue(pdfData.starts(with: Data("%PDF".utf8)))
+        XCTAssertGreaterThan(pdfData.count, 10_000)
+
+        let document = try XCTUnwrap(PDFDocument(url: outputURL))
+        XCTAssertGreaterThan(document.pageCount, 1)
+        let firstPage = try XCTUnwrap(document.page(at: 0))
+        XCTAssertTrue(hasSubstantialInk(on: firstPage))
+    }
+    #endif
 
     @MainActor
     func testClickingSidebarNodeSwitchesPrimaryViewer() throws {
@@ -205,6 +291,43 @@ final class Quick_Markdown_ViewerUITests: XCTestCase {
 
         XCTAssertTrue(app.staticTexts["Click Workspace > beta.md"].waitForExistence(timeout: 5))
     }
+
+    #if os(macOS)
+    @MainActor
+    func testToolbarPrintMenuTriggersSelectedAndAllDocumentActions() throws {
+        let app = XCUIApplication()
+        let workspace = try makeWorkspace(named: "Print UI Workspace", files: [
+            "guide.md": "# Guide\n\nFirst file.",
+            "table.csv": "Name,Count\nAlpha,1\nBeta,2"
+        ])
+        let commandDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: commandDirectory, withIntermediateDirectories: true)
+
+        app.launchArguments = [
+            "--fixture-root", workspace.path,
+            "--open-file", "guide.md",
+            "--harness-command-dir", commandDirectory.path,
+            "--ui-test-mode", "1",
+        ]
+        app.launch()
+        app.activate()
+
+        XCTAssertTrue(app.windows.element(boundBy: 0).waitForExistence(timeout: 5))
+        let printButton = app.buttons["ui-test.printSelectedAction"].firstMatch
+        XCTAssertTrue(printButton.waitForExistence(timeout: 5))
+        printButton.click()
+
+        XCTAssertTrue(waitForStaticText(app.staticTexts["print.request.scope"], label: "selectedFile", timeout: 5))
+        XCTAssertTrue(waitForStaticText(app.staticTexts["print.request.status"], label: "presented", timeout: 5))
+
+        let printAllButton = app.buttons["ui-test.printAllAction"].firstMatch
+        XCTAssertTrue(printAllButton.waitForExistence(timeout: 5))
+        printAllButton.click()
+
+        XCTAssertTrue(waitForStaticText(app.staticTexts["print.request.scope"], label: "allFiles", timeout: 5))
+        XCTAssertTrue(waitForStaticText(app.staticTexts["print.request.status"], label: "presented", timeout: 5))
+    }
+    #endif
 
     @MainActor
     func testSidebarArrowKeysSwitchMarkdownFiles() throws {
@@ -328,6 +451,45 @@ final class Quick_Markdown_ViewerUITests: XCTestCase {
         return url
     }
 
+    private func waitForHarnessResponse(
+        command: String,
+        arguments: [String: String]?,
+        in directoryURL: URL,
+        timeout: TimeInterval = 5
+    ) throws -> UITestHarnessCommandResponse {
+        let inboxURL = directoryURL.appendingPathComponent("inbox", isDirectory: true)
+        let outboxURL = directoryURL.appendingPathComponent("outbox", isDirectory: true)
+        try FileManager.default.createDirectory(at: inboxURL, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: outboxURL, withIntermediateDirectories: true)
+
+        let request = UITestHarnessCommandRequest(
+            id: UUID().uuidString,
+            command: command,
+            arguments: arguments
+        )
+        let requestURL = inboxURL.appendingPathComponent("\(request.id).json")
+        let responseURL = outboxURL.appendingPathComponent("\(request.id).json")
+        let requestData = try JSONEncoder().encode(request)
+        try requestData.write(to: requestURL, options: .atomic)
+
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if FileManager.default.fileExists(atPath: responseURL.path) {
+                let responseData = try Data(contentsOf: responseURL)
+                return try JSONDecoder().decode(UITestHarnessCommandResponse.self, from: responseData)
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+
+        throw XCTSkip("Timed out waiting for harness response for \(command)")
+    }
+
+    private func waitForStaticText(_ element: XCUIElement, label: String, timeout: TimeInterval) -> Bool {
+        let predicate = NSPredicate(format: "label == %@", label)
+        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
+        return XCTWaiter().wait(for: [expectation], timeout: timeout) == .completed
+    }
+
     private func waitForWindowCount(_ app: XCUIApplication, expected: Int, timeout: TimeInterval) -> Bool {
         let predicate = NSPredicate { _, _ in
             app.windows.count == expected
@@ -335,6 +497,40 @@ final class Quick_Markdown_ViewerUITests: XCTestCase {
         let expectation = XCTNSPredicateExpectation(predicate: predicate, object: nil)
         return XCTWaiter().wait(for: [expectation], timeout: timeout) == .completed
     }
+
+    #if os(iOS)
+    private func hasSubstantialInk(on page: PDFPage) -> Bool {
+        let image = page.thumbnail(of: CGSize(width: 320, height: 320), for: .mediaBox)
+        guard let cgImage = image.cgImage,
+              let dataProvider = cgImage.dataProvider,
+              let pixelData = dataProvider.data else {
+            return false
+        }
+
+        let bytes = CFDataGetBytePtr(pixelData)
+        let length = CFDataGetLength(pixelData)
+        guard let bytes, length > 0 else { return false }
+
+        let bytesPerPixel = max(cgImage.bitsPerPixel / 8, 1)
+        var inkedPixels = 0
+        var pixelCount = 0
+        var index = 0
+
+        while index + (bytesPerPixel - 1) < length {
+            let red = bytes[index]
+            let green = bytes[index + min(1, bytesPerPixel - 1)]
+            let blue = bytes[index + min(2, bytesPerPixel - 1)]
+            if red < 245 || green < 245 || blue < 245 {
+                inkedPixels += 1
+            }
+            pixelCount += 1
+            index += bytesPerPixel
+        }
+
+        guard pixelCount > 0 else { return false }
+        return Double(inkedPixels) / Double(pixelCount) > 0.02
+    }
+    #endif
 
     private func repoRootURL(filePath: StaticString = #filePath) -> URL {
         URL(fileURLWithPath: "\(filePath)")

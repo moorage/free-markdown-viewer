@@ -33,6 +33,9 @@ Stable identifiers include:
 - `nav.title`
 - `toolbar.openFolder`
 - `toolbar.openGitHubURL`
+- `toolbar.print`
+- `toolbar.tableWrap`
+- `toolbar.tableSizing`
 - `empty-state.github-url.field`
 - `empty-state.github-url.load`
 - `empty-state.github-url.error`
@@ -75,3 +78,12 @@ The app must be able to emit JSON with:
 - `visibleBlockCount`
 - `activeAnimatedMediaCount`
 - `activeVideoPlayerCount`
+
+## Harness commands
+
+Stable harness commands include:
+
+- `printSelectedDocument` with argument `path`
+- `printAllDocuments` with argument `path`
+- `exportPrintedDocument` with argument `path`
+- `exportPrintedAllDocuments` with argument `path`

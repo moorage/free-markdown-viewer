@@ -3,6 +3,7 @@ import SwiftUI
 import AppKit
 #else
 import UniformTypeIdentifiers
+import UIKit
 #endif
 
 struct WindowSceneRootView: View {
@@ -43,6 +44,8 @@ struct WindowSceneRootView: View {
             model: model,
             onOpenFolder: openFolderAction,
             onOpenGitHubURLPrompt: openGitHubURLPromptAction,
+            onPrintSelectedDocument: printSelectedDocumentAction,
+            onPrintAllDocuments: printAllDocumentsAction,
             onInstallCommandLineTool: installCommandLineToolAction,
             shouldShowCommandLineToolPrompt: shouldShowCommandLineToolPrompt
         )
@@ -50,6 +53,8 @@ struct WindowSceneRootView: View {
             .focusedSceneValue(\.openFolderAction, OpenFolderAction(handler: openFolder))
             .focusedSceneValue(\.openGitHubURLAction, OpenGitHubURLAction(handler: openGitHubURLPrompt))
             .focusedSceneValue(\.revealInFinderAction, revealInFinderAction)
+            .focusedSceneValue(\.printSelectedDocumentAction, printSelectedDocumentFocusedAction)
+            .focusedSceneValue(\.printAllDocumentsAction, printAllDocumentsFocusedAction)
             .focusedSceneValue(\.increaseFontSizeAction, IncreaseFontSizeAction(handler: model.increaseFontSize))
             .focusedSceneValue(\.decreaseFontSizeAction, DecreaseFontSizeAction(handler: model.decreaseFontSize))
             .onAppear {
@@ -125,6 +130,47 @@ struct WindowSceneRootView: View {
         openGitHubURLPrompt
     }
 
+    private var printSelectedDocumentAction: (() -> Void)? {
+        printSelectedDocument
+    }
+
+    private var printAllDocumentsAction: (() -> Void)? {
+        printAllDocuments
+    }
+
+    private func printSelectedDocument() {
+        Task {
+            await presentPrint(scope: .selectedFile)
+        }
+    }
+
+    private func printAllDocuments() {
+        Task {
+            await presentPrint(scope: .allFiles)
+        }
+    }
+
+    @MainActor
+    private func presentPrint(scope: DocumentPrintScope) async {
+        do {
+            let composition = try await model.makePrintComposition(scope: scope)
+            model.clearPrintError()
+            model.recordPrintPresentationStarted(scope: scope)
+            if model.launchOptions.uiTestMode {
+                model.recordPrintPresentationSucceeded()
+                return
+            }
+            #if os(macOS)
+            PlatformPrintPresenter.present(composition, from: NSApp.keyWindow)
+            #else
+            PlatformPrintPresenter.present(composition)
+            #endif
+            model.recordPrintPresentationSucceeded()
+        } catch {
+            model.recordPrintError(error)
+        }
+    }
+
     #if os(macOS)
     private var installCommandLineToolAction: (() -> Void)? {
         installCommandLineTool
@@ -137,6 +183,16 @@ struct WindowSceneRootView: View {
     private var revealInFinderAction: RevealInFinderAction? {
         guard model.canRevealSelectedFileInFinder else { return nil }
         return RevealInFinderAction(handler: revealInFinder)
+    }
+
+    private var printSelectedDocumentFocusedAction: PrintSelectedDocumentAction? {
+        guard model.canPrintSelectedDocument else { return nil }
+        return PrintSelectedDocumentAction(handler: printSelectedDocument)
+    }
+
+    private var printAllDocumentsFocusedAction: PrintAllDocumentsAction? {
+        guard model.canPrintAllDocuments else { return nil }
+        return PrintAllDocumentsAction(handler: printAllDocuments)
     }
 
     private func requestInitialFolderPromptIfNeeded() {
@@ -438,6 +494,22 @@ struct RevealInFinderAction {
     }
 }
 
+struct PrintSelectedDocumentAction {
+    let handler: () -> Void
+
+    func callAsFunction() {
+        handler()
+    }
+}
+
+struct PrintAllDocumentsAction {
+    let handler: () -> Void
+
+    func callAsFunction() {
+        handler()
+    }
+}
+
 struct IncreaseFontSizeAction {
     let handler: () -> Void
 
@@ -466,6 +538,14 @@ private struct RevealInFinderActionKey: FocusedValueKey {
     typealias Value = RevealInFinderAction
 }
 
+private struct PrintSelectedDocumentActionKey: FocusedValueKey {
+    typealias Value = PrintSelectedDocumentAction
+}
+
+private struct PrintAllDocumentsActionKey: FocusedValueKey {
+    typealias Value = PrintAllDocumentsAction
+}
+
 private struct IncreaseFontSizeActionKey: FocusedValueKey {
     typealias Value = IncreaseFontSizeAction
 }
@@ -490,6 +570,16 @@ extension FocusedValues {
         set { self[RevealInFinderActionKey.self] = newValue }
     }
 
+    var printSelectedDocumentAction: PrintSelectedDocumentAction? {
+        get { self[PrintSelectedDocumentActionKey.self] }
+        set { self[PrintSelectedDocumentActionKey.self] = newValue }
+    }
+
+    var printAllDocumentsAction: PrintAllDocumentsAction? {
+        get { self[PrintAllDocumentsActionKey.self] }
+        set { self[PrintAllDocumentsActionKey.self] = newValue }
+    }
+
     var increaseFontSizeAction: IncreaseFontSizeAction? {
         get { self[IncreaseFontSizeActionKey.self] }
         set { self[IncreaseFontSizeActionKey.self] = newValue }
@@ -506,6 +596,8 @@ struct WindowOpenFolderCommands: Commands {
     @FocusedValue(\.openFolderAction) private var openFolderAction
     @FocusedValue(\.openGitHubURLAction) private var openGitHubURLAction
     @FocusedValue(\.revealInFinderAction) private var revealInFinderAction
+    @FocusedValue(\.printSelectedDocumentAction) private var printSelectedDocumentAction
+    @FocusedValue(\.printAllDocumentsAction) private var printAllDocumentsAction
     @FocusedValue(\.increaseFontSizeAction) private var increaseFontSizeAction
     @FocusedValue(\.decreaseFontSizeAction) private var decreaseFontSizeAction
 
@@ -536,6 +628,20 @@ struct WindowOpenFolderCommands: Commands {
                 commandLineToolManager.performPrimaryCommandLineToolMenuAction()
             }
             .disabled(commandLineToolManager.canPerformCommandLineToolMenuAction == false)
+        }
+
+        CommandGroup(replacing: .printItem) {
+            Button("Print…") {
+                printSelectedDocumentAction?()
+            }
+            .keyboardShortcut("p", modifiers: [.command])
+            .disabled(printSelectedDocumentAction == nil)
+
+            Button("Print All…") {
+                printAllDocumentsAction?()
+            }
+            .keyboardShortcut("p", modifiers: [.command, .shift])
+            .disabled(printAllDocumentsAction == nil)
         }
 
         CommandGroup(after: .toolbar) {
