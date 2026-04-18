@@ -1,6 +1,7 @@
 # Running implementation notes
 
 - active ExecPlans:
+  - `docs/exec-plans/active/2026-04-18-app-store-1-2-resubmission.md`
   - `docs/exec-plans/active/2026-04-16-github-url-workspaces.md`
   - `docs/exec-plans/active/2026-04-16-remote-inline-media-and-linked-preview.md`
   - `docs/exec-plans/active/2026-04-16-macos-cli-open-folder-launcher.md`
@@ -20,6 +21,7 @@
   - `docs/exec-plans/active/2026-04-03-quick-markdown-viewer-in-place-rename.md`
   - `docs/exec-plans/active/2026-03-28-launch-empty-viewer.md`
 - current milestone:
+  - app-store 1.2 resubmission: the checked-in project and release docs now target `1.2 (6)`, iOS `1.2` build `6` is attached to version `bbac75b7-831b-429f-aa05-de03b30017e3` on review submission `1c8f23d4-f745-4fa1-b963-00eff15250c9`, and macOS is resubmitted on existing version `1.1` with replacement build `f96577d1-da44-470b-9c60-5349121d13b7` on review submission `2e862a82-ffd5-4ea2-92cd-7120abcf2d5e`; the attached macOS review note explicitly explains that `com.apple.security.files.user-selected.executable` exists only for the explicit user-driven `Install Command Line Tool…` flow that writes `~/.local/bin/qmv`
   - print debugging: harness commands can now export the real rendered print output as PDF artifacts via `exportPrintedDocument` and `exportPrintedAllDocuments`, so print regressions can be inspected without the native print dialog
   - printing single or all workspace files: macOS now exposes `Print…` and `Print All…` through focused commands, iPhone and iPad expose a printer menu in the top bar, shared print composition runs through `WorkspaceProvider`, and harness commands can export deterministic print artifacts without invoking native print UI
   - csv/tsv tabular documents: local folders, GitHub workspaces, and direct macOS file opens now include `.csv` and `.tsv`, standalone tabular files render as native tables, and CSV/TSV views now expose wrap, column-width, and row-height controls in the navigation chrome
@@ -35,6 +37,16 @@
   - app-store update follow-up: App Store Connect app `6761271951` now has fresh `1.1` iOS and macOS versions with updated GitHub/remote-media/CLI release copy, accepted build `5` uploads attached on both platforms, and review submissions `210d4fb9-ccea-4f25-9a1a-71dd226490c4` (iOS) plus `061681d3-4563-4ca4-9a35-9edde6082a67` (macOS) in `WAITING_FOR_REVIEW`
   - repository slug follow-up: the remaining old-slug references in support docs and local `.git` metadata are now rewritten to `moorage/free-markdown-viewer`
 - commands run:
+  - `APP_MARKETING_VERSION=1.2 APP_BUILD_NUMBER=6 APPLE_DEVELOPMENT_TEAM=GG34PA8F4A ./scripts/archive-release --platform ios --allow-provisioning-updates`
+  - `APP_MARKETING_VERSION=1.2 APP_BUILD_NUMBER=6 APPLE_DEVELOPMENT_TEAM=GG34PA8F4A ./scripts/archive-release --platform macos --allow-provisioning-updates`
+  - `APP_MARKETING_VERSION=1.2 APP_BUILD_NUMBER=6 ./scripts/export-app-store --platform ios --archive-path 'artifacts/archives/Quick Markdown Viewer-ios.xcarchive' --export-options-plist 'artifacts/export-options/ios-app-store-connect.plist' --allow-provisioning-updates`
+  - `APP_MARKETING_VERSION=1.2 APP_BUILD_NUMBER=6 ./scripts/export-app-store --platform macos --archive-path 'artifacts/archives/Quick Markdown Viewer-macos.xcarchive' --export-options-plist 'artifacts/export-options/macos-app-store-connect.plist' --allow-provisioning-updates`
+  - `APP_MARKETING_VERSION=1.1 APP_BUILD_NUMBER=6 APPLE_DEVELOPMENT_TEAM=GG34PA8F4A ./scripts/archive-release --platform macos --allow-provisioning-updates`
+  - `APP_MARKETING_VERSION=1.1 APP_BUILD_NUMBER=6 ./scripts/export-app-store --platform macos --archive-path 'artifacts/archives/Quick Markdown Viewer-macos.xcarchive' --export-options-plist 'artifacts/export-options/macos-app-store-connect.plist' --allow-provisioning-updates`
+  - `source scripts/lib/xcode-env.sh && xcrun altool --upload-package 'artifacts/exports/ios/Quick Markdown Viewer.ipa' --api-key \"$ASC_KEY_ID\" --api-issuer \"$ASC_ISSUER_ID\" --p8-file-path \"$ASC_KEY_PATH\" --api-key-subject user --wait --output-format json`
+  - `source scripts/lib/xcode-env.sh && xcrun altool --upload-package 'artifacts/exports/macos/Quick Markdown Viewer.pkg' --api-key \"$ASC_KEY_ID\" --api-issuer \"$ASC_ISSUER_ID\" --p8-file-path \"$ASC_KEY_PATH\" --api-key-subject user --wait --output-format json`
+  - `./scripts/app-store-connect request PATCH /v1/reviewSubmissions/061681d3-4563-4ca4-9a35-9edde6082a67 --body '{\"data\":{\"type\":\"reviewSubmissions\",\"id\":\"061681d3-4563-4ca4-9a35-9edde6082a67\",\"attributes\":{\"canceled\":true}}}'`
+  - `./scripts/app-store-connect request PATCH /v1/reviewSubmissions/2e862a82-ffd5-4ea2-92cd-7120abcf2d5e --body '{\"data\":{\"type\":\"reviewSubmissions\",\"id\":\"2e862a82-ffd5-4ea2-92cd-7120abcf2d5e\",\"attributes\":{\"submitted\":true}}}'`
   - `xcodebuild -quiet -project "Free Markdown Viewer/Free Markdown Viewer.xcodeproj" -scheme "Free Markdown Viewer" -configuration Debug -derivedDataPath /tmp/free-markdown-viewer-empty-launch-unit -destination "platform=macOS,arch=arm64" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= "-only-testing:Free Markdown ViewerTests/Free_Markdown_ViewerTests/testAppModelWithoutInitialWorkspaceShowsOpenFolderPromptState" "-only-testing:Free Markdown ViewerTests/Free_Markdown_ViewerTests/testEmptyWorkspaceShowsNoMarkdownFilesMessage" "-only-testing:Free Markdown ViewerTests/Free_Markdown_ViewerTests/testAppModelRestoresInitialWorkspaceSession" test`
   - `xcodebuild -quiet -project "Free Markdown Viewer/Free Markdown Viewer.xcodeproj" -scheme "Free Markdown Viewer" -configuration Debug -derivedDataPath /tmp/free-markdown-viewer-empty-launch-ui -destination "platform=macOS,arch=arm64" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= "-only-testing:Free Markdown ViewerUITests/Free_Markdown_ViewerUITests/testColdLaunchWithoutWorkspaceShowsOpenFolderPrompt" "-only-testing:Free Markdown ViewerUITests/Free_Markdown_ViewerUITests/testEmptyWorkspaceShowsCenteredOpenFolderCallToAction" test`
   - `python3 scripts/check_execplan.py`
@@ -123,6 +135,9 @@
   - `python3 scripts/check_execplan.py`
   - `python3 scripts/knowledge/check_docs.py`
 - important outcomes:
+  - App Store Connect now has iOS `1.2` build `6` on review submission `1c8f23d4-f745-4fa1-b963-00eff15250c9` and macOS replacement build `6` on review submission `2e862a82-ffd5-4ea2-92cd-7120abcf2d5e`, with both platforms back in `WAITING_FOR_REVIEW`
+  - the macOS resubmission could not use a fresh `1.2` version resource because ASC refused to create one while the rejected `1.1` version was the active editable line, so the successful path was to attach the replacement build to `1.1`, cancel stale submission `061681d3-4563-4ca4-9a35-9edde6082a67`, and resubmit through the draft review submission
+  - the repository automation still has no literal Resolution Center reply endpoint, so the available reviewer-facing response was delivered by updating the attached macOS review detail with the explicit `com.apple.security.files.user-selected.executable` justification for the `qmv` installer
   - `AppModel` no longer loads the embedded default markdown set on a cold interactive launch with no restored session or fixture root; it now enters a dedicated no-workspace state, and `ViewerShellView` renders a centered `empty-state.message` / `empty-state.open-folder` prompt instead of the fixture browser
   - `ViewerShellView` now shows the sidebar quick-filter on iPhone and iPad instead of hiding it behind `#if os(macOS)`, and the new `sidebar.filterField` / `sidebar.filterClear` accessibility identifiers give iOS drawer automation a stable hook
   - relative Markdown links now stay visible and navigable in both selectable documents and tables because `MarkdownRenderer` preserves attributed table cells, `SelectableDocumentFormatter` keeps `.link` runs, and `ViewerShellView` routes internal `.md` links through `AppModel.openMarkdownLink(_:)`

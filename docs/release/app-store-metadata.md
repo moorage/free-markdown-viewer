@@ -22,8 +22,9 @@ Use this for the `What's New` field on the next App Store version:
 - Open public GitHub repositories and repository tree URLs directly in the app
 - Browse branch and tag snapshots with local caching for offline reopen
 - View remote images and video links referenced in Markdown files
+- Open and render CSV and TSV files with native table controls
+- Print the current file or the whole workspace on macOS, iPhone, and iPad
 - On macOS, install the optional `qmv` command-line launcher from inside the app
-- Improved empty-state guidance for opening folders or loading GitHub workspaces
 
 ## Description
 
@@ -36,9 +37,12 @@ Features:
 - Open a folder and browse Markdown files from a sidebar
 - Open public GitHub repository and repository tree URLs, including branch and tag paths
 - Read Markdown with native rendering for headings, lists, tables, code blocks, images, animated images, and local video
+- Open CSV and TSV files alongside Markdown and view them with native table rendering
 - Render direct remote image and video links authored inside Markdown
+- Print the current file or the entire workspace with rendered Markdown and table output
 - Navigate quickly between files with back and forward history
 - Adjust viewer font size for comfortable reading
+- Adjust CSV and TSV wrapping plus table sizing for easier reading
 - Work entirely with files you choose from Finder or the Files app
 - On macOS, optionally install the `qmv` command-line launcher to reopen folders from Terminal
 
