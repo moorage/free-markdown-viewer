@@ -342,6 +342,7 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
 
         XCTAssertTrue(script.contains("target=\"${1:-.}\""))
         XCTAssertTrue(script.contains("/usr/bin/open -b \"com.souschefstudio.Free-Markdown-Viewer\""))
+        XCTAssertTrue(script.contains("$(basename \"$target\")"))
         XCTAssertTrue(script.contains("usage: qmv [directory-or-markdown-file]"))
     }
 
@@ -472,28 +473,26 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
         XCTAssertTrue(script.contains("run Install Command Line Tool"))
     }
 
-    func testExternalWorkspaceOpenCoordinatorNormalizesMarkdownFileToContainingFolder() throws {
+    func testExternalWorkspaceOpenCoordinatorNormalizesMarkdownFileToWorkspaceAndSelection() throws {
         let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
         let markdownURL = tempRoot.appendingPathComponent("notes.md")
         try "# Notes".write(to: markdownURL, atomically: true, encoding: .utf8)
 
-        XCTAssertEqual(
-            ExternalWorkspaceOpenCoordinator.normalizedWorkspaceURL(for: markdownURL)?.path,
-            tempRoot.path
-        )
+        let request = try XCTUnwrap(ExternalWorkspaceOpenCoordinator.normalizedRequest(for: markdownURL))
+        XCTAssertEqual(request.rootURL.path, tempRoot.path)
+        XCTAssertEqual(request.selectedPath?.rawValue, "notes.md")
     }
 
-    func testExternalWorkspaceOpenCoordinatorNormalizesCSVFileToContainingFolder() throws {
+    func testExternalWorkspaceOpenCoordinatorNormalizesCSVFileToWorkspaceAndSelection() throws {
         let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
         let csvURL = tempRoot.appendingPathComponent("table.csv")
         try "Name,Count\nAlpha,1".write(to: csvURL, atomically: true, encoding: .utf8)
 
-        XCTAssertEqual(
-            ExternalWorkspaceOpenCoordinator.normalizedWorkspaceURL(for: csvURL)?.path,
-            tempRoot.path
-        )
+        let request = try XCTUnwrap(ExternalWorkspaceOpenCoordinator.normalizedRequest(for: csvURL))
+        XCTAssertEqual(request.rootURL.path, tempRoot.path)
+        XCTAssertEqual(request.selectedPath?.rawValue, "table.csv")
     }
 
     func testExternalWorkspaceOpenCoordinatorRejectsUnsupportedFiles() throws {
@@ -502,7 +501,7 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
         let textURL = tempRoot.appendingPathComponent("notes.txt")
         try "not markdown".write(to: textURL, atomically: true, encoding: .utf8)
 
-        XCTAssertNil(ExternalWorkspaceOpenCoordinator.normalizedWorkspaceURL(for: textURL))
+        XCTAssertNil(ExternalWorkspaceOpenCoordinator.normalizedRequest(for: textURL))
     }
 
     @MainActor
@@ -519,7 +518,9 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
         guard let requestID = coordinator.latestRequestID else {
             return XCTFail("Expected external workspace request")
         }
-        XCTAssertEqual(coordinator.claimRequest(id: requestID)?.path, tempRoot.path)
+        let request = try XCTUnwrap(coordinator.claimRequest(id: requestID))
+        XCTAssertEqual(request.rootURL.path, tempRoot.path)
+        XCTAssertEqual(request.selectedPath?.rawValue, "notes.md")
     }
 
     @MainActor
@@ -534,7 +535,9 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
         guard let requestID = coordinator.latestRequestID else {
             return XCTFail("Expected external workspace request")
         }
-        XCTAssertEqual(coordinator.claimRequest(id: requestID)?.path, tempRoot.path)
+        let request = try XCTUnwrap(coordinator.claimRequest(id: requestID))
+        XCTAssertEqual(request.rootURL.path, tempRoot.path)
+        XCTAssertNil(request.selectedPath)
     }
     #endif
 
@@ -1078,6 +1081,40 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
         XCTAssertEqual(model.windowTitle, "\(tempRoot.lastPathComponent) > beta.md")
         XCTAssertEqual(model.restorationSession?.rootPath, tempRoot.path)
         XCTAssertEqual(model.restorationSession?.selectedFile, "beta.md")
+    }
+
+    @MainActor
+    func testAppModelOpenFolderSelectsRequestedFileOverride() async throws {
+        let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        try "# Alpha".write(to: tempRoot.appendingPathComponent("alpha.md"), atomically: true, encoding: .utf8)
+        try "# Beta".write(to: tempRoot.appendingPathComponent("beta.md"), atomically: true, encoding: .utf8)
+
+        let model = AppModel(
+            launchOptions: HarnessLaunchOptions(
+                fixtureRoot: nil,
+                openFile: nil,
+                uiTestOpenFolderURL: nil,
+                theme: nil,
+                windowSize: nil,
+                disableFileWatch: true,
+                dumpVisibleStateURL: nil,
+                dumpPerfStateURL: nil,
+                screenshotPathURL: nil,
+                commandDirectoryURL: nil,
+                uiTestMode: true,
+                platformTarget: .macos,
+                deviceClass: .mac
+            )
+        )
+        retainForTestLifetime(model)
+
+        model.openFolder(at: tempRoot, selectedPathOverride: WorkspacePath(rawValue: "beta.md"))
+        try await Task.sleep(nanoseconds: 500_000_000)
+
+        XCTAssertEqual(model.currentWorkspaceRootURL?.path, tempRoot.path)
+        XCTAssertEqual(model.selectedPath?.rawValue, "beta.md")
+        XCTAssertEqual(model.windowTitle, "\(tempRoot.lastPathComponent) > beta.md")
     }
 
     func testWorkspaceProviderReturnsRelativePathsForTemporaryRoots() throws {

@@ -28,7 +28,7 @@ If App Review needs a quick test flow:
 1. Launch the app.
 2. On macOS, accept the `Open Folder` panel that appears automatically, or choose `File > Open Folder…`.
 3. Pick any folder that contains Markdown files.
-4. Optionally choose `File > Install Command Line Tool…`, approve access to the home folder when prompted, and run `qmv ..` from Terminal to reopen the app to a folder.
+4. Optionally choose `File > Install Command Line Tool…`, approve access to the home folder when prompted, and run `qmv ..` from Terminal to reopen the app to a folder or `qmv /path/to/file.md` to reopen the file's containing folder with that file selected.
 5. Select a Markdown, CSV, or TSV file from the sidebar.
 6. Verify that the document renders and that navigation plus printing work.
 

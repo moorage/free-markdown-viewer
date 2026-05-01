@@ -76,37 +76,46 @@ final class ExternalWorkspaceOpenCoordinator: ObservableObject {
     static let shared = ExternalWorkspaceOpenCoordinator()
 
     @Published private(set) var latestRequestID: UUID?
-    private var pendingRequests: [UUID: URL] = [:]
+    private var pendingRequests: [UUID: ExternalWorkspaceOpenRequest] = [:]
 
-    func enqueue(_ url: URL) {
+    func enqueue(_ request: ExternalWorkspaceOpenRequest) {
         let requestID = UUID()
-        pendingRequests[requestID] = url
+        pendingRequests[requestID] = request
         latestRequestID = requestID
     }
 
-    func claimRequest(id: UUID) -> URL? {
+    func claimRequest(id: UUID) -> ExternalWorkspaceOpenRequest? {
         pendingRequests.removeValue(forKey: id)
     }
 
-    nonisolated static func normalizedWorkspaceURL(for incomingURL: URL) -> URL? {
+    nonisolated static func normalizedRequest(for incomingURL: URL) -> ExternalWorkspaceOpenRequest? {
         let resolvedURL = incomingURL.resolvingSymlinksInPath().standardizedFileURL
         var isDirectory: ObjCBool = false
         if FileManager.default.fileExists(atPath: resolvedURL.path, isDirectory: &isDirectory), isDirectory.boolValue {
-            return resolvedURL
+            return ExternalWorkspaceOpenRequest(rootURL: resolvedURL, selectedPath: nil)
         }
         guard SupportedDocumentExtensions.contains(resolvedURL.pathExtension) else { return nil }
-        return resolvedURL.deletingLastPathComponent().resolvingSymlinksInPath().standardizedFileURL
+        let rootURL = resolvedURL.deletingLastPathComponent().resolvingSymlinksInPath().standardizedFileURL
+        return ExternalWorkspaceOpenRequest(
+            rootURL: rootURL,
+            selectedPath: WorkspacePath(rawValue: resolvedURL.lastPathComponent)
+        )
     }
+}
+
+struct ExternalWorkspaceOpenRequest: Equatable {
+    let rootURL: URL
+    let selectedPath: WorkspacePath?
 }
 
 final class QuickMarkdownViewerAppDelegate: NSObject, NSApplicationDelegate {
     func application(_ sender: NSApplication, openFiles filenames: [String]) {
         for filename in filenames {
             let url = URL(fileURLWithPath: filename)
-            guard let normalizedURL = ExternalWorkspaceOpenCoordinator.normalizedWorkspaceURL(for: url) else {
+            guard let request = ExternalWorkspaceOpenCoordinator.normalizedRequest(for: url) else {
                 continue
             }
-            ExternalWorkspaceOpenCoordinator.shared.enqueue(normalizedURL)
+            ExternalWorkspaceOpenCoordinator.shared.enqueue(request)
         }
 
         sender.reply(toOpenOrPrint: .success)
@@ -114,10 +123,10 @@ final class QuickMarkdownViewerAppDelegate: NSObject, NSApplicationDelegate {
 
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls {
-            guard let normalizedURL = ExternalWorkspaceOpenCoordinator.normalizedWorkspaceURL(for: url) else {
+            guard let request = ExternalWorkspaceOpenCoordinator.normalizedRequest(for: url) else {
                 continue
             }
-            ExternalWorkspaceOpenCoordinator.shared.enqueue(normalizedURL)
+            ExternalWorkspaceOpenCoordinator.shared.enqueue(request)
         }
     }
 }
@@ -413,7 +422,7 @@ final class MacCommandLineToolManager: ObservableObject {
         if [ -d "$target" ]; then
           resolved_target=$(cd "$target" && pwd -P)
         elif [ -f "$target" ]; then
-          resolved_target=$(cd "$(dirname "$target")" && pwd -P)
+          resolved_target="$(cd "$(dirname "$target")" && pwd -P)/$(basename "$target")"
         else
           echo "qmv: path not found: $target" >&2
           exit 66

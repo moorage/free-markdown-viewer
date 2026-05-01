@@ -20,6 +20,7 @@ Add a macOS command-line entry point so `qmv ..` opens Quick Markdown Viewer to 
 - [x] (2026-04-16T21:18Z) Replaced the giant post-install Terminal snippet with a bundled `qmv-finish-terminal-setup.sh` resource and a short copyable `/bin/sh ...` command that points into the installed app bundle.
 - [x] (2026-04-16T21:30Z) Fixed the final sandbox write failure by switching the macOS app entitlement from user-selected read-only to user-selected read-write while keeping the `qmv` write scope limited to explicit user-approved install flow.
 - [x] (2026-04-16T21:42Z) Added a macOS-specific `Info.plist` with `CFBundleDocumentTypes` for `public.folder`, so Launch Services now delivers folder arguments from `qmv .` into the app instead of launching an empty window.
+- [x] (2026-05-01T22:54Z) Extended CLI-open handling so `qmv /path/to/file.md` now routes the app to the file’s containing folder and preserves `file.md` as the initial sidebar selection instead of dropping to the folder’s default first document.
 
 ## Surprises & Discoveries
 
@@ -53,6 +54,9 @@ Add a macOS command-line entry point so `qmv ..` opens Quick Markdown Viewer to 
 - Observation: macOS file-open delivery can be integrated without introducing a new document-based app architecture.
   Evidence: `Quick Markdown Viewer/Quick Markdown Viewer/Quick_Markdown_ViewerApp.swift` now uses an `NSApplicationDelegateAdaptor` to capture `openFiles` / `open urls` events and route them through a lightweight `ExternalWorkspaceOpenCoordinator`.
 
+- Observation: the original external-open coordinator intentionally collapsed supported files down to just their containing folder, which made `qmv /path/to/file.md` lose the caller’s intended initial selection.
+  Evidence: `ExternalWorkspaceOpenCoordinator.normalizedWorkspaceURL(for:)` previously returned only the parent directory for supported files, and `WindowSceneRootView.handleExternalWorkspaceOpen` always scheduled `selectedFile: nil` for new externally opened windows.
+
 ## Decision Log
 
 - Decision: do not plan for automatic CLI installation on first launch or during App Store install.
@@ -85,9 +89,15 @@ Add a macOS command-line entry point so `qmv ..` opens Quick Markdown Viewer to 
 - Decision: preserve existing open windows by treating CLI-opened directories as window-scoped workspace opens rather than a global workspace replacement.
   Rationale: the repository already has window-scoped session infrastructure, and replacing unrelated windows would be a surprising regression for a multi-window macOS app.
 
+- Decision: preserve external-open requests as `{root folder, optional selected file}` instead of reducing them to a bare folder URL.
+  Rationale: `AppModel` already supports `selectedPathOverride` for restored sessions and harness launches, so threading the selected file through the existing workspace/session model is the smallest safe way to make CLI file opens deterministic.
+
+- Decision: advertise Markdown document support through the macOS bundle metadata and have the launcher hand file arguments to Launch Services as file paths, not pre-collapsed directories.
+  Rationale: `open -b <bundle> <file.md>` is the only clean handoff that preserves the caller’s exact path when the app is already running; the app then converts that incoming file URL into `{folder, selected file}` internally.
+
 ## Outcomes & Retrospective
 
-The macOS app now supports the end-to-end Terminal flow requested in this workstream. Users can install `qmv` from `File > Install Command Line Tool…` or from the empty-window screen, and the installer now always targets `~/.local/bin/qmv`. When the sandbox does not yet have write access, the app explains why, prompts the user to approve access to the home folder once, persists that approval as a security-scoped bookmark, then creates `~/.local/bin` if needed and writes the launcher there. After install, the app now shows a short `/bin/sh ...` command that points to a bundled `qmv-finish-terminal-setup.sh` resource inside the app instead of dumping the entire PATH-fix script inline. The installed launcher resolves the requested directory locally and calls `open -b com.souschefstudio.Free-Markdown-Viewer <directory>`, so `qmv ..` reopens Quick Markdown Viewer to the parent folder without depending on a hard-coded app path.
+The macOS app now supports the end-to-end Terminal flow requested in this workstream. Users can install `qmv` from `File > Install Command Line Tool…` or from the empty-window screen, and the installer now always targets `~/.local/bin/qmv`. When the sandbox does not yet have write access, the app explains why, prompts the user to approve access to the home folder once, persists that approval as a security-scoped bookmark, then creates `~/.local/bin` if needed and writes the launcher there. After install, the app now shows a short `/bin/sh ...` command that points to a bundled `qmv-finish-terminal-setup.sh` resource inside the app instead of dumping the entire PATH-fix script inline. The installed launcher resolves directory arguments locally and still uses Launch Services for the app handoff, while supported file arguments such as `qmv /path/to/file.md` now preserve the requested file path so the app can open that file’s containing folder with `file.md` selected in the sidebar.
 
 The app also now accepts Launch Services folder-open events directly. If the app is launched into an empty window, the incoming CLI-opened folder is consumed by that window; if the app already has an active workspace, the folder is opened into a fresh window-scoped session instead of clobbering an unrelated window. That preserves the repo’s existing multiwindow behavior while making the CLI useful on a running app.
 
@@ -115,7 +125,7 @@ The v1 launcher should support these user-facing cases:
 
 1. `qmv ..` opens the parent directory.
 2. `qmv /absolute/path/with spaces` opens a directory with spaces safely.
-3. `qmv some-file.md` resolves to that file’s containing folder or fails with a clear error, depending on the final script policy chosen during implementation.
+3. `qmv some-file.md` opens that file’s containing folder with `some-file.md` selected.
 4. invoking `qmv` while the app is already running opens the requested workspace without discarding unrelated windows.
 5. removing the installed launcher causes the app to return to the "not installed" UI state.
 
@@ -169,6 +179,9 @@ If executable-export entitlements cause App Review concern, the recovery path is
 
 Validation commands run:
 
+- `xcodebuild -quiet -project "Quick Markdown Viewer/Quick Markdown Viewer.xcodeproj" -scheme "Quick Markdown Viewer" -configuration Debug -derivedDataPath /tmp/qmv-cli-file-open -destination "platform=macOS,arch=arm64" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= "-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testCommandLineToolLauncherScriptUsesBundleIdentifierAndDefaultTarget" "-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testExternalWorkspaceOpenCoordinatorNormalizesMarkdownFileToWorkspaceAndSelection" "-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testExternalWorkspaceOpenCoordinatorNormalizesCSVFileToWorkspaceAndSelection" "-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testAppDelegateOpenFilesEnqueuesMarkdownWorkspace" "-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testAppDelegateOpenURLsEnqueuesDirectoryWorkspace" "-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testAppModelOpenFolderSelectsRequestedFileOverride" test`
+- `python3 scripts/check_execplan.py docs/exec-plans/active/2026-04-16-macos-cli-open-folder-launcher.md`
+- `python3 scripts/knowledge/check_docs.py`
 - `./scripts/test-unit`
 - `./scripts/test-ui-macos --smoke`
 - `python3 scripts/check_execplan.py docs/exec-plans/active/2026-04-16-macos-cli-open-folder-launcher.md`

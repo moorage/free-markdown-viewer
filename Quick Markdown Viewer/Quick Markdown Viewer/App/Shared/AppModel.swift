@@ -321,10 +321,13 @@ final class AppModel: ObservableObject {
         openFile(targetPath, recordHistory: selectedPath != nil)
     }
 
-    func openFolder(at rootURL: URL) {
+    func openFolder(at rootURL: URL, selectedPathOverride: WorkspacePath? = nil) {
         cancelActiveDocumentLoad()
         cancelActiveWorkspaceLoad()
-        loadWorkspace(selection: WorkspaceSecurityScope.selection(for: rootURL))
+        loadWorkspace(
+            selection: WorkspaceSecurityScope.selection(for: rootURL),
+            selectedPathOverride: selectedPathOverride
+        )
     }
 
     func submitGitHubURLFromInput() {

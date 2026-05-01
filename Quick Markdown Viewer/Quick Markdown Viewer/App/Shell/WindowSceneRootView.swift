@@ -312,18 +312,18 @@ struct WindowSceneRootView: View {
     }
 
     private func handleExternalWorkspaceOpen(requestID: UUID?) {
-        guard let requestID, let rootURL = externalWorkspaceOpenCoordinator.claimRequest(id: requestID) else {
+        guard let requestID, let request = externalWorkspaceOpenCoordinator.claimRequest(id: requestID) else {
             return
         }
 
         if shouldReuseCurrentWindowForExternalOpen {
-            model.openFolder(at: rootURL)
+            model.openFolder(at: request.rootURL, selectedPathOverride: request.selectedPath)
         } else {
             sessionStore.scheduleExternalWorkspaceWindow(
                 for: WorkspaceWindowSession(
-                    rootPath: rootURL.path,
-                    selectedFile: nil,
-                    securityScopedBookmarkData: WorkspaceSecurityScope.bookmarkData(for: rootURL)
+                    rootPath: request.rootURL.path,
+                    selectedFile: request.selectedPath?.rawValue,
+                    securityScopedBookmarkData: WorkspaceSecurityScope.bookmarkData(for: request.rootURL)
                 ),
                 openWindow: openWindow
             )
