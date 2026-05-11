@@ -9,6 +9,8 @@ Quick Markdown Viewer is a free, local-first Markdown viewer for macOS, iPhone, 
 - No account or sign-in is required.
 - No in-app purchases are used.
 - The app's primary function is to open a folder the user chooses and render Markdown files plus local media references inside that folder.
+- Each opened window includes an explicit Ignore Patterns sheet opened from the eye button in the window chrome. The comma-separated patterns only filter that window's sidebar contents; they do not delete, move, upload, or modify files.
+- New windows default to ignoring common dependency folders: `node_modules`, `venv`, `.venv`, and `vendor`.
 - The app can also open a public GitHub repository URL or repository tree URL that the user explicitly pastes into the app; the app resolves the selected branch or tag, caches a local snapshot for offline reopen, and renders Markdown, CSV, and TSV files from that cached snapshot.
 - The app can also render direct image and video URLs that the user authored inside Markdown files; this is limited to media fetching for the opened document content, not general web browsing, accounts, ads, or analytics.
 - The app can print the currently selected file or the full opened workspace on macOS, iPhone, and iPad using the system print flow.
@@ -29,8 +31,9 @@ If App Review needs a quick test flow:
 2. On macOS, accept the `Open Folder` panel that appears automatically, or choose `File > Open Folder…`.
 3. Pick any folder that contains Markdown files.
 4. Optionally choose `File > Install Command Line Tool…`, approve access to the home folder when prompted, and run `qmv ..` from Terminal to reopen the app to a folder or `qmv /path/to/file.md` to reopen the file's containing folder with that file selected.
-5. Select a Markdown, CSV, or TSV file from the sidebar.
-6. Verify that the document renders and that navigation plus printing work.
+5. Use the eye button in the window chrome to open Ignore Patterns, edit the comma-separated list if desired, and choose Done.
+6. Select a Markdown, CSV, or TSV file from the sidebar.
+7. Verify that the document renders and that navigation plus printing work.
 
 Optional GitHub test flow:
 
