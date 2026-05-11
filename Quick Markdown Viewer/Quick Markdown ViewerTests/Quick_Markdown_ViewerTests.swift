@@ -300,10 +300,11 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
 
     @MainActor
     func testNestedFixtureDocumentResolvesInlineImageRelativeToDocumentDirectory() async throws {
+        let docsRoot = repoRootURL.appendingPathComponent("Fixtures/docs", isDirectory: true)
         let model = AppModel(
             launchOptions: HarnessLaunchOptions(
-                fixtureRoot: repoRootURL,
-                openFile: "Fixtures/docs/animated_gif.md",
+                fixtureRoot: docsRoot,
+                openFile: "animated_gif.md",
                 uiTestOpenFolderURL: nil,
                 theme: nil,
                 windowSize: nil,
@@ -327,7 +328,7 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
             return XCTFail("Expected an inline image block")
         }
 
-        XCTAssertEqual(model.selectedPath?.rawValue, "Fixtures/docs/animated_gif.md")
+        XCTAssertEqual(model.selectedPath?.rawValue, "animated_gif.md")
         XCTAssertEqual(image.sourceURL, "../media/rickrolled.gif")
         XCTAssertEqual(
             image.resolvedURL?.path,
@@ -1153,6 +1154,77 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
 
         XCTAssertEqual(workspace.files.map(\.path.rawValue), ["table.csv", "table.tsv"])
         XCTAssertEqual(workspace.files.map(\.kind), [.csv, .tsv])
+    }
+
+    func testWorkspaceProviderIgnoresDefaultDependencyDirectories() throws {
+        let workspace = try makeTemporaryWorkspace(named: "Ignored Defaults", files: [
+            "README.md": "# Visible",
+            "node_modules/package/README.md": "# Hidden",
+            "venv/docs/env.md": "# Hidden",
+            ".venv/docs/env.md": "# Hidden",
+            "vendor/docs/vendor.md": "# Hidden"
+        ])
+
+        let provider = LocalWorkspaceProvider(rootURL: workspace, embeddedDocs: EmbeddedFixtures.docs)
+        let root = try provider.loadRoot()
+
+        XCTAssertEqual(root.files.map(\.path.rawValue), ["README.md"])
+    }
+
+    func testWorkspaceProviderUsesCustomIgnorePatterns() throws {
+        let workspace = try makeTemporaryWorkspace(named: "Custom Ignores", files: [
+            "README.md": "# Visible",
+            "drafts/notes.md": "# Hidden",
+            "generated/one.md": "# Hidden",
+            "node_modules/package/README.md": "# Visible when defaults are replaced"
+        ])
+
+        let provider = LocalWorkspaceProvider(
+            rootURL: workspace,
+            embeddedDocs: EmbeddedFixtures.docs,
+            ignorePatterns: WorkspaceIgnorePatterns(commaSeparated: "drafts, generated/*.md")
+        )
+        let root = try provider.loadRoot()
+
+        XCTAssertEqual(Set(root.files.map(\.path.rawValue)), Set(["node_modules/package/README.md", "README.md"]))
+        XCTAssertEqual(root.files.count, 2)
+    }
+
+    @MainActor
+    func testAppModelReloadsCurrentWindowWhenIgnorePatternsChange() async throws {
+        let workspace = try makeTemporaryWorkspace(named: "Ignore Reload", files: [
+            "README.md": "# Visible",
+            "vendor/docs/vendor.md": "# Hidden by default"
+        ])
+        let model = AppModel(
+            launchOptions: HarnessLaunchOptions(
+                fixtureRoot: workspace,
+                openFile: nil,
+                uiTestOpenFolderURL: nil,
+                theme: nil,
+                windowSize: nil,
+                disableFileWatch: true,
+                dumpVisibleStateURL: nil,
+                dumpPerfStateURL: nil,
+                screenshotPathURL: nil,
+                commandDirectoryURL: nil,
+                uiTestMode: true,
+                platformTarget: .macos,
+                deviceClass: .mac
+            )
+        )
+
+        model.bootstrap()
+        try await Task.sleep(nanoseconds: 300_000_000)
+
+        XCTAssertEqual(model.files.map(\.path.rawValue), ["README.md"])
+
+        model.updateWorkspaceIgnorePatterns(from: "")
+        try await Task.sleep(nanoseconds: 300_000_000)
+
+        XCTAssertEqual(Set(model.files.map(\.path.rawValue)), Set(["README.md", "vendor/docs/vendor.md"]))
+        XCTAssertEqual(model.files.count, 2)
+        XCTAssertEqual(model.restorationSession?.ignorePatterns, WorkspaceIgnorePatterns(patterns: []))
     }
 
     func testGitHubWorkspaceURLResolvesDefaultBranchForRepoRoot() async throws {

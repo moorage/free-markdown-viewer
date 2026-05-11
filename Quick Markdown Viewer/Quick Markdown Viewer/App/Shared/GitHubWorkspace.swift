@@ -106,6 +106,17 @@ nonisolated enum GitHubWorkspaceError: LocalizedError, Equatable {
 nonisolated struct GitHubWorkspaceProvider: WorkspaceProvider {
     let cachedRootURL: URL
     let descriptor: GitHubWorkspaceDescriptor
+    let ignorePatterns: WorkspaceIgnorePatterns
+
+    init(
+        cachedRootURL: URL,
+        descriptor: GitHubWorkspaceDescriptor,
+        ignorePatterns: WorkspaceIgnorePatterns = .default
+    ) {
+        self.cachedRootURL = cachedRootURL
+        self.descriptor = descriptor
+        self.ignorePatterns = ignorePatterns
+    }
 
     var displayRoot: String {
         descriptor.displayRoot
@@ -161,20 +172,33 @@ nonisolated struct GitHubWorkspaceProvider: WorkspaceProvider {
             throw WorkspaceProviderError.rootMissing(rootURL.path)
         }
 
+        let rootPath = rootURL.standardizedFileURL.path
         let canonicalRootPath = canonicalPath(for: rootURL)
         let enumerator = FileManager.default.enumerator(
             at: rootURL,
-            includingPropertiesForKeys: [.isRegularFileKey],
+            includingPropertiesForKeys: [.isDirectoryKey, .isRegularFileKey],
             options: [.skipsHiddenFiles],
             errorHandler: nil
         )
 
         var result: [MarkdownFileNode] = []
         while let fileURL = enumerator?.nextObject() as? URL {
+            let filteringRelativePath = relativePath(for: fileURL, rootPath: rootPath)
+            if ignorePatterns.shouldIgnore(relativePath: filteringRelativePath) {
+                if fileURL.hasDirectoryPath {
+                    enumerator?.skipDescendants()
+                }
+                continue
+            }
+
+            if fileURL.hasDirectoryPath { continue }
             guard SupportedDocumentExtensions.contains(fileURL.pathExtension) else { continue }
+
             let canonicalFilePath = canonicalPath(for: fileURL)
             guard canonicalFilePath.hasPrefix(canonicalRootPath + "/") else { continue }
             let relative = String(canonicalFilePath.dropFirst(canonicalRootPath.count + 1))
+            let resourceValues = try? fileURL.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey])
+            guard resourceValues?.isRegularFile == true else { continue }
             guard let kind = WorkspaceDocumentKind.forPath(relative) else { continue }
             result.append(MarkdownFileNode(path: WorkspacePath(rawValue: relative), name: relative, kind: kind))
         }
@@ -184,6 +208,12 @@ nonisolated struct GitHubWorkspaceProvider: WorkspaceProvider {
 
     private nonisolated func canonicalPath(for url: URL) -> String {
         url.resolvingSymlinksInPath().standardizedFileURL.path
+    }
+
+    private nonisolated func relativePath(for url: URL, rootPath: String) -> String {
+        let path = url.standardizedFileURL.path
+        guard path.hasPrefix(rootPath + "/") else { return path }
+        return String(path.dropFirst(rootPath.count + 1))
     }
 }
 

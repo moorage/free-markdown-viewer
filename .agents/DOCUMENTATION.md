@@ -1,7 +1,6 @@
 # Running implementation notes
 
 - active ExecPlans:
-  - `docs/exec-plans/active/2026-04-18-app-store-1-2-resubmission.md`
   - `docs/exec-plans/active/2026-04-16-github-url-workspaces.md`
   - `docs/exec-plans/active/2026-04-16-remote-inline-media-and-linked-preview.md`
   - `docs/exec-plans/active/2026-04-16-macos-cli-open-folder-launcher.md`
@@ -21,7 +20,7 @@
   - `docs/exec-plans/active/2026-04-03-quick-markdown-viewer-in-place-rename.md`
   - `docs/exec-plans/active/2026-03-28-launch-empty-viewer.md`
 - current milestone:
-  - app-store 1.2 resubmission: the checked-in project and release docs target `1.2 (7)`, iOS `1.2` build `6` is live, and macOS is resubmitted on existing version `1.1` with corrected replacement build `18810988-e876-4e5a-95d2-ce38a3cf1f2f` (`1.1 (7)`) on review submission `d0749713-211f-4c00-9a46-03135e3da365`; after the repeated macOS entitlement rejection, the Xcode target capability settings now match the explicit entitlements by using read-write user-selected files and outgoing network access, and the uploaded package no longer signs the prior contradictory combination of both `com.apple.security.files.user-selected.read-only` and `com.apple.security.files.user-selected.read-write`
+  - app-store 1.2 resubmission: the checked-in project now targets `1.2 (8)`, iOS `1.2` remains live, and macOS app-store-version `f3852a17-df63-4f71-9bfd-9833f5f5f539` now has build `e0f52044-0e2e-4e84-a5fe-118550cc39dd` (`1.2 (8)`) attached on review submission `998e8006-0671-4930-8d2f-f19067dab2fa`, with both the version and submission in `WAITING_FOR_REVIEW`; the App Review note now covers the explicit `qmv` installer entitlement rationale and the new `qmv /path/to/file.md` behavior
   - print debugging: harness commands can now export the real rendered print output as PDF artifacts via `exportPrintedDocument` and `exportPrintedAllDocuments`, so print regressions can be inspected without the native print dialog
   - printing single or all workspace files: macOS now exposes `Print…` and `Print All…` through focused commands, iPhone and iPad expose a printer menu in the top bar, shared print composition runs through `WorkspaceProvider`, and harness commands can export deterministic print artifacts without invoking native print UI
   - csv/tsv tabular documents: local folders, GitHub workspaces, and direct macOS file opens now include `.csv` and `.tsv`, standalone tabular files render as native tables, and CSV/TSV views now expose wrap, column-width, and row-height controls in the navigation chrome

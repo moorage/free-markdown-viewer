@@ -20,6 +20,7 @@ struct ViewerShellView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.colorScheme) private var colorScheme
     @State private var mediaPreviewTarget: AppModel.MediaLinkTarget?
+    @State private var isPresentingIgnorePatterns = false
     @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
     @State private var compactShowsSidebar = true
     @State private var sidebarFilterText = ""
@@ -59,6 +60,9 @@ struct ViewerShellView: View {
         .sheet(item: sheetMediaPreviewBinding) { target in
             mediaPreview(for: target)
         }
+        .sheet(isPresented: $isPresentingIgnorePatterns) {
+            WorkspaceIgnorePatternsSheet(model: model)
+        }
         .popover(item: popoverMediaPreviewBinding) { target in
             mediaPreview(for: target)
         }
@@ -79,6 +83,9 @@ struct ViewerShellView: View {
                 ToolbarItem(placement: .automatic) {
                     macPrintControl
                 }
+            }
+            ToolbarItem(placement: .primaryAction) {
+                ignorePatternsButton
             }
             ToolbarItem(placement: .primaryAction) {
                 macRevealInFinderButton
@@ -420,6 +427,8 @@ struct ViewerShellView: View {
                 .accessibilityIdentifier(AccessibilityIDs.openGitHubURLButton)
             }
 
+            ignorePatternsButton
+
             if model.shouldShowTabularControls {
                 tabularControls
             }
@@ -475,6 +484,8 @@ struct ViewerShellView: View {
                     }
                     .accessibilityIdentifier(AccessibilityIDs.openGitHubURLButton)
                 }
+
+                ignorePatternsButton
 
                 if model.shouldShowTabularControls {
                     tabularControls
@@ -621,6 +632,16 @@ struct ViewerShellView: View {
     }
 
     #if os(macOS)
+    private var ignorePatternsButton: some View {
+        Button {
+            isPresentingIgnorePatterns = true
+        } label: {
+            Label("Ignore Patterns", systemImage: "eye")
+        }
+        .accessibilityIdentifier(AccessibilityIDs.ignorePatternsButton)
+        .help("Edit ignored workspace patterns")
+    }
+
     private var macNavigationControls: some View {
         ControlGroup {
             Button(action: model.navigateBack) {
@@ -653,6 +674,18 @@ struct ViewerShellView: View {
     private func revealSelectedDocumentInFinder() {
         guard let selectedFileURL = model.selectedFileURL else { return }
         NSWorkspace.shared.activateFileViewerSelecting([selectedFileURL])
+    }
+    #endif
+
+    #if !os(macOS)
+    private var ignorePatternsButton: some View {
+        Button {
+            isPresentingIgnorePatterns = true
+        } label: {
+            Image(systemName: "eye")
+        }
+        .accessibilityIdentifier(AccessibilityIDs.ignorePatternsButton)
+        .accessibilityLabel("Ignore Patterns")
     }
     #endif
 
@@ -861,6 +894,73 @@ struct ViewerShellView: View {
         }
         guard model.shouldPreferDetailInCompactNavigation else { return }
         columnVisibility = .detailOnly
+    }
+}
+
+private struct WorkspaceIgnorePatternsSheet: View {
+    @ObservedObject var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var patternText: String
+
+    init(model: AppModel) {
+        self.model = model
+        _patternText = State(initialValue: model.workspaceIgnorePatternText)
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Ignored Patterns")
+                    .font(.title2.weight(.semibold))
+
+                Text("Enter comma-separated names or path patterns. Matching files and folders are hidden from this window's file list.")
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                TextField("node_modules, venv, .venv, vendor", text: $patternText)
+                    #if os(macOS)
+                    .textFieldStyle(.roundedBorder)
+                    #else
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled(true)
+                    #endif
+                    .accessibilityIdentifier(AccessibilityIDs.ignorePatternsSheetField)
+
+                Text("Defaults: \(WorkspaceIgnorePatterns.default.commaSeparated)")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
+                Spacer(minLength: 0)
+            }
+            .padding(20)
+            #if os(macOS)
+            .frame(minWidth: 420, minHeight: 220, alignment: .topLeading)
+            #else
+            .frame(maxWidth: .infinity, minHeight: 220, alignment: .topLeading)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+
+                ToolbarItem(placement: .automatic) {
+                    Button("Reset") {
+                        patternText = WorkspaceIgnorePatterns.default.commaSeparated
+                    }
+                    .accessibilityIdentifier(AccessibilityIDs.ignorePatternsSheetResetButton)
+                }
+
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Apply") {
+                        model.updateWorkspaceIgnorePatterns(from: patternText)
+                        dismiss()
+                    }
+                    .accessibilityIdentifier(AccessibilityIDs.ignorePatternsSheetApplyButton)
+                }
+            }
+        }
     }
 }
 

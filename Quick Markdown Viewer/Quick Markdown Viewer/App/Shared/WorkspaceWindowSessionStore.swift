@@ -13,23 +13,28 @@ enum WorkspaceSessionSource: Codable, Equatable, Sendable {
 struct WorkspaceWindowSession: Codable, Equatable, Sendable {
     let source: WorkspaceSessionSource
     let selectedFile: String?
+    let ignorePatterns: WorkspaceIgnorePatterns
 
     init(
         source: WorkspaceSessionSource,
-        selectedFile: String?
+        selectedFile: String?,
+        ignorePatterns: WorkspaceIgnorePatterns = .default
     ) {
         self.source = source
         self.selectedFile = selectedFile
+        self.ignorePatterns = ignorePatterns
     }
 
     init(
         rootPath: String,
         selectedFile: String?,
-        securityScopedBookmarkData: Data?
+        securityScopedBookmarkData: Data?,
+        ignorePatterns: WorkspaceIgnorePatterns = .default
     ) {
         self.init(
             source: .local(rootPath: rootPath, securityScopedBookmarkData: securityScopedBookmarkData),
-            selectedFile: selectedFile
+            selectedFile: selectedFile,
+            ignorePatterns: ignorePatterns
         )
     }
 
@@ -63,6 +68,7 @@ struct WorkspaceWindowSession: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case source
         case selectedFile
+        case ignorePatterns
         case rootPath
         case securityScopedBookmarkData
     }
@@ -72,6 +78,7 @@ struct WorkspaceWindowSession: Codable, Equatable, Sendable {
         if let source = try container.decodeIfPresent(WorkspaceSessionSource.self, forKey: .source) {
             self.source = source
             selectedFile = try container.decodeIfPresent(String.self, forKey: .selectedFile)
+            ignorePatterns = try container.decodeIfPresent(WorkspaceIgnorePatterns.self, forKey: .ignorePatterns) ?? .default
             return
         }
 
@@ -79,12 +86,14 @@ struct WorkspaceWindowSession: Codable, Equatable, Sendable {
         let bookmarkData = try container.decodeIfPresent(Data.self, forKey: .securityScopedBookmarkData)
         source = .local(rootPath: rootPath, securityScopedBookmarkData: bookmarkData)
         selectedFile = try container.decodeIfPresent(String.self, forKey: .selectedFile)
+        ignorePatterns = try container.decodeIfPresent(WorkspaceIgnorePatterns.self, forKey: .ignorePatterns) ?? .default
     }
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(source, forKey: .source)
         try container.encodeIfPresent(selectedFile, forKey: .selectedFile)
+        try container.encode(ignorePatterns, forKey: .ignorePatterns)
     }
 }
 

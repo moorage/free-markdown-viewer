@@ -27,6 +27,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var backStack: [NavigationEntry] = []
     @Published private(set) var forwardStack: [NavigationEntry] = []
     @Published private(set) var workspaceRootDisplay = "No Folder Open"
+    @Published private(set) var workspaceIgnorePatterns: WorkspaceIgnorePatterns
     @Published private(set) var isReady = false
     @Published private(set) var fontScale: CGFloat = 1
     @Published private(set) var tabularPresentation = TabularDocumentPresentation()
@@ -61,6 +62,7 @@ final class AppModel: ObservableObject {
         self.launchOptions = launchOptions
         self.initialSession = initialSession
         self.githubWorkspaceLoader = githubWorkspaceLoader
+        self.workspaceIgnorePatterns = initialSession?.ignorePatterns ?? .default
     }
 
     deinit {
@@ -188,8 +190,13 @@ final class AppModel: ObservableObject {
         guard let currentRestorationSession else { return nil }
         return WorkspaceWindowSession(
             source: currentRestorationSession.source,
-            selectedFile: selectedPath?.rawValue
+            selectedFile: selectedPath?.rawValue,
+            ignorePatterns: workspaceIgnorePatterns
         )
+    }
+
+    var workspaceIgnorePatternText: String {
+        workspaceIgnorePatterns.commaSeparated
     }
 
     func bootstrap() {
@@ -328,6 +335,17 @@ final class AppModel: ObservableObject {
             selection: WorkspaceSecurityScope.selection(for: rootURL),
             selectedPathOverride: selectedPathOverride
         )
+    }
+
+    func updateWorkspaceIgnorePatterns(from commaSeparatedPatterns: String) {
+        let updatedPatterns = WorkspaceIgnorePatterns(commaSeparated: commaSeparatedPatterns)
+        guard updatedPatterns != workspaceIgnorePatterns else { return }
+        workspaceIgnorePatterns = updatedPatterns
+        reloadCurrentWorkspaceAfterIgnoreChange()
+    }
+
+    func resetWorkspaceIgnorePatterns() {
+        updateWorkspaceIgnorePatterns(from: WorkspaceIgnorePatterns.default.commaSeparated)
     }
 
     func submitGitHubURLFromInput() {
@@ -589,7 +607,11 @@ final class AppModel: ObservableObject {
         cancelActiveDocumentLoad()
         githubURLLoadErrorMessage = nil
         hasResolvedWorkspaceSelection = true
-        let provider = LocalWorkspaceProvider(rootURL: rootURL, embeddedDocs: EmbeddedFixtures.docs)
+        let provider = LocalWorkspaceProvider(
+            rootURL: rootURL,
+            embeddedDocs: EmbeddedFixtures.docs,
+            ignorePatterns: workspaceIgnorePatterns
+        )
         workspaceProvider = provider
         workspaceRootURL = rootURL
         workspaceRootBookmarkData = rootBookmarkData
@@ -598,7 +620,8 @@ final class AppModel: ObservableObject {
             WorkspaceWindowSession(
                 rootPath: $0.path,
                 selectedFile: selectedPathOverride?.rawValue,
-                securityScopedBookmarkData: rootBookmarkData
+                securityScopedBookmarkData: rootBookmarkData,
+                ignorePatterns: workspaceIgnorePatterns
             )
         }
         do {
@@ -673,7 +696,8 @@ final class AppModel: ObservableObject {
         workspaceRootURL = cachedWorkspace.cacheRootURL
         workspaceProvider = GitHubWorkspaceProvider(
             cachedRootURL: cachedWorkspace.cacheRootURL,
-            descriptor: cachedWorkspace.descriptor
+            descriptor: cachedWorkspace.descriptor,
+            ignorePatterns: workspaceIgnorePatterns
         )
         workspaceRootDisplay = cachedWorkspace.descriptor.displayRoot
         shouldAllowRevealInFinder = false
@@ -685,7 +709,8 @@ final class AppModel: ObservableObject {
                     descriptor: cachedWorkspace.descriptor
                 )
             ),
-            selectedFile: selectedPathOverride?.rawValue
+            selectedFile: selectedPathOverride?.rawValue,
+            ignorePatterns: workspaceIgnorePatterns
         )
         githubURLLoadErrorMessage = nil
 
@@ -748,6 +773,34 @@ final class AppModel: ObservableObject {
         isLoadingDocument = false
         isReady = true
         readyReference = Date()
+    }
+
+    private func reloadCurrentWorkspaceAfterIgnoreChange() {
+        let selectedPathOverride = selectedPath
+        if let currentRestorationSession {
+            switch currentRestorationSession.source {
+            case let .local(rootPath, bookmarkData):
+                loadWorkspace(
+                    from: URL(fileURLWithPath: rootPath, isDirectory: true),
+                    selectedPathOverride: selectedPathOverride,
+                    rootBookmarkData: bookmarkData
+                )
+            case let .github(remoteSource):
+                loadGitHubWorkspace(
+                    CachedGitHubWorkspace(
+                        descriptor: remoteSource.descriptor,
+                        cacheRootURL: URL(fileURLWithPath: remoteSource.cachedRootPath, isDirectory: true)
+                    ),
+                    selectedPathOverride: selectedPathOverride
+                )
+            }
+        } else if workspaceProvider != nil {
+            loadWorkspace(
+                from: workspaceRootURL,
+                selectedPathOverride: selectedPathOverride,
+                rootBookmarkData: workspaceRootBookmarkData
+            )
+        }
     }
 
     private func cancelActiveDocumentLoad() {

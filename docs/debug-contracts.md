@@ -34,6 +34,7 @@ Stable identifiers include:
 - `toolbar.openFolder`
 - `toolbar.openGitHubURL`
 - `toolbar.print`
+- `toolbar.ignorePatterns`
 - `toolbar.tableWrap`
 - `toolbar.tableSizing`
 - `empty-state.github-url.field`
@@ -42,6 +43,9 @@ Stable identifiers include:
 - `github-url.sheet.field`
 - `github-url.sheet.load`
 - `github-url.sheet.error`
+- `ignore-patterns.sheet.field`
+- `ignore-patterns.sheet.apply`
+- `ignore-patterns.sheet.reset`
 - `document.scrollView`
 - `document.text`
 - `block.placeholder.0`

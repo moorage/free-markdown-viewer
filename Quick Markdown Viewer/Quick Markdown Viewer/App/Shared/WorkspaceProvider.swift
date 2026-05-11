@@ -13,6 +13,74 @@ enum WorkspaceProviderError: Error {
     case rootMissing(String)
 }
 
+nonisolated struct WorkspaceIgnorePatterns: Codable, Equatable, Sendable {
+    static let defaultValues = ["node_modules", "venv", ".venv", "vendor"]
+    static let `default` = WorkspaceIgnorePatterns(patterns: defaultValues)
+
+    let patterns: [String]
+
+    init(patterns: [String] = defaultValues) {
+        self.patterns = Self.normalizedPatterns(from: patterns)
+    }
+
+    init(commaSeparated value: String) {
+        self.init(patterns: value.split(separator: ",").map(String.init))
+    }
+
+    var commaSeparated: String {
+        patterns.joined(separator: ", ")
+    }
+
+    func shouldIgnore(relativePath: String) -> Bool {
+        let path = Self.normalizedPath(relativePath)
+        guard !path.isEmpty else { return false }
+        let components = path.split(separator: "/").map(String.init)
+
+        return patterns.contains { pattern in
+            if Self.hasWildcard(pattern) {
+                return Self.matchesWildcard(pattern: pattern, value: path)
+                    || components.contains { Self.matchesWildcard(pattern: pattern, value: $0) }
+            }
+            if pattern.contains("/") {
+                return path == pattern || path.hasPrefix(pattern + "/")
+            }
+            return components.contains(pattern)
+        }
+    }
+
+    private static func normalizedPatterns(from values: [String]) -> [String] {
+        var seen: Set<String> = []
+        var result: [String] = []
+
+        for value in values {
+            let pattern = normalizedPath(value)
+            guard !pattern.isEmpty, !seen.contains(pattern) else { continue }
+            seen.insert(pattern)
+            result.append(pattern)
+        }
+
+        return result
+    }
+
+    private static func normalizedPath(_ value: String) -> String {
+        value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "\\", with: "/")
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+    }
+
+    private static func hasWildcard(_ pattern: String) -> Bool {
+        pattern.contains("*") || pattern.contains("?")
+    }
+
+    private static func matchesWildcard(pattern: String, value: String) -> Bool {
+        let escaped = NSRegularExpression.escapedPattern(for: pattern)
+            .replacingOccurrences(of: "\\*", with: ".*")
+            .replacingOccurrences(of: "\\?", with: ".")
+        return value.range(of: "^\(escaped)$", options: .regularExpression) != nil
+    }
+}
+
 enum EmbeddedFixtures {
     static let docs: [String: String] = [
         "basic_typography.md": """
@@ -63,6 +131,17 @@ enum SupportedDocumentExtensions {
 struct LocalWorkspaceProvider: WorkspaceProvider, Sendable {
     let rootURL: URL?
     let embeddedDocs: [String: String]
+    let ignorePatterns: WorkspaceIgnorePatterns
+
+    init(
+        rootURL: URL?,
+        embeddedDocs: [String: String],
+        ignorePatterns: WorkspaceIgnorePatterns = .default
+    ) {
+        self.rootURL = rootURL
+        self.embeddedDocs = embeddedDocs
+        self.ignorePatterns = ignorePatterns
+    }
 
     var displayRoot: String {
         if let rootURL {
@@ -132,20 +211,33 @@ struct LocalWorkspaceProvider: WorkspaceProvider, Sendable {
             throw WorkspaceProviderError.rootMissing(rootURL.path)
         }
 
+        let rootPath = rootURL.standardizedFileURL.path
         let canonicalRootPath = canonicalPath(for: rootURL)
         let enumerator = FileManager.default.enumerator(
             at: rootURL,
-            includingPropertiesForKeys: [.isRegularFileKey],
+            includingPropertiesForKeys: [.isDirectoryKey, .isRegularFileKey],
             options: [.skipsHiddenFiles],
             errorHandler: nil
         )
 
         var result: [MarkdownFileNode] = []
         while let fileURL = enumerator?.nextObject() as? URL {
+            let filteringRelativePath = relativePath(for: fileURL, rootPath: rootPath)
+            if ignorePatterns.shouldIgnore(relativePath: filteringRelativePath) {
+                if fileURL.hasDirectoryPath {
+                    enumerator?.skipDescendants()
+                }
+                continue
+            }
+
+            if fileURL.hasDirectoryPath { continue }
             guard SupportedDocumentExtensions.contains(fileURL.pathExtension) else { continue }
+
             let canonicalFilePath = canonicalPath(for: fileURL)
             guard canonicalFilePath.hasPrefix(canonicalRootPath + "/") else { continue }
             let relative = String(canonicalFilePath.dropFirst(canonicalRootPath.count + 1))
+            let resourceValues = try? fileURL.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey])
+            guard resourceValues?.isRegularFile == true else { continue }
             guard let kind = WorkspaceDocumentKind.forPath(relative) else { continue }
             result.append(MarkdownFileNode(path: WorkspacePath(rawValue: relative), name: relative, kind: kind))
         }
@@ -154,6 +246,12 @@ struct LocalWorkspaceProvider: WorkspaceProvider, Sendable {
 
     private nonisolated func canonicalPath(for url: URL) -> String {
         url.resolvingSymlinksInPath().standardizedFileURL.path
+    }
+
+    private nonisolated func relativePath(for url: URL, rootPath: String) -> String {
+        let path = url.standardizedFileURL.path
+        guard path.hasPrefix(rootPath + "/") else { return path }
+        return String(path.dropFirst(rootPath.count + 1))
     }
 
     private nonisolated func normalizedDisplayRoot(for rootURL: URL) -> String {

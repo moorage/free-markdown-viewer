@@ -16,6 +16,7 @@ Submit fresh iOS and macOS App Store builds that include the latest shipped feat
 - [x] (2026-04-26T06:50Z) Diagnosed the repeated macOS rejection after Apple asked to compare Member Center and Xcode capabilities; the archived app carried both `com.apple.security.files.user-selected.read-only` and `com.apple.security.files.user-selected.read-write`, so the Xcode target capability settings are now aligned to read-write user-selected files and outgoing network access.
 - [x] (2026-04-26T07:01Z) Re-archived and re-exported the macOS app from the corrected project settings; the final App Store package now signs only app sandbox, user-selected read-write, user-selected executable, network client, and the normal team/application identifiers.
 - [x] (2026-04-26T07:13Z) Uploaded corrected macOS build `1.1 (7)`, attached build `18810988-e876-4e5a-95d2-ce38a3cf1f2f` to macOS app-store-version `cd38e88b-3917-4760-9733-d71fdf7d18f2`, canceled stale unresolved review submission `2e862a82-ffd5-4ea2-92cd-7120abcf2d5e`, and submitted fresh macOS review submission `d0749713-211f-4c00-9a46-03135e3da365`.
+- [x] (2026-05-01T23:26Z) Bumped the checked-in release metadata to `1.2 (8)`, created macOS app-store-version `f3852a17-df63-4f71-9bfd-9833f5f5f539`, patched its localization and review notes, uploaded macOS build `e0f52044-0e2e-4e84-a5fe-118550cc39dd` (`1.2 (8)`), attached it to the new macOS `1.2` version, and submitted review submission `998e8006-0671-4930-8d2f-f19067dab2fa`, which is now `WAITING_FOR_REVIEW`.
 
 ## Surprises & Discoveries
 
@@ -43,6 +44,12 @@ Submit fresh iOS and macOS App Store builds that include the latest shipped feat
 - Observation: the Xcode capability settings also drifted from the checked-in network entitlement.
   Evidence: `Quick Markdown Viewer/Quick Markdown Viewer/Quick_Markdown_Viewer.entitlements` includes `com.apple.security.network.client`, but the app target still set `ENABLE_OUTGOING_NETWORK_CONNECTIONS = NO` in both Debug and Release.
 
+- Observation: App Store Connect enforces `CFBundleVersion` uniqueness across uploads strongly enough that the new macOS `1.2 (7)` package was rejected because build number `7` was already consumed by an older macOS pre-release line.
+  Evidence: `xcrun altool --upload-package 'artifacts/exports/macos/Quick Markdown Viewer.pkg' ...` returned `90061` saying `CFBundleVersion [7]` must be higher than the previously uploaded version `[7]`, and `GET /v1/builds/18810988-e876-4e5a-95d2-ce38a3cf1f2f?include=preReleaseVersion,app` showed that existing build `7` belonged to macOS pre-release version `1.1`.
+
+- Observation: `altool` can finish a successful upload and still crash while serializing its own JSON output, so App Store Connect must be queried directly before deciding whether to retry.
+  Evidence: `xcrun altool --upload-package 'artifacts/exports/macos/Quick Markdown Viewer.pkg' ... --output-format json` reported `UPLOAD SUCCEEDED` with delivery UUID `e0f52044-0e2e-4e84-a5fe-118550cc39dd`, then terminated with `NSInvalidArgumentException`; `GET /v1/builds?filter[app]=6761271951&filter[version]=8&filter[preReleaseVersion.platform]=MAC_OS` immediately showed build `e0f52044-0e2e-4e84-a5fe-118550cc39dd` as `VALID`.
+
 ## Decision Log
 
 - Decision: submit both platforms as version `1.2` instead of trying to keep macOS on `1.1`.
@@ -60,21 +67,20 @@ Submit fresh iOS and macOS App Store builds that include the latest shipped feat
 - Decision: align Xcode capability build settings with the explicit entitlements instead of changing the `qmv` feature.
   Rationale: Apple’s sandbox documentation supports `com.apple.security.files.user-selected.executable` for user-selected executable writes, but the submitted archive had a concrete invalid/mismatched entitlement shape that can be fixed without removing the user-driven launcher installer.
 
+- Decision: bump the checked-in build number to `8` and regenerate the macOS package instead of trying to reuse or reattach build `7`.
+  Rationale: the existing build `7` belongs to macOS pre-release version `1.1`, so a fresh `1.2` submission required a higher `CFBundleVersion` before App Store Connect would accept another upload.
+
 ## Outcomes & Retrospective
 
-The checked-in project and release docs now describe the newer feature set under `1.2 (6)`, including GitHub workspaces, remote media, CSV/TSV rendering, printing, and the macOS `qmv` launcher entitlement rationale.
+The checked-in project now targets `MARKETING_VERSION = 1.2` and `CURRENT_PROJECT_VERSION = 8`, matching the newly submitted macOS App Store binary.
 
-App Store Connect accepted fresh build `6` uploads on both platforms. iOS now uses app-store-version `bbac75b7-831b-429f-aa05-de03b30017e3` (`1.2`) attached to build `4b837e1c-5eab-4f5f-8e48-bdb02ac56916` and review submission `1c8f23d4-f745-4fa1-b963-00eff15250c9`, which is `WAITING_FOR_REVIEW`.
+iOS is already live on app-store-version `bbac75b7-831b-429f-aa05-de03b30017e3` (`1.2`). No new iOS binary was needed for this follow-up submission.
 
-macOS could not open a new `1.2` version line from the current ASC state, so the resubmission shipped through the existing app-store-version `cd38e88b-3917-4760-9733-d71fdf7d18f2` (`1.1`) with replacement build `f96577d1-da44-470b-9c60-5349121d13b7`. After canceling stale review submission `061681d3-4563-4ca4-9a35-9edde6082a67`, the existing draft submission `2e862a82-ffd5-4ea2-92cd-7120abcf2d5e` accepted the version and is now `WAITING_FOR_REVIEW`.
+macOS now has a fresh `1.2` app-store-version `f3852a17-df63-4f71-9bfd-9833f5f5f539` with build `e0f52044-0e2e-4e84-a5fe-118550cc39dd` (`1.2 (8)`) attached. Review submission `998e8006-0671-4930-8d2f-f19067dab2fa` was submitted on 2026-05-01 and App Store Connect reports both the version and submission as `WAITING_FOR_REVIEW`.
 
-The repository automation still cannot post a literal Resolution Center thread reply. The actionable equivalent available from the repo was completed: the macOS review detail attached to the resubmitted binary now explicitly explains why `com.apple.security.files.user-selected.executable` exists and that it is only used for the explicit user-driven `Install Command Line Tool…` flow that writes `~/.local/bin/qmv`.
+The repository automation still cannot post a literal Resolution Center thread reply. The actionable equivalent available from the repo was completed: the macOS review detail attached to app-store-review-detail `e6c3e533-eb68-4653-814f-3202b89e9f3e` explains that `com.apple.security.files.user-selected.executable` exists only for the explicit user-driven `Install Command Line Tool…` flow that writes `~/.local/bin/qmv`, and it now includes the reviewer-visible `qmv /path/to/file.md` behavior.
 
-The April 26 follow-up found a stronger root cause than reviewer confusion alone: Xcode capability build settings were still synthesizing read-only user-selected file access into the signed macOS app. Future macOS App Store archives must be regenerated after the `ENABLE_USER_SELECTED_FILES = readwrite` and `ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES` fix, then inspected with `codesign` before upload.
-
-The fresh April 26 archive/export validates the fix on the actual upload artifact. The expanded `artifacts/exports/macos/Quick Markdown Viewer.pkg` payload no longer contains `com.apple.security.files.user-selected.read-only`; the signed app contains only app sandbox, user-selected read-write, user-selected executable, network client, and the normal App Store signing identifiers.
-
-The corrected macOS build is back with App Review. App Store Connect reports build `18810988-e876-4e5a-95d2-ce38a3cf1f2f` as `VALID` and `APP_STORE_ELIGIBLE`; it is attached to the existing macOS `1.1` version, and review submission `d0749713-211f-4c00-9a46-03135e3da365` is `WAITING_FOR_REVIEW`.
+The April 26 entitlement fix remains validated on the actual upload artifact. The signed macOS package used for build `8` comes from the same corrected project settings that remove the prior contradictory read-only file entitlement shape and keep only app sandbox, user-selected read-write, user-selected executable, network client, and the normal App Store signing identifiers.
 
 ## Context and Orientation
 
@@ -126,21 +132,20 @@ Known App Store Connect resources at the start of this work:
 
 Acceptance requires:
 
-- the checked-in project reports `MARKETING_VERSION = 1.2` and `CURRENT_PROJECT_VERSION = 7`
-- unit tests and docs/plan checks pass
-- fresh App Store-eligible iOS and macOS builds upload successfully
-- App Store Connect shows the new iOS `1.2` version and the resubmitted macOS version with the new builds attached
-- the macOS `1.2` review note explicitly explains the `com.apple.security.files.user-selected.executable` entitlement
-- both platforms enter review submission state successfully
+- the checked-in project reports `MARKETING_VERSION = 1.2` and `CURRENT_PROJECT_VERSION = 8`
+- `./scripts/test-unit` passes on the checked-in tree
+- the macOS `1.2 (8)` package uploads successfully and App Store Connect reports build `e0f52044-0e2e-4e84-a5fe-118550cc39dd` as `VALID`
+- App Store Connect shows macOS app-store-version `f3852a17-df63-4f71-9bfd-9833f5f5f539` with build `8` attached and state `WAITING_FOR_REVIEW`
+- the macOS `1.2` review note explicitly explains the `com.apple.security.files.user-selected.executable` entitlement and the `qmv /path/to/file.md` review path
 
 ## Idempotence and Recovery
 
 If upload or submission fails mid-flight:
 
-- reuse the same `1.2 (6)` binaries if they are already valid in App Store Connect
+- reuse the same `1.2 (8)` binary if App Store Connect already reports build `e0f52044-0e2e-4e84-a5fe-118550cc39dd` as `VALID`
 - rerun only the failed App Store Connect relationship/submission calls rather than rebuilding immediately
 - if a partial iOS `1.2` version already exists, patch that version in place instead of creating another
-- if macOS is still stuck on a rejected version, attach the replacement build there and cancel the stale unresolved-issues review submission before creating or reusing a fresh draft review submission
+- if macOS `1.2` already exists in `PREPARE_FOR_SUBMISSION`, patch that version in place, attach the valid build, and create a fresh review submission instead of creating another version shell
 
 If Apple rejects the entitlement explanation again, the recovery path is a follow-up release that gates or removes the in-app `qmv` installer for the Mac App Store build.
 
@@ -189,6 +194,15 @@ Commands run:
 - `./scripts/app-store-connect request PATCH /v1/reviewSubmissions/061681d3-4563-4ca4-9a35-9edde6082a67 --body '{\"data\":{\"type\":\"reviewSubmissions\",\"id\":\"061681d3-4563-4ca4-9a35-9edde6082a67\",\"attributes\":{\"canceled\":true}}}'`
 - `./scripts/app-store-connect request POST /v1/reviewSubmissionItems --body '{...2e862a82-ffd5-4ea2-92cd-7120abcf2d5e...cd38e88b-3917-4760-9733-d71fdf7d18f2...}'`
 - `./scripts/app-store-connect request PATCH /v1/reviewSubmissions/2e862a82-ffd5-4ea2-92cd-7120abcf2d5e --body '{\"data\":{\"type\":\"reviewSubmissions\",\"id\":\"2e862a82-ffd5-4ea2-92cd-7120abcf2d5e\",\"attributes\":{\"submitted\":true}}}'`
+- `./scripts/test-unit`
+- `APPLE_DEVELOPMENT_TEAM=GG34PA8F4A APP_MARKETING_VERSION=1.2 APP_BUILD_NUMBER=8 ./scripts/archive-release --platform macos --allow-provisioning-updates`
+- `APP_MARKETING_VERSION=1.2 APP_BUILD_NUMBER=8 ./scripts/export-app-store --platform macos --archive-path 'artifacts/archives/Quick Markdown Viewer-macos.xcarchive' --export-options-plist 'artifacts/export-options/macos-app-store-connect.plist' --allow-provisioning-updates`
+- `source scripts/lib/xcode-env.sh && xcrun altool --upload-package 'artifacts/exports/macos/Quick Markdown Viewer.pkg' --api-key "$ASC_KEY_ID" --api-issuer "$ASC_ISSUER_ID" --p8-file-path "$ASC_KEY_PATH" --api-key-subject user --wait --output-format json`
+- `./scripts/app-store-connect request GET /v1/builds --query 'filter[app]=6761271951' --query 'filter[version]=8' --query 'filter[preReleaseVersion.platform]=MAC_OS' --query 'limit=20'`
+- `./scripts/app-store-connect request PATCH /v1/appStoreVersions/f3852a17-df63-4f71-9bfd-9833f5f5f539/relationships/build --body '{"data":{"type":"builds","id":"e0f52044-0e2e-4e84-a5fe-118550cc39dd"}}'`
+- `./scripts/app-store-connect request POST /v1/reviewSubmissions --body '{"data":{"type":"reviewSubmissions","attributes":{"platform":"MAC_OS"},"relationships":{"app":{"data":{"type":"apps","id":"6761271951"}}}}}'`
+- `./scripts/app-store-connect request POST /v1/reviewSubmissionItems --body '{"data":{"type":"reviewSubmissionItems","relationships":{"reviewSubmission":{"data":{"type":"reviewSubmissions","id":"998e8006-0671-4930-8d2f-f19067dab2fa"}},"appStoreVersion":{"data":{"type":"appStoreVersions","id":"f3852a17-df63-4f71-9bfd-9833f5f5f539"}}}}}'`
+- `./scripts/app-store-connect request PATCH /v1/reviewSubmissions/998e8006-0671-4930-8d2f-f19067dab2fa --body '{"data":{"type":"reviewSubmissions","id":"998e8006-0671-4930-8d2f-f19067dab2fa","attributes":{"submitted":true}}}'`
 
 ## Interfaces and Dependencies
 
