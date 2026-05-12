@@ -62,6 +62,20 @@ struct NavigationEntry: Equatable, Sendable {
     let scrollPosition: Double?
 }
 
+struct MarkdownOutlineTitleRun: Equatable, Sendable {
+    let text: String
+    let isCode: Bool
+}
+
+struct MarkdownOutlineItem: Identifiable, Equatable, Sendable {
+    let blockID: String
+    let title: String
+    let titleRuns: [MarkdownOutlineTitleRun]
+    let level: Int
+
+    var id: String { blockID }
+}
+
 enum MarkdownBlockKind: String, Hashable, Sendable {
     case heading
     case paragraph
@@ -89,10 +103,16 @@ struct MarkdownTableCell: Hashable, Sendable {
     let attributedText: AttributedString?
 }
 
+enum MarkdownTableContentKind: String, Hashable, Sendable {
+    case markdown
+    case plainText
+}
+
 struct MarkdownTable: Hashable, Sendable {
     let alignments: [MarkdownTableAlignment]
     let header: [MarkdownTableCell]
     let rows: [[MarkdownTableCell]]
+    let contentKind: MarkdownTableContentKind
 }
 
 struct MarkdownImage: Hashable, Sendable {

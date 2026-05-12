@@ -21,6 +21,10 @@ struct ViewerShellView: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var mediaPreviewTarget: AppModel.MediaLinkTarget?
     @State private var isPresentingIgnorePatterns = false
+    @State private var isOutlinePresented = false
+    @State private var documentScrollTargetID: String?
+    @State private var activeOutlineBlockID: String?
+    @State private var outlinePaneWidth = OutlinePaneMetrics.defaultWidth
     @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
     @State private var compactShowsSidebar = true
     @State private var sidebarFilterText = ""
@@ -57,6 +61,14 @@ struct ViewerShellView: View {
         .onChange(of: model.selectedPath) { _ in
             handleUITestMediaPreviewIfNeeded()
         }
+        .onChange(of: model.outlineItems) { outlineItems in
+            if outlineItems.isEmpty {
+                isOutlinePresented = false
+                activeOutlineBlockID = nil
+            } else if activeOutlineBlockID.map({ blockID in !outlineItems.contains { $0.blockID == blockID } }) ?? true {
+                activeOutlineBlockID = outlineItems.first?.blockID
+            }
+        }
         .sheet(item: sheetMediaPreviewBinding) { target in
             mediaPreview(for: target)
         }
@@ -74,6 +86,11 @@ struct ViewerShellView: View {
             if model.shouldShowTabularControls {
                 ToolbarItem(placement: .automatic) {
                     tabularControls
+                }
+            }
+            if canShowOutline {
+                ToolbarItem(placement: .automatic) {
+                    outlineButton
                 }
             }
             ToolbarItem(placement: .automatic) {
@@ -344,10 +361,99 @@ struct ViewerShellView: View {
     }
 
     private var detailContent: some View {
+        outlineDetailLayout
+            .environment(\.openURL, OpenURLAction { url in
+                handleDocumentLink(url)
+                return .handled
+            })
+            #if !os(macOS)
+            .safeAreaInset(edge: .top) {
+                Group {
+                    if isCompactPhoneLayout {
+                        compactPhoneTopBar
+                    } else {
+                        regularMobileTopBar
+                    }
+                }
+            }
+            #endif
+            .sheet(isPresented: outlineSheetBinding) {
+                DocumentOutlinePanel(
+                    items: model.outlineItems,
+                    fontScale: model.fontScale,
+                    activeBlockID: activeOutlineBlockID,
+                    onSelect: { item in
+                        scrollToOutlineItem(item)
+                        isOutlinePresented = false
+                    }
+                )
+                #if os(macOS)
+                .frame(minWidth: 300, minHeight: 420)
+                #endif
+            }
+    }
+
+    @ViewBuilder
+    private var outlineDetailLayout: some View {
+        #if os(macOS)
+        if shouldShowInlineOutline {
+            HSplitView {
+                documentContent
+                    .frame(minWidth: OutlinePaneMetrics.minimumDocumentWidth, maxWidth: .infinity, maxHeight: .infinity)
+                    .layoutPriority(1)
+
+                DocumentOutlinePanel(
+                    items: model.outlineItems,
+                    fontScale: model.fontScale,
+                    activeBlockID: activeOutlineBlockID,
+                    onSelect: scrollToOutlineItem(_:)
+                )
+                .frame(
+                    minWidth: OutlinePaneMetrics.minimumWidth,
+                    idealWidth: OutlinePaneMetrics.defaultWidth,
+                    maxWidth: OutlinePaneMetrics.maximumWidth
+                )
+                .layoutPriority(0)
+            }
+        } else {
+            documentContent
+        }
+        #else
+        GeometryReader { geometry in
+            let paneWidth = OutlinePaneMetrics.clampedWidth(
+                outlinePaneWidth,
+                containerWidth: geometry.size.width
+            )
+
+            HStack(spacing: 0) {
+                documentContent
+
+                if shouldShowInlineOutline {
+                    OutlinePaneResizeHandle(
+                        paneWidth: $outlinePaneWidth,
+                        displayedPaneWidth: paneWidth,
+                        containerWidth: geometry.size.width
+                    )
+
+                    DocumentOutlinePanel(
+                        items: model.outlineItems,
+                        fontScale: model.fontScale,
+                        activeBlockID: activeOutlineBlockID,
+                        onSelect: scrollToOutlineItem(_:)
+                    )
+                    .frame(width: paneWidth)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        #endif
+    }
+
+    private var documentContent: some View {
         ZStack {
             if shouldShowEmptyWorkspaceState {
                 emptyWorkspaceState
-            } else if model.shouldRenderBlockContent {
+            } else if shouldUseBlockScrollView {
                 DocumentBlockScrollView(
                     blocks: model.documentBlocks,
                     workspaceRootURL: model.currentWorkspaceRootURL,
@@ -356,16 +462,20 @@ struct ViewerShellView: View {
                     syntaxTheme: SyntaxHighlightTheme.resolved(
                         launchTheme: model.launchOptions.theme,
                         colorScheme: colorScheme
-                    )
+                    ),
+                    scrollTargetID: $documentScrollTargetID,
+                    outlineItems: model.outlineItems,
+                    tracksActiveOutline: isOutlinePresented && canShowOutline,
+                    activeOutlineBlockID: $activeOutlineBlockID
                 )
-                    .padding(20)
+                .padding(20)
             } else {
                 SelectableDocumentTextView(
                     blocks: model.documentBlocks,
                     fontScale: model.fontScale,
                     onOpenLink: handleDocumentLink(_:)
                 )
-                    .padding(20)
+                .padding(20)
             }
 
             if model.isLoadingDocument {
@@ -374,21 +484,34 @@ struct ViewerShellView: View {
                 workspaceLoadingOverlay
             }
         }
-        .environment(\.openURL, OpenURLAction { url in
-            handleDocumentLink(url)
-            return .handled
-        })
-        #if !os(macOS)
-        .safeAreaInset(edge: .top) {
-            Group {
-                if isCompactPhoneLayout {
-                    compactPhoneTopBar
-                } else {
-                    regularMobileTopBar
+    }
+
+    private var shouldUseBlockScrollView: Bool {
+        model.shouldRenderBlockContent || !model.outlineItems.isEmpty
+    }
+
+    private var canShowOutline: Bool {
+        !model.outlineItems.isEmpty
+    }
+
+    private var shouldShowInlineOutline: Bool {
+        isOutlinePresented && canShowOutline && !isCompactPhoneLayout
+    }
+
+    private var outlineSheetBinding: Binding<Bool> {
+        Binding(
+            get: { isOutlinePresented && canShowOutline && isCompactPhoneLayout },
+            set: { newValue in
+                if !newValue {
+                    isOutlinePresented = false
                 }
             }
-        }
-        #endif
+        )
+    }
+
+    private func scrollToOutlineItem(_ item: MarkdownOutlineItem) {
+        activeOutlineBlockID = item.blockID
+        documentScrollTargetID = item.blockID
     }
 
     #if !os(macOS)
@@ -428,6 +551,10 @@ struct ViewerShellView: View {
             }
 
             ignorePatternsButton
+
+            if canShowOutline {
+                outlineButton
+            }
 
             if model.shouldShowTabularControls {
                 tabularControls
@@ -486,6 +613,10 @@ struct ViewerShellView: View {
                 }
 
                 ignorePatternsButton
+
+                if canShowOutline {
+                    outlineButton
+                }
 
                 if model.shouldShowTabularControls {
                     tabularControls
@@ -708,6 +839,38 @@ struct ViewerShellView: View {
         .labelStyle(.iconOnly)
     }
 
+    private var outlineButton: some View {
+        Button {
+            isOutlinePresented.toggle()
+        } label: {
+            Label {
+                Text("Document Outline")
+            } icon: {
+                Image(systemName: "list.bullet.indent")
+                    .fontWeight(isOutlinePresented ? .semibold : .regular)
+            }
+            .foregroundStyle(isOutlinePresented ? Color.accentColor : Color.primary)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 5)
+            .background {
+                if isOutlinePresented {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(Color.accentColor.opacity(0.16))
+                }
+            }
+            .overlay {
+                if isOutlinePresented {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .stroke(Color.accentColor.opacity(0.35), lineWidth: 1)
+                }
+            }
+        }
+        .disabled(!canShowOutline)
+        .accessibilityIdentifier(AccessibilityIDs.documentOutlineButton)
+        .accessibilityValue(isOutlinePresented ? "Shown" : "Hidden")
+        .help(isOutlinePresented ? "Hide Document Outline" : "Show Document Outline")
+    }
+
     private var tabularControls: some View {
         HStack(spacing: 8) {
             Button(action: model.toggleTabularWrapMode) {
@@ -897,6 +1060,21 @@ struct ViewerShellView: View {
     }
 }
 
+private enum OutlinePaneMetrics {
+    static let defaultWidth: CGFloat = 280
+    static let minimumWidth: CGFloat = 220
+    static let maximumWidth: CGFloat = 460
+    static let minimumDocumentWidth: CGFloat = 360
+    static let resizeStep: CGFloat = 24
+    static let handleHitWidth: CGFloat = 14
+
+    static func clampedWidth(_ proposedWidth: CGFloat, containerWidth: CGFloat) -> CGFloat {
+        let containerMaximum = max(minimumWidth, containerWidth - minimumDocumentWidth)
+        let effectiveMaximum = min(maximumWidth, containerMaximum)
+        return min(max(proposedWidth, minimumWidth), effectiveMaximum)
+    }
+}
+
 private struct WorkspaceIgnorePatternsSheet: View {
     @ObservedObject var model: AppModel
     @Environment(\.dismiss) private var dismiss
@@ -964,29 +1142,129 @@ private struct WorkspaceIgnorePatternsSheet: View {
     }
 }
 
+private struct OutlinePaneResizeHandle: View {
+    @Binding var paneWidth: CGFloat
+    let displayedPaneWidth: CGFloat
+    let containerWidth: CGFloat
+    @State private var dragStartWidth: CGFloat?
+    @State private var isDragging = false
+
+    var body: some View {
+        ZStack {
+            Rectangle()
+                .fill(Color.clear)
+
+            Rectangle()
+                .fill((isDragging ? Color.accentColor : Color.secondary).opacity(isDragging ? 0.55 : 0.35))
+                .frame(width: 1)
+        }
+        .frame(width: OutlinePaneMetrics.handleHitWidth)
+        .contentShape(Rectangle())
+        .gesture(resizeGesture)
+        .horizontalResizeCursor()
+        .accessibilityLabel("Resize Outline")
+        .accessibilityValue("\(Int(displayedPaneWidth)) pixels")
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment:
+                adjustWidth(by: OutlinePaneMetrics.resizeStep)
+            case .decrement:
+                adjustWidth(by: -OutlinePaneMetrics.resizeStep)
+            @unknown default:
+                break
+            }
+        }
+    }
+
+    private var resizeGesture: some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                if dragStartWidth == nil {
+                    dragStartWidth = displayedPaneWidth
+                }
+                isDragging = true
+                let startingWidth = dragStartWidth ?? displayedPaneWidth
+                paneWidth = OutlinePaneMetrics.clampedWidth(
+                    startingWidth - value.translation.width,
+                    containerWidth: containerWidth
+                )
+            }
+            .onEnded { _ in
+                dragStartWidth = nil
+                isDragging = false
+            }
+    }
+
+    private func adjustWidth(by delta: CGFloat) {
+        paneWidth = OutlinePaneMetrics.clampedWidth(
+            displayedPaneWidth + delta,
+            containerWidth: containerWidth
+        )
+    }
+}
+
 struct DocumentBlockScrollView: View {
     let blocks: [MarkdownBlock]
     let workspaceRootURL: URL?
     let fontScale: CGFloat
     let tabularPresentation: TabularDocumentPresentation?
     let syntaxTheme: SyntaxHighlightTheme
+    @Binding var scrollTargetID: String?
+    let outlineItems: [MarkdownOutlineItem]
+    let tracksActiveOutline: Bool
+    @Binding var activeOutlineBlockID: String?
 
     var body: some View {
-        ScrollView {
-            DocumentBlockStackView(
-                blocks: blocks,
-                workspaceRootURL: workspaceRootURL,
-                fontScale: fontScale,
-                tabularPresentation: tabularPresentation,
-                syntaxTheme: syntaxTheme,
-                usesLazyLayout: true,
-                isPrinting: false
-            )
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 4)
+        ScrollViewReader { proxy in
+            ScrollView {
+                DocumentBlockStackView(
+                    blocks: blocks,
+                    workspaceRootURL: workspaceRootURL,
+                    fontScale: fontScale,
+                    tabularPresentation: tabularPresentation,
+                    syntaxTheme: syntaxTheme,
+                    usesLazyLayout: true,
+                    isPrinting: false,
+                    tracksHeadingOffsets: tracksActiveOutline
+                )
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 4)
+            }
+            .coordinateSpace(name: DocumentScrollCoordinateSpace.name)
+            .onPreferenceChange(HeadingOffsetPreferenceKey.self) { headingOffsets in
+                let resolvedBlockID = AppModel.activeOutlineBlockID(
+                    from: headingOffsets,
+                    outlineItems: outlineItems,
+                    currentBlockID: activeOutlineBlockID
+                )
+                if resolvedBlockID != activeOutlineBlockID {
+                    activeOutlineBlockID = resolvedBlockID
+                }
+            }
+            .onChange(of: scrollTargetID) { targetID in
+                guard let targetID else { return }
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    proxy.scrollTo(targetID, anchor: .top)
+                }
+                DispatchQueue.main.async {
+                    scrollTargetID = nil
+                }
+            }
         }
         .textSelection(.enabled)
         .accessibilityIdentifier(AccessibilityIDs.scrollView)
+    }
+}
+
+private enum DocumentScrollCoordinateSpace {
+    static let name = "document-scroll-coordinate-space"
+}
+
+private struct HeadingOffsetPreferenceKey: PreferenceKey {
+    static var defaultValue: [String: CGFloat] = [:]
+
+    static func reduce(value: inout [String: CGFloat], nextValue: () -> [String: CGFloat]) {
+        value.merge(nextValue(), uniquingKeysWith: { $1 })
     }
 }
 
@@ -1020,7 +1298,8 @@ struct PrintableDocumentCompositionView: View {
                         tabularPresentation: nil,
                         syntaxTheme: syntaxTheme,
                         usesLazyLayout: false,
-                        isPrinting: true
+                        isPrinting: true,
+                        tracksHeadingOffsets: false
                     )
                 }
 
@@ -1044,6 +1323,7 @@ private struct DocumentBlockStackView: View {
     let syntaxTheme: SyntaxHighlightTheme
     let usesLazyLayout: Bool
     let isPrinting: Bool
+    let tracksHeadingOffsets: Bool
 
     var body: some View {
         Group {
@@ -1070,7 +1350,120 @@ private struct DocumentBlockStackView: View {
                 syntaxTheme: syntaxTheme,
                 isPrinting: isPrinting
             )
+            .id(block.id)
+            .background(headingOffsetReporter(for: block))
         }
+    }
+
+    @ViewBuilder
+    private func headingOffsetReporter(for block: MarkdownBlock) -> some View {
+        if tracksHeadingOffsets && block.kind == .heading {
+            GeometryReader { proxy in
+                Color.clear.preference(
+                    key: HeadingOffsetPreferenceKey.self,
+                    value: [block.id: proxy.frame(in: .named(DocumentScrollCoordinateSpace.name)).minY]
+                )
+            }
+        } else {
+            Color.clear
+        }
+    }
+}
+
+private struct DocumentOutlinePanel: View {
+    let items: [MarkdownOutlineItem]
+    let fontScale: CGFloat
+    let activeBlockID: String?
+    let onSelect: (MarkdownOutlineItem) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Outline")
+                .font(ViewerFont.headline(scale: fontScale))
+                .padding(.horizontal, 14)
+                .padding(.top, 14)
+                .padding(.bottom, 10)
+
+            Divider()
+
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 2) {
+                    ForEach(items) { item in
+                        Button {
+                            onSelect(item)
+                        } label: {
+                            DocumentOutlineRow(
+                                item: item,
+                                fontScale: fontScale,
+                                isActive: item.blockID == activeBlockID
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier(AccessibilityIDs.documentOutlineItem(item.blockID))
+                    }
+                }
+                .padding(.vertical, 8)
+            }
+            .accessibilityIdentifier(AccessibilityIDs.documentOutlineList)
+        }
+        .background(.regularMaterial)
+        .accessibilityIdentifier(AccessibilityIDs.documentOutlinePanel)
+    }
+}
+
+private struct DocumentOutlineRow: View {
+    let item: MarkdownOutlineItem
+    let fontScale: CGFloat
+    let isActive: Bool
+
+    var body: some View {
+        DocumentOutlineTitleText(
+            runs: item.titleRuns,
+            fontScale: fontScale
+        )
+        .lineLimit(2)
+        .multilineTextAlignment(.leading)
+        .foregroundStyle(isActive ? Color.accentColor : Color.primary)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 7)
+        .padding(.leading, CGFloat(max(0, item.level - 1)) * 12 + 14)
+        .padding(.trailing, 14)
+        .background {
+            if isActive {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.accentColor.opacity(0.14))
+            }
+        }
+        .overlay(alignment: .leading) {
+            if isActive {
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(Color.accentColor)
+                    .frame(width: 3)
+                    .padding(.vertical, 6)
+                    .padding(.leading, 5)
+            }
+        }
+    }
+}
+
+private struct DocumentOutlineTitleText: View {
+    let runs: [MarkdownOutlineTitleRun]
+    let fontScale: CGFloat
+
+    var body: some View {
+        composedText
+    }
+
+    private var composedText: Text {
+        guard let first = runs.first else { return Text("") }
+        return runs.dropFirst().reduce(text(for: first)) { partial, run in
+            partial + text(for: run)
+        }
+    }
+
+    private func text(for run: MarkdownOutlineTitleRun) -> Text {
+        Text(verbatim: run.text)
+            .font(run.isCode ? ViewerFont.monospacedBody(scale: fontScale) : ViewerFont.body(scale: fontScale))
     }
 }
 
@@ -1322,19 +1715,52 @@ struct MarkdownBlockView: View {
                 printableTableRow(
                     table.header,
                     alignments: table.alignments,
+                    contentKind: table.contentKind,
                     isHeader: true
                 )
                 Divider()
-                ForEach(Array(table.rows.enumerated()), id: \.offset) { _, row in
+                ForEach(table.rows.indices, id: \.self) { rowIndex in
                     printableTableRow(
-                        row,
+                        table.rows[rowIndex],
                         alignments: table.alignments,
+                        contentKind: table.contentKind,
                         isHeader: false
                     )
                     Divider()
                 }
             }
             .padding(14)
+        } else if let tabularPresentation, table.contentKind == .plainText {
+            ScrollView([.horizontal, .vertical], showsIndicators: true) {
+                LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+                    Section {
+                        ForEach(table.rows.indices, id: \.self) { rowIndex in
+                            lazyTableRow(
+                                table.rows[rowIndex],
+                                alignments: table.alignments,
+                                contentKind: table.contentKind,
+                                isHeader: false
+                            )
+                            Divider()
+                        }
+                    } header: {
+                        lazyTableRow(
+                            table.header,
+                            alignments: table.alignments,
+                            contentKind: table.contentKind,
+                            isHeader: true
+                        )
+                        .background(.regularMaterial)
+                        Divider()
+                    }
+                }
+                .padding(14)
+            }
+            .frame(
+                minHeight: 260,
+                idealHeight: tabularTableHeight(rowCount: table.rows.count + 1, presentation: tabularPresentation),
+                maxHeight: tabularTableHeight(rowCount: table.rows.count + 1, presentation: tabularPresentation)
+            )
         } else {
             ScrollView(.horizontal, showsIndicators: true) {
                 Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 10) {
@@ -1343,6 +1769,7 @@ struct MarkdownBlockView: View {
                             tableCell(
                                 cell,
                                 columnAlignment: table.alignments[column],
+                                contentKind: table.contentKind,
                                 isHeader: true
                             )
                         }
@@ -1355,6 +1782,7 @@ struct MarkdownBlockView: View {
                                 tableCell(
                                     cell,
                                     columnAlignment: table.alignments[column],
+                                    contentKind: table.contentKind,
                                     isHeader: false
                                 )
                             }
@@ -1369,6 +1797,7 @@ struct MarkdownBlockView: View {
     private func printableTableRow(
         _ row: [MarkdownTableCell],
         alignments: [MarkdownTableAlignment],
+        contentKind: MarkdownTableContentKind,
         isHeader: Bool
     ) -> some View {
         HStack(alignment: .top, spacing: 12) {
@@ -1376,6 +1805,7 @@ struct MarkdownBlockView: View {
                 tableCell(
                     cell,
                     columnAlignment: alignments[column],
+                    contentKind: contentKind,
                     isHeader: isHeader
                 )
             }
@@ -1383,33 +1813,79 @@ struct MarkdownBlockView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    private func lazyTableRow(
+        _ row: [MarkdownTableCell],
+        alignments: [MarkdownTableAlignment],
+        contentKind: MarkdownTableContentKind,
+        isHeader: Bool
+    ) -> some View {
+        HStack(alignment: .top, spacing: 0) {
+            ForEach(row.indices, id: \.self) { column in
+                tableCell(
+                    row[column],
+                    columnAlignment: alignments[column],
+                    contentKind: contentKind,
+                    isHeader: isHeader
+                )
+                .padding(.horizontal, 8)
+            }
+        }
+    }
+
     @ViewBuilder
     private func tableCell(
         _ cell: MarkdownTableCell,
         columnAlignment: MarkdownTableAlignment,
+        contentKind: MarkdownTableContentKind,
         isHeader: Bool
     ) -> some View {
-        let attributedText = MarkdownRenderer.attributedText(for: cell)
         if let tabularPresentation {
-            Text(attributedText)
-                .font(ViewerFont.body(scale: fontScale))
-                .fontWeight(isHeader ? .semibold : .regular)
-                .lineLimit(tabularPresentation.wrapMode == .wrap ? nil : 1)
-                .frame(
-                    width: tabularPresentation.columnWidth,
-                    height: tabularPresentation.rowHeight,
-                    alignment: alignment(for: columnAlignment)
-                )
-                .multilineTextAlignment(textAlignment(for: columnAlignment))
-                .clipped()
-                .linkHoverCursor(attributedText)
+            if contentKind == .plainText {
+                Text(verbatim: cell.plainText)
+                    .font(ViewerFont.body(scale: fontScale))
+                    .fontWeight(isHeader ? .semibold : .regular)
+                    .lineLimit(tabularPresentation.wrapMode == .wrap ? nil : 1)
+                    .frame(
+                        width: tabularPresentation.columnWidth,
+                        height: tabularPresentation.rowHeight,
+                        alignment: alignment(for: columnAlignment)
+                    )
+                    .multilineTextAlignment(textAlignment(for: columnAlignment))
+                    .clipped()
+            } else {
+                let attributedText = MarkdownRenderer.attributedText(for: cell)
+                Text(attributedText)
+                    .font(ViewerFont.body(scale: fontScale))
+                    .fontWeight(isHeader ? .semibold : .regular)
+                    .lineLimit(tabularPresentation.wrapMode == .wrap ? nil : 1)
+                    .frame(
+                        width: tabularPresentation.columnWidth,
+                        height: tabularPresentation.rowHeight,
+                        alignment: alignment(for: columnAlignment)
+                    )
+                    .multilineTextAlignment(textAlignment(for: columnAlignment))
+                    .clipped()
+                    .linkHoverCursor(attributedText)
+            }
         } else {
-            Text(attributedText)
-                .font(ViewerFont.body(scale: fontScale))
-                .fontWeight(isHeader ? .semibold : .regular)
-                .frame(maxWidth: .infinity, alignment: alignment(for: columnAlignment))
-                .linkHoverCursor(attributedText)
+            if contentKind == .plainText {
+                Text(verbatim: cell.plainText)
+                    .font(ViewerFont.body(scale: fontScale))
+                    .fontWeight(isHeader ? .semibold : .regular)
+                    .frame(maxWidth: .infinity, alignment: alignment(for: columnAlignment))
+            } else {
+                let attributedText = MarkdownRenderer.attributedText(for: cell)
+                Text(attributedText)
+                    .font(ViewerFont.body(scale: fontScale))
+                    .fontWeight(isHeader ? .semibold : .regular)
+                    .frame(maxWidth: .infinity, alignment: alignment(for: columnAlignment))
+                    .linkHoverCursor(attributedText)
+            }
         }
+    }
+
+    private func tabularTableHeight(rowCount: Int, presentation: TabularDocumentPresentation) -> CGFloat {
+        min(max(CGFloat(rowCount) * (presentation.rowHeight + 1) + 28, 260), 720)
     }
 
     private func alignment(for alignment: MarkdownTableAlignment) -> Alignment {
@@ -1458,14 +1934,39 @@ private struct LinkHoverCursorModifier: ViewModifier {
     }
 }
 
+private struct HorizontalResizeCursorModifier: ViewModifier {
+    @State private var isHovering = false
+
+    func body(content: Content) -> some View {
+        content
+            .onHover { hovering in
+                guard hovering != isHovering else { return }
+                isHovering = hovering
+                if hovering {
+                    NSCursor.resizeLeftRight.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
+    }
+}
+
 private extension View {
     func linkHoverCursor(_ attributedText: AttributedString) -> some View {
         modifier(LinkHoverCursorModifier(hasLink: attributedText.runs.contains { $0.link != nil }))
+    }
+
+    func horizontalResizeCursor() -> some View {
+        modifier(HorizontalResizeCursorModifier())
     }
 }
 #else
 private extension View {
     func linkHoverCursor(_ attributedText: AttributedString) -> some View {
+        self
+    }
+
+    func horizontalResizeCursor() -> some View {
         self
     }
 }

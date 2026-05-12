@@ -20,6 +20,9 @@
   - `docs/exec-plans/active/2026-04-03-quick-markdown-viewer-in-place-rename.md`
   - `docs/exec-plans/active/2026-03-28-launch-empty-viewer.md`
 - current milestone:
+  - outline/csv/update checks: Markdown documents now publish a detached-load outline, the reader exposes an openable right-side outline panel/sheet with heading jump targets, active-section highlighting, an active-state outline toggle, native `HSplitView` resizing on macOS, and a draggable inline-pane resize handle on iPad, standalone CSV/TSV cells are treated as plain data and render through a bounded lazy table viewport, and the app now has an injectable App Store update checker with skip/skip-version behavior plus a macOS `Check for Updates…` menu item
+  - app-store 1.4 submission: submitted the current tree as `1.4 (10)` for outline navigation, large CSV performance, and update checks; iOS version `1e0a074d-26a6-4f33-a8f5-a70b7897f301` with build `ce76a788-67f1-4fa6-88d3-b565b272ffef` and macOS version `9a04ddf5-0e75-48fb-9262-29b83d34aed4` with build `c5261c5a-4507-4ccd-95af-2cad72e5cd36` are both `WAITING_FOR_REVIEW`
+  - iOS validation follow-up: after installing the iOS simulator runtime, `./scripts/build --platform ios` succeeds on iOS 26.5, iPhone smoke passes through `./scripts/test-ui-ios --device both --smoke`, and a manual iPad smoke passes on the iOS 26.5 `iPad (A16)` simulator; the preferred `iPad Pro 11-inch (M5)` simulator currently hangs in `simctl install`/`simctl launch`
   - app-store 1.2 resubmission: the checked-in project now targets `1.2 (8)`, iOS `1.2` remains live, and macOS app-store-version `f3852a17-df63-4f71-9bfd-9833f5f5f539` now has build `e0f52044-0e2e-4e84-a5fe-118550cc39dd` (`1.2 (8)`) attached on review submission `998e8006-0671-4930-8d2f-f19067dab2fa`, with both the version and submission in `WAITING_FOR_REVIEW`; the App Review note now covers the explicit `qmv` installer entitlement rationale and the new `qmv /path/to/file.md` behavior
   - app-store 1.3 submission: submitted fresh `1.3 (9)` iOS/macOS builds for the window-scoped ignore-pattern update; iOS version `8bd70b08-cd79-43e8-9676-86ad768cd0df` with build `44cc4949-6f6f-401c-ba7a-bb72a0b7ed2a` and macOS version `9a04ddf5-0e75-48fb-9262-29b83d34aed4` with build `27561f24-2a27-472b-8d4c-12ee995d8e00` are both `WAITING_FOR_REVIEW` through review submissions `eaf4a1cd-40a8-449c-b76e-13c2434acc96` and `af1ed877-498c-4808-b9ed-11d7e9aa40cf`
   - print debugging: harness commands can now export the real rendered print output as PDF artifacts via `exportPrintedDocument` and `exportPrintedAllDocuments`, so print regressions can be inspected without the native print dialog
@@ -71,6 +74,8 @@
   - `python3 scripts/check_execplan.py docs/exec-plans/active/2026-04-10-macos-downloads-entitlement-removal.md`
   - `python3 scripts/knowledge/check_docs.py`
   - `python3 scripts/knowledge/generate_repo_map.py`
+  - `./scripts/build --platform ios`
+  - `./scripts/test-ui-ios --device both --smoke`
   - `./scripts/app-store-connect ensure-bundle-id --identifier com.souschefstudio.Free-Markdown-Viewer --name 'Free Markdown Viewer'`
   - `./scripts/app-store-connect inspect-bundle-id --identifier com.souschefstudio.Free-Markdown-Viewer`
   - `./scripts/app-store-connect inspect-app --bundle-id com.souschefstudio.Free-Markdown-Viewer --raw`

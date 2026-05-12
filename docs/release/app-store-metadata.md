@@ -19,9 +19,11 @@ Open Markdown folders on Mac, iPhone, and iPad with a fast, local-first viewer t
 
 Use this for the `What's New` field on the next App Store version:
 
-- Hide dependency and vendor folders from each opened window with editable ignore patterns
-- Ignore `node_modules`, `venv`, `.venv`, and `vendor` by default
-- Open local folders and public GitHub repositories with faster, cleaner sidebars
+- Open a document outline from the right side and jump directly to Markdown headings
+- Highlight the current section in the outline while reading
+- Resize the outline pane on Mac and iPad
+- View large CSV and TSV files with a faster lazy table surface
+- Check for newer App Store versions, with skip controls and a Mac menu command
 
 ## Description
 
@@ -36,6 +38,7 @@ Features:
 - Hide dependency and vendor folders from each window's sidebar with editable ignore patterns
 - Read Markdown with native rendering for headings, lists, tables, code blocks, images, animated images, and local video
 - Open CSV and TSV files alongside Markdown and view them with native table rendering
+- Open a right-side outline for Markdown headings and jump around long documents
 - Render direct remote image and video links authored inside Markdown
 - Print the current file or the entire workspace with rendered Markdown and table output
 - Navigate quickly between files with back and forward history

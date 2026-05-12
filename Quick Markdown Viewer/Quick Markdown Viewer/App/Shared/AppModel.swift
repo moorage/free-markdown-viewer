@@ -15,6 +15,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var files: [MarkdownFileNode] = []
     @Published private(set) var documentText = "Loading…"
     @Published private(set) var documentBlocks: [MarkdownBlock] = []
+    @Published private(set) var outlineItems: [MarkdownOutlineItem] = []
     @Published private(set) var selectedDocumentKind: WorkspaceDocumentKind = .markdown
     @Published private(set) var isLoadingDocument = false
     @Published private(set) var isLoadingWorkspace = false
@@ -178,6 +179,7 @@ final class AppModel: ObservableObject {
         model.selectedDocumentKind = .markdown
         model.documentText = EmbeddedFixtures.docs["basic_typography.md"] ?? ""
         model.documentBlocks = MarkdownRenderer.blocks(from: model.documentText)
+        model.outlineItems = outlineItems(from: model.documentBlocks)
         model.workspaceRootDisplay = "Fixtures/docs"
         model.workspaceRootURL = nil
         model.currentRestorationSession = nil
@@ -285,6 +287,7 @@ final class AppModel: ObservableObject {
 
             self.documentText = outcome.text
             self.documentBlocks = outcome.blocks
+            self.outlineItems = outcome.outlineItems
             self.selectedDocumentKind = outcome.kind
             self.isLoadingDocument = false
             self.isReady = true
@@ -646,6 +649,7 @@ final class AppModel: ObservableObject {
                 selectedDocumentKind = .markdown
                 documentText = Self.emptyWorkspaceMessage
                 documentBlocks = MarkdownRenderer.blocks(from: documentText)
+                outlineItems = []
                 isLoadingDocument = false
                 isReady = true
                 readyReference = Date()
@@ -660,6 +664,7 @@ final class AppModel: ObservableObject {
             currentRestorationSession = nil
             documentText = "Unable to load workspace: \(error.localizedDescription)"
             documentBlocks = MarkdownRenderer.blocks(from: documentText)
+            outlineItems = []
             isLoadingDocument = false
             isReady = true
             readyReference = Date()
@@ -733,6 +738,7 @@ final class AppModel: ObservableObject {
                 selectedDocumentKind = .markdown
                 documentText = Self.emptyWorkspaceMessage
                 documentBlocks = MarkdownRenderer.blocks(from: documentText)
+                outlineItems = []
                 isLoadingDocument = false
                 isReady = true
                 readyReference = Date()
@@ -746,6 +752,7 @@ final class AppModel: ObservableObject {
             currentRestorationSession = nil
             documentText = "Unable to load workspace: \(error.localizedDescription)"
             documentBlocks = MarkdownRenderer.blocks(from: documentText)
+            outlineItems = []
             isLoadingDocument = false
             isReady = true
             readyReference = Date()
@@ -770,6 +777,7 @@ final class AppModel: ObservableObject {
         githubURLLoadErrorMessage = nil
         documentText = Self.noWorkspacePromptMessage
         documentBlocks = []
+        outlineItems = []
         isLoadingDocument = false
         isReady = true
         readyReference = Date()
@@ -942,6 +950,7 @@ extension AppModel {
         let kind: WorkspaceDocumentKind
         let text: String
         let blocks: [MarkdownBlock]
+        let outlineItems: [MarkdownOutlineItem]
     }
 
     enum PrintError: LocalizedError {
@@ -972,7 +981,12 @@ extension AppModel {
             } else {
                 blocks = parsedBlocks
             }
-            return DocumentLoadResult(kind: kind, text: text, blocks: blocks)
+            return DocumentLoadResult(
+                kind: kind,
+                text: text,
+                blocks: blocks,
+                outlineItems: kind == .markdown ? outlineItems(from: blocks) : []
+            )
         }
 
         return await withTaskCancellationHandler {
@@ -1083,6 +1097,119 @@ extension AppModel {
                 )
             ]
         }
+    }
+
+    nonisolated static func outlineItems(from blocks: [MarkdownBlock]) -> [MarkdownOutlineItem] {
+        var items: [MarkdownOutlineItem] = []
+        appendOutlineItems(from: blocks, to: &items)
+        return items
+    }
+
+    nonisolated static func activeOutlineBlockID(
+        from headingOffsets: [String: CGFloat],
+        outlineItems: [MarkdownOutlineItem],
+        currentBlockID: String?
+    ) -> String? {
+        let outlineBlockIDs = outlineItems.map(\.blockID)
+        guard !outlineBlockIDs.isEmpty else { return nil }
+
+        let visibleHeadings = outlineBlockIDs.compactMap { blockID -> (blockID: String, yOffset: CGFloat)? in
+            guard let yOffset = headingOffsets[blockID] else { return nil }
+            return (blockID, yOffset)
+        }
+        guard !visibleHeadings.isEmpty else {
+            return currentBlockID.flatMap { outlineBlockIDs.contains($0) ? $0 : nil }
+        }
+
+        let activationOffset: CGFloat = 24
+        if let activeHeading = visibleHeadings
+            .filter({ $0.yOffset <= activationOffset })
+            .max(by: { $0.yOffset < $1.yOffset }) {
+            return activeHeading.blockID
+        }
+
+        if let currentBlockID, outlineBlockIDs.contains(currentBlockID) {
+            return currentBlockID
+        }
+
+        return visibleHeadings.min(by: { $0.yOffset < $1.yOffset })?.blockID
+    }
+
+    private nonisolated static func appendOutlineItems(
+        from blocks: [MarkdownBlock],
+        to items: inout [MarkdownOutlineItem]
+    ) {
+        for block in blocks {
+            if block.kind == .heading {
+                let title = block.plainText.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !title.isEmpty {
+                    items.append(
+                        MarkdownOutlineItem(
+                            blockID: block.id,
+                            title: title,
+                            titleRuns: outlineTitleRuns(for: block, fallbackTitle: title),
+                            level: max(1, min(block.level ?? 1, 6))
+                        )
+                    )
+                }
+            }
+            appendOutlineItems(from: block.children, to: &items)
+        }
+    }
+
+    private nonisolated static func outlineTitleRuns(
+        for block: MarkdownBlock,
+        fallbackTitle: String
+    ) -> [MarkdownOutlineTitleRun] {
+        guard let attributedText = block.attributedText else {
+            return [MarkdownOutlineTitleRun(text: fallbackTitle, isCode: false)]
+        }
+
+        var runs: [MarkdownOutlineTitleRun] = []
+        for run in attributedText.runs {
+            let text = String(attributedText[run.range].characters)
+            guard !text.isEmpty else { continue }
+            let isCode = run.inlinePresentationIntent?.contains(.code) == true
+            if let last = runs.last, last.isCode == isCode {
+                runs[runs.count - 1] = MarkdownOutlineTitleRun(text: last.text + text, isCode: isCode)
+            } else {
+                runs.append(MarkdownOutlineTitleRun(text: text, isCode: isCode))
+            }
+        }
+
+        let trimmedRuns = trimmedOutlineTitleRuns(runs)
+        if trimmedRuns.isEmpty {
+            return [MarkdownOutlineTitleRun(text: fallbackTitle, isCode: false)]
+        }
+        return trimmedRuns
+    }
+
+    private nonisolated static func trimmedOutlineTitleRuns(
+        _ runs: [MarkdownOutlineTitleRun]
+    ) -> [MarkdownOutlineTitleRun] {
+        var trimmed = runs
+
+        while let first = trimmed.first {
+            let text = first.text.trimmingLeadingWhitespaceAndNewlines()
+            if text.isEmpty {
+                trimmed.removeFirst()
+            } else {
+                trimmed[0] = MarkdownOutlineTitleRun(text: text, isCode: first.isCode)
+                break
+            }
+        }
+
+        while let last = trimmed.last {
+            let text = last.text.trimmingTrailingWhitespaceAndNewlines()
+            if text.isEmpty {
+                trimmed.removeLast()
+            } else {
+                trimmed[trimmed.count - 1] = MarkdownOutlineTitleRun(text: text, isCode: last.isCode)
+                break
+            }
+        }
+
+        return trimmed
     }
 
     private nonisolated static func hydrateMedia(
@@ -1342,6 +1469,22 @@ extension AppModel {
             .replacingOccurrences(of: "[-_/\\.]+", with: " ", options: .regularExpression)
             .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+private extension String {
+    nonisolated func trimmingLeadingWhitespaceAndNewlines() -> String {
+        guard let firstContentIndex = firstIndex(where: { !$0.isWhitespace && !$0.isNewline }) else {
+            return ""
+        }
+        return String(self[firstContentIndex...])
+    }
+
+    nonisolated func trimmingTrailingWhitespaceAndNewlines() -> String {
+        guard let lastContentIndex = lastIndex(where: { !$0.isWhitespace && !$0.isNewline }) else {
+            return ""
+        }
+        return String(self[...lastContentIndex])
     }
 }
 

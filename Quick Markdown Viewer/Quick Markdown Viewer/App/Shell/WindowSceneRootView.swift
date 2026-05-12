@@ -9,6 +9,7 @@ import UIKit
 struct WindowSceneRootView: View {
     @StateObject private var model: AppModel
     @ObservedObject private var sessionStore: WorkspaceWindowSessionStore
+    @ObservedObject private var updateChecker: AppUpdateChecker
     private let sceneID: String
     @State private var isPresentingGitHubURLPrompt = false
     #if os(macOS)
@@ -26,10 +27,12 @@ struct WindowSceneRootView: View {
         launchOptions: HarnessLaunchOptions,
         sceneID: String,
         sessionStore: WorkspaceWindowSessionStore,
-        githubWorkspaceLoader: any GitHubWorkspaceLoading
+        githubWorkspaceLoader: any GitHubWorkspaceLoading,
+        updateChecker: AppUpdateChecker
     ) {
         self.sceneID = sceneID
         self.sessionStore = sessionStore
+        self.updateChecker = updateChecker
         _model = StateObject(
             wrappedValue: AppModel(
                 launchOptions: launchOptions,
@@ -72,6 +75,11 @@ struct WindowSceneRootView: View {
                 handleExternalWorkspaceOpen(requestID: requestID)
             }
             #endif
+            .task {
+                if !model.launchOptions.uiTestMode {
+                    updateChecker.checkAutomaticallyIfNeeded()
+                }
+            }
             .onChange(of: model.selectedPath) { _ in
                 sessionStore.updateActiveSession(model.restorationSession, for: sceneID)
             }
@@ -90,6 +98,9 @@ struct WindowSceneRootView: View {
                 if newPhase != .active {
                     sessionStore.persistActiveSessions()
                 } else {
+                    if !model.launchOptions.uiTestMode {
+                        updateChecker.checkAutomaticallyIfNeeded()
+                    }
                     #if os(macOS)
                     commandLineToolManager.setInstallCommandLineToolPresenter(installCommandLineTool)
                     commandLineToolManager.refreshInstallState()
@@ -112,6 +123,15 @@ struct WindowSceneRootView: View {
                     onClose: { isPresentingGitHubURLPrompt = false }
                 )
             }
+            .alert(
+                updateChecker.activeAlert?.title ?? "Software Update",
+                isPresented: updateAlertPresentedBinding,
+                presenting: updateChecker.activeAlert
+            ) { alert in
+                updateAlertActions(for: alert)
+            } message: { alert in
+                Text(alert.message)
+            }
             #if !os(macOS)
             .fileImporter(
                 isPresented: $isPresentingFolderImporter,
@@ -128,6 +148,17 @@ struct WindowSceneRootView: View {
 
     private var openGitHubURLPromptAction: (() -> Void)? {
         openGitHubURLPrompt
+    }
+
+    private var updateAlertPresentedBinding: Binding<Bool> {
+        Binding(
+            get: { updateChecker.activeAlert != nil },
+            set: { isPresented in
+                if !isPresented {
+                    updateChecker.dismissActiveAlert()
+                }
+            }
+        )
     }
 
     private var printSelectedDocumentAction: (() -> Void)? {
@@ -148,6 +179,35 @@ struct WindowSceneRootView: View {
         Task {
             await presentPrint(scope: .allFiles)
         }
+    }
+
+    @ViewBuilder
+    private func updateAlertActions(for alert: AppUpdateChecker.AlertState) -> some View {
+        switch alert.kind {
+        case let .updateAvailable(info):
+            Button("Download") {
+                openUpdateStoreURL(info.storeURL)
+            }
+            Button("Skip") {
+                updateChecker.dismissActiveAlert()
+            }
+            Button("Skip This Version") {
+                updateChecker.skipActiveVersionUntilNextVersion()
+            }
+        case .upToDate, .failed:
+            Button("OK") {
+                updateChecker.dismissActiveAlert()
+            }
+        }
+    }
+
+    private func openUpdateStoreURL(_ url: URL) {
+        updateChecker.dismissActiveAlert()
+        #if os(macOS)
+        NSWorkspace.shared.open(url)
+        #else
+        UIApplication.shared.open(url)
+        #endif
     }
 
     @MainActor
@@ -593,6 +653,7 @@ extension FocusedValues {
 
 struct WindowOpenFolderCommands: Commands {
     @ObservedObject var commandLineToolManager: MacCommandLineToolManager
+    @ObservedObject var updateChecker: AppUpdateChecker
     @FocusedValue(\.openFolderAction) private var openFolderAction
     @FocusedValue(\.openGitHubURLAction) private var openGitHubURLAction
     @FocusedValue(\.revealInFinderAction) private var revealInFinderAction
@@ -602,6 +663,13 @@ struct WindowOpenFolderCommands: Commands {
     @FocusedValue(\.decreaseFontSizeAction) private var decreaseFontSizeAction
 
     var body: some Commands {
+        CommandGroup(after: .appInfo) {
+            Button("Check for Updates…") {
+                updateChecker.checkManually()
+            }
+            .disabled(updateChecker.isChecking)
+        }
+
         CommandGroup(after: .newItem) {
             Divider()
             Button("Open Folder…") {

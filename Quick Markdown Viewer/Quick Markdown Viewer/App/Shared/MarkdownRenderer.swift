@@ -1225,7 +1225,8 @@ nonisolated enum MarkdownRenderer {
             table: MarkdownTable(
                 alignments: tableMatch.alignments,
                 header: tableMatch.header,
-                rows: tableMatch.rows
+                rows: tableMatch.rows,
+                contentKind: .markdown
             ),
             image: nil,
             video: nil,

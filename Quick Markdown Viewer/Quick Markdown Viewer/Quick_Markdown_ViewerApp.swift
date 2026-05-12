@@ -17,6 +17,7 @@ struct Quick_Markdown_ViewerApp: App {
     private let launchOptions: HarnessLaunchOptions
     private let githubWorkspaceLoader: GitHubWorkspaceService
     @StateObject private var sessionStore: WorkspaceWindowSessionStore
+    @StateObject private var updateChecker = AppUpdateChecker()
     #if os(macOS)
     @NSApplicationDelegateAdaptor(QuickMarkdownViewerAppDelegate.self) private var appDelegate
     #endif
@@ -43,14 +44,18 @@ struct Quick_Markdown_ViewerApp: App {
                 launchOptions: launchOptions,
                 sceneID: sceneID,
                 sessionStore: sessionStore,
-                githubWorkspaceLoader: githubWorkspaceLoader
+                githubWorkspaceLoader: githubWorkspaceLoader,
+                updateChecker: updateChecker
             )
         } defaultValue: {
             UUID().uuidString
         }
         #if os(macOS)
         .commands {
-            WindowOpenFolderCommands(commandLineToolManager: MacCommandLineToolManager.shared)
+            WindowOpenFolderCommands(
+                commandLineToolManager: MacCommandLineToolManager.shared,
+                updateChecker: updateChecker
+            )
         }
         #endif
     }

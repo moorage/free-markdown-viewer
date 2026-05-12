@@ -44,6 +44,22 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
         }
     }
 
+    private struct StubAppStoreVersionFetcher: AppStoreVersionFetching {
+        let result: Result<AppStoreVersionInfo?, Error>
+
+        func latestVersion(configuration: AppStoreLookupConfiguration) async throws -> AppStoreVersionInfo? {
+            try result.get()
+        }
+    }
+
+    private enum TestUpdateError: LocalizedError {
+        case offline
+
+        var errorDescription: String? {
+            "offline"
+        }
+    }
+
     private static var retainedModels: [AppModel] = []
 
     private func extractedPDFText(from url: URL) throws -> String {
@@ -2284,6 +2300,240 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
             }
             XCTFail("CommonMark semantic mismatches (\(failures.count)). Full report: \(reportURL.path)\n" + preview.joined(separator: "\n"))
         }
+    }
+
+    func testMarkdownOutlineItemsUseHeadingBlocksInDocumentOrder() {
+        let blocks = MarkdownRenderer.blocks(from: """
+        # Overview
+
+        Intro paragraph.
+
+        ## Details
+
+        ### Deep Cut
+        """)
+
+        let outlineItems = AppModel.outlineItems(from: blocks)
+
+        XCTAssertEqual(outlineItems.map(\.title), ["Overview", "Details", "Deep Cut"])
+        XCTAssertEqual(outlineItems.map(\.level), [1, 2, 3])
+        XCTAssertTrue(outlineItems.allSatisfy { !$0.blockID.isEmpty })
+    }
+
+    func testMarkdownOutlineItemsPreserveInlineCodeRuns() {
+        let blocks = MarkdownRenderer.blocks(from: """
+        ## Use `qmv /tmp/file.md` correctly
+        """)
+
+        let outlineItem = AppModel.outlineItems(from: blocks).first
+
+        XCTAssertEqual(outlineItem?.title, "Use qmv /tmp/file.md correctly")
+        XCTAssertEqual(
+            outlineItem?.titleRuns,
+            [
+                MarkdownOutlineTitleRun(text: "Use ", isCode: false),
+                MarkdownOutlineTitleRun(text: "qmv /tmp/file.md", isCode: true),
+                MarkdownOutlineTitleRun(text: " correctly", isCode: false),
+            ]
+        )
+    }
+
+    func testActiveOutlineBlockIDTracksLastHeadingAtViewportTop() {
+        let items = [
+            MarkdownOutlineItem(
+                blockID: "heading.one",
+                title: "One",
+                titleRuns: [MarkdownOutlineTitleRun(text: "One", isCode: false)],
+                level: 1
+            ),
+            MarkdownOutlineItem(
+                blockID: "heading.two",
+                title: "Two",
+                titleRuns: [MarkdownOutlineTitleRun(text: "Two", isCode: false)],
+                level: 2
+            ),
+            MarkdownOutlineItem(
+                blockID: "heading.three",
+                title: "Three",
+                titleRuns: [MarkdownOutlineTitleRun(text: "Three", isCode: false)],
+                level: 2
+            ),
+        ]
+
+        XCTAssertEqual(
+            AppModel.activeOutlineBlockID(
+                from: ["heading.one": 4, "heading.two": 420],
+                outlineItems: items,
+                currentBlockID: nil
+            ),
+            "heading.one"
+        )
+        XCTAssertEqual(
+            AppModel.activeOutlineBlockID(
+                from: ["heading.one": -300, "heading.two": 20, "heading.three": 460],
+                outlineItems: items,
+                currentBlockID: "heading.one"
+            ),
+            "heading.two"
+        )
+        XCTAssertEqual(
+            AppModel.activeOutlineBlockID(
+                from: ["heading.two": 180, "heading.three": 620],
+                outlineItems: items,
+                currentBlockID: "heading.one"
+            ),
+            "heading.one"
+        )
+        XCTAssertEqual(
+            AppModel.activeOutlineBlockID(
+                from: [:],
+                outlineItems: items,
+                currentBlockID: "heading.two"
+            ),
+            "heading.two"
+        )
+    }
+
+    @MainActor
+    func testAppModelPublishesOutlineItemsForLoadedMarkdownDocument() async throws {
+        let workspace = try makeTemporaryWorkspace(named: "Outline Workspace", files: [
+            "guide.md": "# Guide\n\nBody\n\n## Usage\n\nText",
+            "table.csv": "Name,Count\nAlpha,1"
+        ])
+        let model = AppModel(
+            launchOptions: HarnessLaunchOptions(
+                fixtureRoot: workspace,
+                openFile: "guide.md",
+                uiTestOpenFolderURL: nil,
+                theme: nil,
+                windowSize: nil,
+                disableFileWatch: true,
+                dumpVisibleStateURL: nil,
+                dumpPerfStateURL: nil,
+                screenshotPathURL: nil,
+                commandDirectoryURL: nil,
+                uiTestMode: true,
+                platformTarget: .macos,
+                deviceClass: .mac
+            )
+        )
+        retainForTestLifetime(model)
+
+        model.bootstrap()
+        try await Task.sleep(nanoseconds: 400_000_000)
+
+        XCTAssertEqual(model.outlineItems.map(\.title), ["Guide", "Usage"])
+
+        model.openFile(WorkspacePath(rawValue: "table.csv"))
+        try await Task.sleep(nanoseconds: 400_000_000)
+
+        XCTAssertTrue(model.outlineItems.isEmpty)
+    }
+
+    func testDelimitedTextParserUsesPlainTextTableCellsForLargeCSV() {
+        let rows = (0..<5_000).map { "Item \($0),\($0)" }.joined(separator: "\n")
+        let csv = "Name,Count\n\(rows)"
+
+        let table = DelimitedTextDocumentParser.markdownTable(from: csv, kind: .csv)
+
+        XCTAssertEqual(table?.contentKind, .plainText)
+        XCTAssertEqual(table?.rows.count, 5_000)
+        XCTAssertNil(table?.header.first?.attributedText)
+        XCTAssertNil(table?.rows.last?.last?.attributedText)
+    }
+
+    func testAppStoreLookupConfigurationBuildsPlatformLookupURL() throws {
+        let configuration = AppStoreLookupConfiguration(
+            appID: "123",
+            bundleIdentifier: "com.example.App",
+            installedVersion: "1.0",
+            countryCode: "US",
+            entity: "software"
+        )
+        let components = try XCTUnwrap(URLComponents(url: configuration.lookupURL, resolvingAgainstBaseURL: false))
+        let queryItems = Dictionary(uniqueKeysWithValues: (components.queryItems ?? []).map { ($0.name, $0.value ?? "") })
+
+        XCTAssertEqual(components.scheme, "https")
+        XCTAssertEqual(components.host, "itunes.apple.com")
+        XCTAssertEqual(components.path, "/lookup")
+        XCTAssertEqual(queryItems["id"], "123")
+        XCTAssertEqual(queryItems["country"], "US")
+        XCTAssertEqual(queryItems["entity"], "software")
+    }
+
+    func testAppUpdateVersionComparisonUsesNumericSegments() {
+        XCTAssertTrue(AppUpdateChecker.isVersion("1.10", newerThan: "1.9"))
+        XCTAssertTrue(AppUpdateChecker.isVersion("2.0", newerThan: "1.99"))
+        XCTAssertFalse(AppUpdateChecker.isVersion("1.3", newerThan: "1.3"))
+        XCTAssertFalse(AppUpdateChecker.isVersion("1.2.9", newerThan: "1.3"))
+    }
+
+    @MainActor
+    func testAppUpdateCheckerManualCheckPromptsWhenAppStoreVersionIsNewer() async throws {
+        let suiteName = "AppUpdateCheckerTests.\(UUID().uuidString)"
+        let userDefaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { userDefaults.removePersistentDomain(forName: suiteName) }
+        let checker = AppUpdateChecker(
+            configuration: AppStoreLookupConfiguration(
+                appID: "123",
+                bundleIdentifier: "com.example.App",
+                installedVersion: "1.0",
+                countryCode: "US",
+                entity: "software"
+            ),
+            fetcher: StubAppStoreVersionFetcher(
+                result: .success(
+                    AppStoreVersionInfo(version: "1.1", storeURL: URL(string: "https://apps.apple.com/app/id123")!)
+                )
+            ),
+            userDefaults: userDefaults
+        )
+
+        checker.checkManually()
+        try await Task.sleep(nanoseconds: 150_000_000)
+
+        XCTAssertEqual(
+            checker.activeAlert,
+            AppUpdateChecker.AlertState(
+                kind: .updateAvailable(
+                    AppStoreVersionInfo(version: "1.1", storeURL: URL(string: "https://apps.apple.com/app/id123")!)
+                )
+            )
+        )
+    }
+
+    @MainActor
+    func testAppUpdateCheckerSkipsAutomaticPromptUntilNextVersion() async throws {
+        let suiteName = "AppUpdateCheckerTests.\(UUID().uuidString)"
+        let userDefaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { userDefaults.removePersistentDomain(forName: suiteName) }
+        let versionInfo = AppStoreVersionInfo(version: "1.1", storeURL: URL(string: "https://apps.apple.com/app/id123")!)
+        let configuration = AppStoreLookupConfiguration(
+            appID: "123",
+            bundleIdentifier: "com.example.App",
+            installedVersion: "1.0",
+            countryCode: "US",
+            entity: "software"
+        )
+        let firstChecker = AppUpdateChecker(
+            configuration: configuration,
+            fetcher: StubAppStoreVersionFetcher(result: .success(versionInfo)),
+            userDefaults: userDefaults
+        )
+
+        firstChecker.checkManually()
+        try await Task.sleep(nanoseconds: 150_000_000)
+        firstChecker.skipActiveVersionUntilNextVersion()
+
+        let secondChecker = AppUpdateChecker(
+            configuration: configuration,
+            fetcher: StubAppStoreVersionFetcher(result: .success(versionInfo)),
+            userDefaults: userDefaults
+        )
+        secondChecker.checkAutomaticallyIfNeeded()
+        try await Task.sleep(nanoseconds: 150_000_000)
+
+        XCTAssertNil(secondChecker.activeAlert)
     }
 
     private func makeTemporaryWorkspace(named folderName: String, files: [String: String]) throws -> URL {

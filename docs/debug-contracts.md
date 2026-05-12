@@ -37,6 +37,7 @@ Stable identifiers include:
 - `toolbar.ignorePatterns`
 - `toolbar.tableWrap`
 - `toolbar.tableSizing`
+- `toolbar.documentOutline`
 - `empty-state.github-url.field`
 - `empty-state.github-url.load`
 - `empty-state.github-url.error`
@@ -48,6 +49,9 @@ Stable identifiers include:
 - `ignore-patterns.sheet.reset`
 - `document.scrollView`
 - `document.text`
+- `document.outline.panel`
+- `document.outline.list`
+- `document.outline.item.<id>`
 - `block.placeholder.0`
 - `block.image.<id>`
 - `block.video.<id>`

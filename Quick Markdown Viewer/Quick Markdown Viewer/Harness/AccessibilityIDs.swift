@@ -22,6 +22,9 @@ enum AccessibilityIDs {
     static let tableSizingMenuButton = "toolbar.tableSizing"
     static let decreaseFontSizeButton = "toolbar.decreaseFontSize"
     static let increaseFontSizeButton = "toolbar.increaseFontSize"
+    static let documentOutlineButton = "toolbar.documentOutline"
+    static let documentOutlinePanel = "document.outline.panel"
+    static let documentOutlineList = "document.outline.list"
     static let scrollView = "document.scrollView"
     static let text = "document.text"
     static let placeholderBlock = "block.placeholder.0"
@@ -61,6 +64,10 @@ enum AccessibilityIDs {
 
     static func videoPlayButton(_ blockID: String) -> String {
         "video.playButton.\(sanitizedBlockID(blockID))"
+    }
+
+    static func documentOutlineItem(_ blockID: String) -> String {
+        "document.outline.item.\(sanitizedBlockID(blockID))"
     }
 
     private static func sanitizedBlockID(_ value: String) -> String {

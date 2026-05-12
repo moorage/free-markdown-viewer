@@ -54,7 +54,8 @@ enum DelimitedTextDocumentParser {
         return MarkdownTable(
             alignments: alignments,
             header: normalizedHeader.map(markdownCell),
-            rows: normalizedRows.map { $0.map(markdownCell) }
+            rows: normalizedRows.map { $0.map(markdownCell) },
+            contentKind: .plainText
         )
     }
 
@@ -62,7 +63,7 @@ enum DelimitedTextDocumentParser {
         MarkdownTableCell(
             plainText: value,
             sourceText: value,
-            attributedText: AttributedString(value)
+            attributedText: nil
         )
     }
 
