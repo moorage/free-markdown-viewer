@@ -99,11 +99,19 @@ struct WorkspaceWindowSession: Codable, Equatable, Sendable {
 
 struct AutomaticFolderPromptPolicy {
     private var didConsumeInitialLaunchScene = false
+    private var suppressedSceneIDs: Set<String> = []
+
+    mutating func suppressAutomaticFolderPrompt(for sceneID: String) {
+        suppressedSceneIDs.insert(sceneID)
+    }
 
     mutating func shouldSuppressAutomaticFolderPrompt(
         for sceneID: String,
         hasRestoredSession: Bool
     ) -> Bool {
+        if suppressedSceneIDs.contains(sceneID) {
+            return true
+        }
         if hasRestoredSession {
             didConsumeInitialLaunchScene = true
             return true
@@ -211,6 +219,10 @@ final class WorkspaceWindowSessionStore: ObservableObject {
             for: sceneID,
             hasRestoredSession: claimedSessions[sceneID] != nil
         )
+    }
+
+    func suppressAutomaticFolderPrompt(for sceneID: String) {
+        automaticFolderPromptPolicy.suppressAutomaticFolderPrompt(for: sceneID)
     }
 
     func updateActiveSession(_ session: WorkspaceWindowSession?, for sceneID: String) {

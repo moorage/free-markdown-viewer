@@ -35,6 +35,7 @@ Stable identifiers include:
 - `toolbar.openGitHubURL`
 - `toolbar.print`
 - `toolbar.ignorePatterns`
+- `print.preparing`
 - `toolbar.tableWrap`
 - `toolbar.tableSizing`
 - `toolbar.documentOutline`
@@ -55,10 +56,17 @@ Stable identifiers include:
 - `block.placeholder.0`
 - `block.image.<id>`
 - `block.video.<id>`
+- `block.mermaid.<id>`
 - `video.playButton.<id>`
 - `media-preview.container`
 - `media-preview.close`
 - `media-preview.open-in-browser`
+- `mermaid-preview.container`
+- `mermaid-preview.close`
+- `mermaid-preview.zoomIn`
+- `mermaid-preview.zoomOut`
+- `mermaid-preview.fit`
+- `mermaid-preview.reset`
 
 ## State snapshot
 
@@ -72,7 +80,7 @@ The app must be able to emit JSON with:
 - `history.forwardCount`
 - `viewport`
 - `visibleBlocks`
-- `visibleBlocks[*].kind` values that distinguish media blocks such as `animatedImage` and `video`
+- `visibleBlocks[*].kind` values that distinguish rich blocks such as `animatedImage`, `video`, and `mermaidDiagram`
 - `sidebar.selectedNode`
 
 ## Perf snapshot

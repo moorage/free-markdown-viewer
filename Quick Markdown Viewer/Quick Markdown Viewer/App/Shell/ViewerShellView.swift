@@ -8,18 +8,25 @@ import Security
 import UIKit
 #endif
 
+private enum SidebarPane: String, Hashable {
+    case files
+    case search
+}
+
 struct ViewerShellView: View {
     @ObservedObject var model: AppModel
     let onOpenFolder: (() -> Void)?
     let onOpenGitHubURLPrompt: (() -> Void)?
     let onPrintSelectedDocument: (() -> Void)?
     let onPrintAllDocuments: (() -> Void)?
+    let onCancelPrintPreparation: (() -> Void)?
     let onInstallCommandLineTool: (() -> Void)?
     let shouldShowCommandLineToolPrompt: Bool
     @Environment(\.openURL) private var openURL
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.colorScheme) private var colorScheme
     @State private var mediaPreviewTarget: AppModel.MediaLinkTarget?
+    @State private var mermaidPreviewTarget: MermaidDiagramPreviewTarget?
     @State private var isPresentingIgnorePatterns = false
     @State private var isOutlinePresented = false
     @State private var documentScrollTargetID: String?
@@ -27,11 +34,20 @@ struct ViewerShellView: View {
     @State private var outlinePaneWidth = OutlinePaneMetrics.defaultWidth
     @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
     @State private var compactShowsSidebar = true
+    @State private var sidebarPane: SidebarPane = .files
     @State private var sidebarFilterText = ""
+    @State private var sidebarTreeSnapshot = SidebarFileTree.Snapshot(files: [])
+    @State private var visibleSidebarRowsCache: [SidebarFileTree.Row] = []
+    @State private var visibleSidebarRowIDsCache: Set<String> = []
+    @State private var expandedSidebarFolderIDs: Set<String> = []
+    @State private var activeSidebarRowID: String?
     @State private var hasConsumedUITestMediaPreview = false
+    @State private var hasAppliedUITestPresentationOptions = false
     #if os(macOS)
     @FocusState private var sidebarFocused: Bool
     @FocusState private var sidebarFilterFocused: Bool
+    @FocusState private var searchFieldFocused: Bool
+    @State private var searchCommandHandlerID = UUID()
     #endif
 
     var body: some View {
@@ -58,9 +74,18 @@ struct ViewerShellView: View {
             }
         }
         .onAppear(perform: handleUITestMediaPreviewIfNeeded)
+        .onAppear(perform: applyUITestPresentationOptionsIfNeeded)
         .onChange(of: model.selectedPath) { _ in
             handleUITestMediaPreviewIfNeeded()
+            applyUITestPresentationOptionsIfNeeded()
         }
+        .onChange(of: model.files) { _ in
+            applyUITestPresentationOptionsIfNeeded()
+        }
+        #if os(macOS)
+        .onAppear(perform: installMacSearchCommandHandler)
+        .onDisappear(perform: uninstallMacSearchCommandHandler)
+        #endif
         .onChange(of: model.outlineItems) { outlineItems in
             if outlineItems.isEmpty {
                 isOutlinePresented = false
@@ -68,9 +93,13 @@ struct ViewerShellView: View {
             } else if activeOutlineBlockID.map({ blockID in !outlineItems.contains { $0.blockID == blockID } }) ?? true {
                 activeOutlineBlockID = outlineItems.first?.blockID
             }
+            applyUITestPresentationOptionsIfNeeded()
         }
         .sheet(item: sheetMediaPreviewBinding) { target in
             mediaPreview(for: target)
+        }
+        .sheet(item: sheetMermaidPreviewBinding) { target in
+            mermaidPreview(for: target)
         }
         .sheet(isPresented: $isPresentingIgnorePatterns) {
             WorkspaceIgnorePatternsSheet(model: model)
@@ -78,7 +107,17 @@ struct ViewerShellView: View {
         .popover(item: popoverMediaPreviewBinding) { target in
             mediaPreview(for: target)
         }
+        .popover(item: popoverMermaidPreviewBinding) { target in
+            mermaidPreview(for: target)
+        }
         #if os(macOS)
+        .focusedSceneValue(\.searchCurrentDocumentAction, SearchCurrentDocumentAction(handler: {
+            activateSearchSidebar(scope: .currentDocument)
+        }))
+        .focusedSceneValue(\.searchAllDocumentsAction, SearchAllDocumentsAction(handler: {
+            activateSearchSidebar(scope: .allDocuments)
+        }))
+        .focusedSceneValue(\.selectNextSearchResultAction, SelectNextSearchResultAction(handler: model.selectNextSearchResult))
         .toolbar {
             ToolbarItem(placement: .navigation) {
                 macNavigationControls
@@ -111,14 +150,32 @@ struct ViewerShellView: View {
         .overlay(alignment: .topLeading) {
             VStack(alignment: .leading, spacing: 0) {
                 Text(model.windowTitle)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(model.windowTitle)
                     .accessibilityIdentifier(AccessibilityIDs.title)
                 if model.launchOptions.uiTestMode {
-                    Text(model.lastPrintRequestScope ?? "none")
+                    let printScope = model.lastPrintRequestScope ?? "none"
+                    Text(printScope)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(printScope)
                         .accessibilityIdentifier(AccessibilityIDs.printRequestScope)
-                    Text(model.lastPrintRequestStatus ?? "idle")
+                    let printStatus = model.lastPrintRequestStatus ?? "idle"
+                    Text(printStatus)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(printStatus)
                         .accessibilityIdentifier(AccessibilityIDs.printRequestStatus)
+                    Text(model.searchQuery)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(model.searchQuery)
+                        .accessibilityIdentifier(AccessibilityIDs.searchQueryState)
+                    let resultCount = "\(model.searchResults.count)"
+                    Text(resultCount)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(resultCount)
+                        .accessibilityIdentifier(AccessibilityIDs.searchResultCountState)
                 }
             }
+            .accessibilityElement(children: .contain)
             .opacity(0.01)
             .allowsHitTesting(false)
         }
@@ -140,6 +197,7 @@ struct ViewerShellView: View {
                 }
                 .padding(6)
                 .background(.thinMaterial)
+                .opacity(0)
             }
         }
         .background(MacWindowConfiguration(title: model.windowTitle, contentSize: model.launchOptions.windowSize))
@@ -153,6 +211,92 @@ struct ViewerShellView: View {
         model.launchOptions.platformTarget == .ios && model.launchOptions.deviceClass == .iphone
         #endif
     }
+
+    private func applyUITestPresentationOptionsIfNeeded() {
+        let launchOptions = model.launchOptions
+        guard launchOptions.uiTestMode, !hasAppliedUITestPresentationOptions else { return }
+
+        let trimmedSearchQuery = launchOptions.uiTestSearchQuery?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hasSearchRequest = trimmedSearchQuery.map { !$0.isEmpty } ?? false
+        guard launchOptions.uiTestShowSidebar || launchOptions.uiTestShowOutline || hasSearchRequest else {
+            hasAppliedUITestPresentationOptions = true
+            return
+        }
+
+        var appliedAllRequestedOptions = true
+        if launchOptions.uiTestShowSidebar {
+            if model.files.isEmpty {
+                appliedAllRequestedOptions = false
+            } else {
+                sidebarPane = .files
+                showSidebarForUITestPresentation()
+            }
+        }
+
+        if launchOptions.uiTestShowOutline {
+            if model.outlineItems.isEmpty {
+                appliedAllRequestedOptions = false
+            } else {
+                isOutlinePresented = true
+            }
+        }
+
+        if let searchQuery = trimmedSearchQuery, !searchQuery.isEmpty {
+            if model.files.isEmpty {
+                appliedAllRequestedOptions = false
+            } else {
+                let scope = launchOptions.uiTestSearchScope
+                    .flatMap(DocumentSearchScope.init(rawValue:)) ?? .currentDocument
+                model.activateSearch(scope: scope)
+                model.updateSearchQuery(searchQuery)
+                sidebarPane = .search
+                showSidebarForUITestPresentation()
+                #if os(macOS)
+                searchFieldFocused = true
+                #endif
+            }
+        }
+
+        if appliedAllRequestedOptions {
+            hasAppliedUITestPresentationOptions = true
+        }
+    }
+
+    private func showSidebarForUITestPresentation() {
+        if isCompactPhoneLayout {
+            compactShowsSidebar = true
+        } else {
+            columnVisibility = .all
+        }
+    }
+
+    #if os(macOS)
+    private func installMacSearchCommandHandler() {
+        MacSearchCommandDispatcher.setHandler(id: searchCommandHandlerID, handleMacSearchCommand(_:))
+    }
+
+    private func uninstallMacSearchCommandHandler() {
+        MacSearchCommandDispatcher.clearHandler(id: searchCommandHandlerID)
+    }
+
+    private func handleMacSearchCommand(_ command: MacSearchCommand) {
+        switch command {
+        case .currentDocument:
+            activateSearchSidebar(scope: .currentDocument)
+        case .allDocuments:
+            activateSearchSidebar(scope: .allDocuments)
+        case .nextResult:
+            model.selectNextSearchResult()
+        }
+    }
+
+    private func activateSearchSidebar(scope: DocumentSearchScope) {
+        model.activateSearch(scope: scope)
+        sidebarPane = .search
+        searchFieldFocused = true
+    }
+
+    #endif
 
     private var sheetMediaPreviewBinding: Binding<AppModel.MediaLinkTarget?> {
         Binding(
@@ -177,6 +321,34 @@ struct ViewerShellView: View {
                     }
                 } else {
                     mediaPreviewTarget = newValue
+                }
+            }
+        )
+    }
+
+    private var sheetMermaidPreviewBinding: Binding<MermaidDiagramPreviewTarget?> {
+        Binding(
+            get: { usesSheetPreview ? mermaidPreviewTarget : nil },
+            set: { newValue in
+                if usesSheetPreview {
+                    mermaidPreviewTarget = newValue
+                } else if newValue == nil {
+                    mermaidPreviewTarget = nil
+                }
+            }
+        )
+    }
+
+    private var popoverMermaidPreviewBinding: Binding<MermaidDiagramPreviewTarget?> {
+        Binding(
+            get: { usesSheetPreview ? nil : mermaidPreviewTarget },
+            set: { newValue in
+                if usesSheetPreview {
+                    if newValue == nil {
+                        mermaidPreviewTarget = nil
+                    }
+                } else {
+                    mermaidPreviewTarget = newValue
                 }
             }
         )
@@ -207,25 +379,42 @@ struct ViewerShellView: View {
 
     private var sidebarContent: some View {
         VStack(spacing: 0) {
-            sidebarFilterField
+            sidebarPanePicker
 
-            List(filteredFiles) { file in
-                sidebarRow(for: file)
+            if sidebarPane == .files {
+                sidebarFilterField
+
+                List(visibleSidebarRows) { row in
+                    sidebarRow(for: row)
+                }
+                .accessibilityIdentifier(AccessibilityIDs.sidebarList)
+            } else {
+                searchSidebarContent
             }
         }
         #if os(macOS)
-        .focusable()
+        .focusable(sidebarPane == .files)
         .focused($sidebarFocused)
         #endif
         .listStyle(.sidebar)
-        .accessibilityIdentifier(AccessibilityIDs.sidebarList)
         #if os(macOS)
         .onMoveCommand(perform: handleSidebarMove)
         .background(
             MacSidebarKeyEventBridge(
-                isEnabled: sidebarFocused || sidebarFilterFocused,
-                onMoveUp: { selectAdjacentSidebarFile(offset: -1) },
-                onMoveDown: { selectAdjacentSidebarFile(offset: 1) },
+                isEnabled: sidebarPane == .files && (sidebarFocused || sidebarFilterFocused),
+                onMoveUp: { selectAdjacentSidebarRow(offset: -1) },
+                onMoveDown: { selectAdjacentSidebarRow(offset: 1) },
+                onMoveLeft: collapseActiveSidebarRow,
+                onMoveRight: expandActiveSidebarRow,
+                onSearchDocument: {
+                    activateSearchSidebar(scope: .currentDocument)
+                },
+                onSearchAllDocuments: {
+                    activateSearchSidebar(scope: .allDocuments)
+                },
+                onNextSearchResult: {
+                    model.selectNextSearchResult()
+                },
                 onQuickFilter: {
                     sidebarFilterFocused = true
                 },
@@ -238,6 +427,98 @@ struct ViewerShellView: View {
             sidebarFocused = true
         }
         #endif
+        .onChange(of: model.selectedPath) { _ in
+            activeSidebarRowID = model.selectedPath.map(SidebarFileTree.fileRowID(for:))
+            expandSelectedSidebarAncestors()
+        }
+        .onChange(of: model.files) { _ in
+            rebuildSidebarTreeSnapshot()
+        }
+        .onChange(of: sidebarFilterText) { _ in
+            rebuildSidebarTreeSnapshot()
+        }
+        .onChange(of: expandedSidebarFolderIDs) { _ in
+            refreshVisibleSidebarRows()
+        }
+        .onChange(of: model.searchActivationCounter) { _ in
+            sidebarPane = .search
+            #if os(macOS)
+            searchFieldFocused = true
+            #endif
+        }
+        .onAppear {
+            rebuildSidebarTreeSnapshot()
+            activeSidebarRowID = model.selectedPath.map(SidebarFileTree.fileRowID(for:))
+            expandSelectedSidebarAncestors()
+        }
+    }
+
+    private var sidebarPanePicker: some View {
+        HStack(spacing: 6) {
+            sidebarPaneTab(
+                pane: .files,
+                title: "Files",
+                systemImage: "folder",
+                accessibilityID: AccessibilityIDs.sidebarFilesTab
+            )
+            sidebarPaneTab(
+                pane: .search,
+                title: "Search",
+                systemImage: "magnifyingglass",
+                accessibilityID: AccessibilityIDs.sidebarSearchTab
+            )
+        }
+        .padding(.horizontal, 10)
+        .padding(.top, 8)
+        .padding(.bottom, 6)
+        .accessibilityLabel("Sidebar Mode")
+    }
+
+    private func sidebarPaneTab(
+        pane: SidebarPane,
+        title: String,
+        systemImage: String,
+        accessibilityID: String
+    ) -> some View {
+        let isSelected = sidebarPane == pane
+        return Button {
+            sidebarPane = pane
+            #if os(macOS)
+            if pane == .search {
+                searchFieldFocused = true
+            } else {
+                sidebarFocused = true
+            }
+            #endif
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                    .accessibilityHidden(true)
+                Text(title)
+                    .font(ViewerFont.body(scale: 0.92))
+                    .fontWeight(isSelected ? .semibold : .regular)
+                    .foregroundStyle(isSelected ? Color.primary : Color.secondary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(isSelected ? Color.accentColor.opacity(0.16) : Color.secondary.opacity(0.08))
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(isSelected ? Color.accentColor.opacity(0.28) : Color.secondary.opacity(0.14), lineWidth: 1)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(title)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .accessibilityValue(isSelected ? "selected" : "")
+        .accessibilityIdentifier(accessibilityID)
     }
 
     private var sidebarFilterField: some View {
@@ -292,21 +573,184 @@ struct ViewerShellView: View {
         AppModel.filteredFiles(from: model.files, matching: sidebarFilterText)
     }
 
-    private func sidebarRow(for file: MarkdownFileNode) -> some View {
-        let isSelected = model.selectedPath == file.path
+    private var searchSidebarContent: some View {
+        VStack(spacing: 0) {
+            searchField
+            searchScopePicker
+
+            if model.isSearching {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Searching...")
+                        .font(ViewerFont.body(scale: 1))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+            }
+
+            List(model.searchResults) { result in
+                Button {
+                    model.selectSearchResult(result)
+                    showDetailIfNeeded()
+                } label: {
+                    SearchResultRow(
+                        result: result,
+                        isSelected: result.id == model.selectedSearchResultID
+                    )
+                }
+                .buttonStyle(.plain)
+                .listRowInsets(EdgeInsets(top: 2, leading: 6, bottom: 2, trailing: 6))
+                .listRowBackground(sidebarRowBackground(isSelected: result.id == model.selectedSearchResultID))
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("\(result.fileName) L\(result.lineNumber) \(result.snippet)")
+                .accessibilityIdentifier(AccessibilityIDs.searchResultFile(result.fileName))
+            }
+        }
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            #if os(macOS)
+            MacLiveSearchField(
+                placeholder: "Search",
+                text: searchQueryBinding,
+                accessibilityIdentifier: AccessibilityIDs.searchField,
+                focusTrigger: model.searchActivationCounter
+            )
+            .frame(minWidth: 80, maxWidth: .infinity, minHeight: 24)
+            #else
+            TextField("Search", text: searchQueryBinding)
+                .accessibilityIdentifier(AccessibilityIDs.searchField)
+                .textFieldStyle(.roundedBorder)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled(true)
+            #endif
+            Button {
+                model.selectNextSearchResult()
+            } label: {
+                Image(systemName: "arrow.down")
+            }
+            .buttonStyle(.plain)
+            .disabled(model.searchResults.isEmpty)
+            .accessibilityLabel("Next Search Result")
+            .accessibilityIdentifier(AccessibilityIDs.searchNextButton)
+        }
+        #if os(macOS)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(Color(nsColor: .windowBackgroundColor))
+        #else
+        .padding(.horizontal, 12)
+        .padding(.top, 10)
+        .padding(.bottom, 8)
+        .background(Color(uiColor: .systemBackground))
+        #endif
+    }
+
+    private var searchScopePicker: some View {
+        Picker("Search Scope", selection: searchScopeBinding) {
+            ForEach(DocumentSearchScope.allCases, id: \.self) { scope in
+                Text(scope.title).tag(scope)
+            }
+        }
+        .pickerStyle(.segmented)
+        .padding(.horizontal, 10)
+        .padding(.bottom, 8)
+    }
+
+    private var searchQueryBinding: Binding<String> {
+        Binding(
+            get: { model.searchQuery },
+            set: { model.updateSearchQuery($0) }
+        )
+    }
+
+    private var searchScopeBinding: Binding<DocumentSearchScope> {
+        Binding(
+            get: { model.searchScope },
+            set: { model.activateSearch(scope: $0) }
+        )
+    }
+
+    private var visibleSidebarRows: [SidebarFileTree.Row] {
+        visibleSidebarRowsCache
+    }
+
+    private func rebuildSidebarTreeSnapshot() {
+        sidebarTreeSnapshot = SidebarFileTree.Snapshot(files: filteredFiles)
+        refreshVisibleSidebarRows()
+    }
+
+    private func refreshVisibleSidebarRows() {
+        visibleSidebarRowsCache = sidebarTreeSnapshot.visibleRows(
+            expandedFolderIDs: expandedSidebarFolderIDs,
+            expandsAllFolders: sidebarFilterText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        )
+        visibleSidebarRowIDsCache = Set(visibleSidebarRowsCache.map(\.id))
+    }
+
+    private var resolvedActiveSidebarRowID: String? {
+        if let activeSidebarRowID,
+           visibleSidebarRowIDsCache.contains(activeSidebarRowID) {
+            return activeSidebarRowID
+        }
+        if let selectedPath = model.selectedPath {
+            let selectedRowID = SidebarFileTree.fileRowID(for: selectedPath)
+            if visibleSidebarRowIDsCache.contains(selectedRowID) {
+                return selectedRowID
+            }
+        }
+        return visibleSidebarRows.first?.id
+    }
+
+    @ViewBuilder
+    private func sidebarRow(for row: SidebarFileTree.Row) -> some View {
+        switch row {
+        case let .folder(folder):
+            sidebarFolderRow(for: folder)
+        case let .file(file):
+            sidebarFileRow(for: file)
+        }
+    }
+
+    private func sidebarFolderRow(for folder: SidebarFileTree.FolderRow) -> some View {
+        let isFocused = resolvedActiveSidebarRowID == folder.id
         return Button {
             #if os(macOS)
             sidebarFocused = true
             #endif
-            model.openFile(file.path)
+            activeSidebarRowID = folder.id
+            toggleSidebarFolder(folder)
+        } label: {
+            SidebarFolderRow(folder: folder, isFocused: isFocused)
+        }
+        .buttonStyle(.plain)
+        .listRowInsets(EdgeInsets(top: 2, leading: 6, bottom: 2, trailing: 6))
+        .listRowBackground(sidebarFocusedRowBackground(isFocused: isFocused))
+        .accessibilityIdentifier(AccessibilityIDs.sidebarFolderNode(folder.path))
+    }
+
+    private func sidebarFileRow(for file: SidebarFileTree.FileRow) -> some View {
+        let isSelected = model.selectedPath == file.file.path || resolvedActiveSidebarRowID == file.id
+        return Button {
+            #if os(macOS)
+            sidebarFocused = true
+            #endif
+            activeSidebarRowID = file.id
+            model.openFile(file.file.path)
             showDetailIfNeeded()
         } label: {
-            SidebarFileRow(file: file, isSelected: isSelected)
+            SidebarFileRow(file: file.file, depth: file.depth, isSelected: isSelected)
         }
         .buttonStyle(.plain)
         .listRowInsets(EdgeInsets(top: 2, leading: 6, bottom: 2, trailing: 6))
         .listRowBackground(sidebarRowBackground(isSelected: isSelected))
-        .accessibilityIdentifier(AccessibilityIDs.sidebarNode(file.path.rawValue))
+        .accessibilityIdentifier(AccessibilityIDs.sidebarNode(file.file.path.rawValue))
     }
 
     #if os(macOS)
@@ -317,23 +761,110 @@ struct ViewerShellView: View {
 
         switch direction {
         case .up:
-            selectAdjacentSidebarFile(offset: -1)
+            selectAdjacentSidebarRow(offset: -1)
         case .down:
-            selectAdjacentSidebarFile(offset: 1)
+            selectAdjacentSidebarRow(offset: 1)
+        case .left:
+            collapseActiveSidebarRow()
+        case .right:
+            expandActiveSidebarRow()
         default:
             break
         }
     }
     #endif
 
-    private func selectAdjacentSidebarFile(offset: Int) {
-        guard let targetPath = AppModel.adjacentFilePath(
-            from: model.selectedPath,
-            within: filteredFiles,
+    private func selectAdjacentSidebarRow(offset: Int) {
+        guard let targetID = SidebarFileTree.adjacentRowID(
+            from: resolvedActiveSidebarRowID,
+            within: visibleSidebarRows,
             offset: offset
-        ) else { return }
-        model.openFile(targetPath)
+        ),
+        let row = SidebarFileTree.row(withID: targetID, within: visibleSidebarRows) else { return }
+        selectSidebarRow(row, opensFiles: true)
+    }
+
+    private func expandActiveSidebarRow() {
+        guard let row = SidebarFileTree.row(withID: resolvedActiveSidebarRowID, within: visibleSidebarRows) else { return }
+        switch row {
+        case let .folder(folder):
+            if folder.isExpanded {
+                selectFirstChild(after: folder)
+            } else {
+                expandedSidebarFolderIDs.insert(folder.path)
+                refreshVisibleSidebarRows()
+                activeSidebarRowID = folder.id
+            }
+        case .file:
+            break
+        }
+    }
+
+    private func collapseActiveSidebarRow() {
+        guard let row = SidebarFileTree.row(withID: resolvedActiveSidebarRowID, within: visibleSidebarRows),
+              let rowIndex = visibleSidebarRows.firstIndex(of: row) else { return }
+        switch row {
+        case let .folder(folder):
+            if folder.isExpanded {
+                expandedSidebarFolderIDs.remove(folder.path)
+                refreshVisibleSidebarRows()
+                activeSidebarRowID = folder.id
+            } else {
+                selectParentFolder(before: rowIndex, depth: folder.depth)
+            }
+        case let .file(file):
+            selectParentFolder(before: rowIndex, depth: file.depth)
+        }
+    }
+
+    private func toggleSidebarFolder(_ folder: SidebarFileTree.FolderRow) {
+        if folder.isExpanded {
+            expandedSidebarFolderIDs.remove(folder.path)
+        } else {
+            expandedSidebarFolderIDs.insert(folder.path)
+        }
+        refreshVisibleSidebarRows()
+    }
+
+    private func selectFirstChild(after folder: SidebarFileTree.FolderRow) {
+        guard let folderIndex = visibleSidebarRows.firstIndex(where: { $0.id == folder.id }) else { return }
+        let childIndex = folderIndex + 1
+        guard visibleSidebarRows.indices.contains(childIndex) else { return }
+        let child = visibleSidebarRows[childIndex]
+        switch child {
+        case let .folder(childFolder) where childFolder.depth > folder.depth:
+            activeSidebarRowID = childFolder.id
+        case let .file(childFile) where childFile.depth > folder.depth:
+            activeSidebarRowID = childFile.id
+            model.openFile(childFile.file.path)
+            showDetailIfNeeded()
+        default:
+            break
+        }
+    }
+
+    private func selectParentFolder(before rowIndex: Int, depth: Int) {
+        guard depth > 0 else { return }
+        for index in stride(from: rowIndex - 1, through: 0, by: -1) {
+            guard case let .folder(folder) = visibleSidebarRows[index], folder.depth == depth - 1 else { continue }
+            activeSidebarRowID = folder.id
+            return
+        }
+    }
+
+    private func selectSidebarRow(_ row: SidebarFileTree.Row, opensFiles: Bool) {
+        activeSidebarRowID = row.id
+        guard opensFiles, let filePath = row.filePath else { return }
+        model.openFile(filePath)
         showDetailIfNeeded()
+    }
+
+    private func expandSelectedSidebarAncestors() {
+        let before = expandedSidebarFolderIDs
+        expandedSidebarFolderIDs.formUnion(SidebarFileTree.folderPathPrefixes(for: model.selectedPath))
+        if expandedSidebarFolderIDs != before {
+            refreshVisibleSidebarRows()
+        }
     }
 
     #if os(macOS)
@@ -353,6 +884,18 @@ struct ViewerShellView: View {
             if isSelected {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(Color.accentColor.opacity(0.22))
+                    .padding(.vertical, 1)
+            } else {
+                Color.clear
+            }
+        }
+    }
+
+    private func sidebarFocusedRowBackground(isFocused: Bool) -> some View {
+        Group {
+            if isFocused {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(Color.secondary.opacity(0.42), lineWidth: 1)
                     .padding(.vertical, 1)
             } else {
                 Color.clear
@@ -466,7 +1009,12 @@ struct ViewerShellView: View {
                     scrollTargetID: $documentScrollTargetID,
                     outlineItems: model.outlineItems,
                     tracksActiveOutline: isOutlinePresented && canShowOutline,
-                    activeOutlineBlockID: $activeOutlineBlockID
+                    activeOutlineBlockID: $activeOutlineBlockID,
+                    searchHighlightQuery: model.searchQuery,
+                    activeSearchBlockID: model.selectedSearchResult?.blockID,
+                    onOpenMermaidPreview: { target in
+                        mermaidPreviewTarget = target
+                    }
                 )
                 .padding(20)
             } else {
@@ -482,7 +1030,14 @@ struct ViewerShellView: View {
                 loadingOverlay
             } else if model.isLoadingWorkspace {
                 workspaceLoadingOverlay
+            } else if model.isPreparingPrint {
+                printPreparingOverlay
             }
+        }
+        .onChange(of: model.searchScrollTargetID) { targetID in
+            guard let targetID else { return }
+            documentScrollTargetID = targetID
+            model.clearSearchScrollTarget()
         }
     }
 
@@ -670,6 +1225,29 @@ struct ViewerShellView: View {
         }
         .frame(width: 240, height: 140)
         .allowsHitTesting(false)
+    }
+
+    private var printPreparingOverlay: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(.ultraThinMaterial)
+            VStack(spacing: 10) {
+                ProgressView()
+                    .controlSize(.regular)
+                Text(model.printPreparationMessage ?? "Preparing print job...")
+                    .font(ViewerFont.headline(scale: model.fontScale))
+                    .multilineTextAlignment(.center)
+                if let onCancelPrintPreparation {
+                    Button("Cancel", action: onCancelPrintPreparation)
+                        .buttonStyle(.bordered)
+                        .accessibilityIdentifier(AccessibilityIDs.printCancelButton)
+                }
+            }
+            .padding(24)
+        }
+        .frame(width: 320, height: 170)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(AccessibilityIDs.printPreparingIndicator)
     }
 
     private var shouldShowEmptyWorkspaceState: Bool {
@@ -939,40 +1517,28 @@ struct ViewerShellView: View {
     private var macPrintControl: AnyView? {
         guard let onPrintSelectedDocument, let onPrintAllDocuments else { return nil }
         return AnyView(
-            HStack(spacing: 0) {
+            ControlGroup {
                 Button {
                     onPrintSelectedDocument()
                 } label: {
                     Image(systemName: "printer")
-                        .frame(width: 28, height: 22)
                 }
-                .buttonStyle(.plain)
                 .disabled(!model.canPrintSelectedDocument)
                 .accessibilityIdentifier(AccessibilityIDs.printSelectedButton)
+                .accessibilityLabel("Print")
                 .help("Print the selected document")
 
-                Divider()
-                    .frame(height: 16)
-
-                Button("All") {
+                Button {
                     onPrintAllDocuments()
+                } label: {
+                    Image(systemName: "printer.fill")
                 }
-                .buttonStyle(.plain)
-                .padding(.horizontal, 10)
-                .frame(height: 22)
                 .disabled(!model.canPrintAllDocuments)
                 .accessibilityIdentifier(AccessibilityIDs.printAllButton)
+                .accessibilityLabel("Print All")
                 .help("Print every document in the workspace")
             }
-            .padding(.horizontal, 2)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(Color.secondary.opacity(0.12))
-            )
-            .overlay(
-                Capsule(style: .continuous)
-                    .stroke(Color.secondary.opacity(0.18), lineWidth: 1)
-            )
+            .labelStyle(.iconOnly)
         )
     }
     #endif
@@ -1031,6 +1597,27 @@ struct ViewerShellView: View {
         )
     }
 
+    @ViewBuilder
+    private func mermaidPreview(for target: MermaidDiagramPreviewTarget) -> some View {
+        MermaidDiagramPreviewView(
+            target: target,
+            onClose: { mermaidPreviewTarget = nil },
+            onOpenInWindow: mermaidOpenInWindowAction(for: target),
+            presentation: .constrainedSheet
+        )
+    }
+
+    private func mermaidOpenInWindowAction(for target: MermaidDiagramPreviewTarget) -> (() -> Void)? {
+        #if os(macOS)
+        return {
+            MermaidPreviewWindowPresenter.shared.open(target: target)
+            mermaidPreviewTarget = nil
+        }
+        #else
+        return nil
+        #endif
+    }
+
     private func openInBrowser(_ url: URL) {
         #if os(macOS)
         if let browserApplicationURL = NSWorkspace.shared.urlForApplication(toOpen: URL(string: "https://example.com")!) {
@@ -1048,7 +1635,15 @@ struct ViewerShellView: View {
 
     private func updatePreferredColumnVisibility() {
         if isCompactPhoneLayout {
+            if model.launchOptions.uiTestMode && model.launchOptions.uiTestShowSidebar {
+                compactShowsSidebar = true
+                return
+            }
             compactShowsSidebar = !model.shouldPreferDetailInCompactNavigation
+            return
+        }
+        if model.launchOptions.uiTestMode && model.launchOptions.uiTestShowSidebar {
+            columnVisibility = .all
             return
         }
         guard horizontalSizeClass == .compact else {
@@ -1213,6 +1808,11 @@ struct DocumentBlockScrollView: View {
     let outlineItems: [MarkdownOutlineItem]
     let tracksActiveOutline: Bool
     @Binding var activeOutlineBlockID: String?
+    let searchHighlightQuery: String
+    let activeSearchBlockID: String?
+    let onOpenMermaidPreview: (MermaidDiagramPreviewTarget) -> Void
+    @State private var pendingHeadingOffsets: [String: CGFloat] = [:]
+    @State private var activeOutlineUpdateTask: Task<Void, Never>?
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -1225,21 +1825,17 @@ struct DocumentBlockScrollView: View {
                     syntaxTheme: syntaxTheme,
                     usesLazyLayout: true,
                     isPrinting: false,
-                    tracksHeadingOffsets: tracksActiveOutline
+                    tracksHeadingOffsets: tracksActiveOutline,
+                    searchHighlightQuery: searchHighlightQuery,
+                    activeSearchBlockID: activeSearchBlockID,
+                    onOpenMermaidPreview: onOpenMermaidPreview
                 )
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.vertical, 4)
             }
             .coordinateSpace(name: DocumentScrollCoordinateSpace.name)
             .onPreferenceChange(HeadingOffsetPreferenceKey.self) { headingOffsets in
-                let resolvedBlockID = AppModel.activeOutlineBlockID(
-                    from: headingOffsets,
-                    outlineItems: outlineItems,
-                    currentBlockID: activeOutlineBlockID
-                )
-                if resolvedBlockID != activeOutlineBlockID {
-                    activeOutlineBlockID = resolvedBlockID
-                }
+                scheduleActiveOutlineUpdate(headingOffsets)
             }
             .onChange(of: scrollTargetID) { targetID in
                 guard let targetID else { return }
@@ -1250,9 +1846,37 @@ struct DocumentBlockScrollView: View {
                     scrollTargetID = nil
                 }
             }
+            .onDisappear {
+                activeOutlineUpdateTask?.cancel()
+                activeOutlineUpdateTask = nil
+            }
         }
         .textSelection(.enabled)
         .accessibilityIdentifier(AccessibilityIDs.scrollView)
+    }
+
+    private func scheduleActiveOutlineUpdate(_ headingOffsets: [String: CGFloat]) {
+        guard tracksActiveOutline else { return }
+        pendingHeadingOffsets = headingOffsets
+        guard activeOutlineUpdateTask == nil else { return }
+
+        activeOutlineUpdateTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: DocumentOutlineTracking.updateIntervalNanoseconds)
+            applyPendingActiveOutlineUpdate()
+        }
+    }
+
+    @MainActor
+    private func applyPendingActiveOutlineUpdate() {
+        activeOutlineUpdateTask = nil
+        let resolvedBlockID = AppModel.activeOutlineBlockID(
+            from: pendingHeadingOffsets,
+            outlineItems: outlineItems,
+            currentBlockID: activeOutlineBlockID
+        )
+        if resolvedBlockID != activeOutlineBlockID {
+            activeOutlineBlockID = resolvedBlockID
+        }
     }
 }
 
@@ -1266,6 +1890,10 @@ private struct HeadingOffsetPreferenceKey: PreferenceKey {
     static func reduce(value: inout [String: CGFloat], nextValue: () -> [String: CGFloat]) {
         value.merge(nextValue(), uniquingKeysWith: { $1 })
     }
+}
+
+private enum DocumentOutlineTracking {
+    static let updateIntervalNanoseconds: UInt64 = 80_000_000
 }
 
 struct PrintableDocumentCompositionView: View {
@@ -1299,7 +1927,10 @@ struct PrintableDocumentCompositionView: View {
                         syntaxTheme: syntaxTheme,
                         usesLazyLayout: false,
                         isPrinting: true,
-                        tracksHeadingOffsets: false
+                        tracksHeadingOffsets: false,
+                        searchHighlightQuery: "",
+                        activeSearchBlockID: nil,
+                        onOpenMermaidPreview: { _ in }
                     )
                 }
 
@@ -1324,6 +1955,9 @@ private struct DocumentBlockStackView: View {
     let usesLazyLayout: Bool
     let isPrinting: Bool
     let tracksHeadingOffsets: Bool
+    let searchHighlightQuery: String
+    let activeSearchBlockID: String?
+    let onOpenMermaidPreview: (MermaidDiagramPreviewTarget) -> Void
 
     var body: some View {
         Group {
@@ -1348,7 +1982,10 @@ private struct DocumentBlockStackView: View {
                 fontScale: fontScale,
                 tabularPresentation: tabularPresentation,
                 syntaxTheme: syntaxTheme,
-                isPrinting: isPrinting
+                isPrinting: isPrinting,
+                searchHighlightQuery: searchHighlightQuery,
+                activeSearchBlockID: activeSearchBlockID,
+                onOpenMermaidPreview: onOpenMermaidPreview
             )
             .id(block.id)
             .background(headingOffsetReporter(for: block))
@@ -1428,19 +2065,10 @@ private struct DocumentOutlineRow: View {
         .padding(.vertical, 7)
         .padding(.leading, CGFloat(max(0, item.level - 1)) * 12 + 14)
         .padding(.trailing, 14)
-        .background {
+        .overlay {
             if isActive {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.accentColor.opacity(0.14))
-            }
-        }
-        .overlay(alignment: .leading) {
-            if isActive {
-                RoundedRectangle(cornerRadius: 2, style: .continuous)
-                    .fill(Color.accentColor)
-                    .frame(width: 3)
-                    .padding(.vertical, 6)
-                    .padding(.leading, 5)
+                    .stroke(Color.secondary.opacity(0.42), lineWidth: 1)
             }
         }
     }
@@ -1469,10 +2097,15 @@ private struct DocumentOutlineTitleText: View {
 
 private struct SidebarFileRow: View {
     let file: MarkdownFileNode
+    let depth: Int
     let isSelected: Bool
 
     var body: some View {
         HStack(spacing: 10) {
+            if depth > 0 {
+                Color.clear
+                    .frame(width: CGFloat(depth) * 16)
+            }
             Image(systemName: file.kind.iconSystemName)
                 .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
             Text(file.name)
@@ -1487,6 +2120,151 @@ private struct SidebarFileRow: View {
     }
 }
 
+private struct SidebarFolderRow: View {
+    let folder: SidebarFileTree.FolderRow
+    let isFocused: Bool
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if folder.depth > 0 {
+                Color.clear
+                    .frame(width: CGFloat(folder.depth) * 16)
+            }
+            Image(systemName: folder.isExpanded ? "chevron.down" : "chevron.right")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(width: 10)
+            Image(systemName: folder.isExpanded ? "folder.fill" : "folder")
+                .foregroundStyle(isFocused ? Color.accentColor : Color.secondary)
+            Text(folder.label)
+                .font(ViewerFont.body(scale: 1))
+                .foregroundStyle(isFocused ? Color.accentColor : Color.primary)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .contentShape(Rectangle())
+    }
+}
+
+private struct SearchResultRow: View {
+    let result: DocumentSearchResult
+    let isSelected: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Image(systemName: "doc.text.magnifyingglass")
+                    .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                Text(result.fileName)
+                    .font(ViewerFont.body(scale: 1))
+                    .fontWeight(.semibold)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                Text("L\(result.lineNumber)")
+                    .font(ViewerFont.monospacedBody(scale: 0.86))
+                    .foregroundStyle(.secondary)
+            }
+            Text(result.snippet)
+                .font(ViewerFont.body(scale: 0.9))
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .contentShape(Rectangle())
+    }
+}
+
+#if os(macOS)
+private struct MacLiveSearchField: NSViewRepresentable {
+    let placeholder: String
+    @Binding var text: String
+    let accessibilityIdentifier: String
+    let focusTrigger: Int
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text)
+    }
+
+    func makeNSView(context: Context) -> LiveNSSearchField {
+        let field = LiveNSSearchField()
+        field.placeholderString = placeholder
+        field.delegate = context.coordinator
+        field.onTextChange = context.coordinator.updateText(_:)
+        field.target = context.coordinator
+        field.action = #selector(Coordinator.commitText(_:))
+        field.isContinuous = true
+        field.sendAction(on: [.keyUp])
+        field.controlSize = .regular
+        field.setAccessibilityIdentifier(accessibilityIdentifier)
+        return field
+    }
+
+    func updateNSView(_ nsView: LiveNSSearchField, context: Context) {
+        context.coordinator.text = $text
+        nsView.onTextChange = context.coordinator.updateText(_:)
+        nsView.placeholderString = placeholder
+        nsView.setAccessibilityIdentifier(accessibilityIdentifier)
+        if nsView.stringValue != text {
+            nsView.stringValue = text
+        }
+        if context.coordinator.focusTrigger != focusTrigger {
+            context.coordinator.focusTrigger = focusTrigger
+            DispatchQueue.main.async {
+                nsView.window?.makeFirstResponder(nsView)
+            }
+        }
+    }
+
+    final class Coordinator: NSObject, NSSearchFieldDelegate {
+        var text: Binding<String>
+        var focusTrigger = 0
+
+        init(text: Binding<String>) {
+            self.text = text
+        }
+
+        func controlTextDidChange(_ notification: Notification) {
+            guard let field = notification.object as? NSSearchField else { return }
+            updateText(field.stringValue)
+        }
+
+        func controlTextDidEndEditing(_ notification: Notification) {
+            guard let field = notification.object as? NSSearchField else { return }
+            updateText(field.stringValue)
+        }
+
+        @objc func commitText(_ sender: NSSearchField) {
+            updateText(sender.stringValue)
+        }
+
+        func updateText(_ newText: String) {
+            guard text.wrappedValue != newText else { return }
+            text.wrappedValue = newText
+        }
+    }
+
+    final class LiveNSSearchField: NSSearchField {
+        var onTextChange: ((String) -> Void)?
+
+        override func textDidChange(_ notification: Notification) {
+            super.textDidChange(notification)
+            onTextChange?(stringValue)
+        }
+
+        override func textDidEndEditing(_ notification: Notification) {
+            super.textDidEndEditing(notification)
+            onTextChange?(stringValue)
+        }
+    }
+}
+#endif
+
 struct MarkdownBlockView: View {
     let block: MarkdownBlock
     let workspaceRootURL: URL?
@@ -1494,16 +2272,31 @@ struct MarkdownBlockView: View {
     let tabularPresentation: TabularDocumentPresentation?
     let syntaxTheme: SyntaxHighlightTheme
     let isPrinting: Bool
+    let searchHighlightQuery: String
+    let activeSearchBlockID: String?
+    let onOpenMermaidPreview: (MermaidDiagramPreviewTarget) -> Void
 
     var body: some View {
+        blockContent
+            .background {
+                if block.id == activeSearchBlockID {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color.yellow.opacity(0.18))
+                        .padding(-6)
+                }
+            }
+    }
+
+    @ViewBuilder
+    private var blockContent: some View {
         switch block.kind {
         case .heading:
-            Text(MarkdownRenderer.attributedText(for: block))
+            Text(displayAttributedText(for: block))
                 .font(headingFont(for: block.level ?? 1, scale: fontScale))
                 .fontWeight(.semibold)
                 .linkHoverCursor(MarkdownRenderer.attributedText(for: block))
         case .paragraph:
-            Text(MarkdownRenderer.attributedText(for: block))
+            Text(displayAttributedText(for: block))
                 .font(ViewerFont.body(scale: fontScale))
                 .linkHoverCursor(MarkdownRenderer.attributedText(for: block))
         case .unorderedListItem:
@@ -1514,7 +2307,7 @@ struct MarkdownBlockView: View {
                     } else {
                         Text(listMarker)
                             .font(ViewerFont.body(scale: fontScale))
-                        Text(MarkdownRenderer.attributedText(for: block))
+                        Text(displayAttributedText(for: block))
                             .font(ViewerFont.body(scale: fontScale))
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .linkHoverCursor(MarkdownRenderer.attributedText(for: block))
@@ -1534,7 +2327,7 @@ struct MarkdownBlockView: View {
                         Text(listMarker)
                             .font(ViewerFont.monospacedBody(scale: fontScale))
                             .monospacedDigit()
-                        Text(MarkdownRenderer.attributedText(for: block))
+                        Text(displayAttributedText(for: block))
                             .font(ViewerFont.body(scale: fontScale))
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .linkHoverCursor(MarkdownRenderer.attributedText(for: block))
@@ -1550,7 +2343,7 @@ struct MarkdownBlockView: View {
                 Rectangle()
                     .fill(.quaternary)
                     .frame(width: 4)
-                Text(MarkdownRenderer.attributedText(for: block))
+                Text(displayAttributedText(for: block))
                     .font(ViewerFont.body(scale: fontScale))
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -1590,6 +2383,16 @@ struct MarkdownBlockView: View {
                     fontScale: fontScale
                 )
             }
+        case .mermaidDiagram:
+            if let diagram = block.mermaidDiagram {
+                MermaidDiagramBlockView(
+                    diagram: diagram,
+                    blockID: block.id,
+                    fontScale: fontScale,
+                    isPrinting: isPrinting,
+                    onOpenPreview: onOpenMermaidPreview
+                )
+            }
         case .rawHTML:
             Text(verbatim: block.sourceText)
                 .font(ViewerFont.monospacedBody(scale: fontScale))
@@ -1624,11 +2427,32 @@ struct MarkdownBlockView: View {
         return "\u{2022}"
     }
 
+    private func displayAttributedText(for block: MarkdownBlock) -> AttributedString {
+        var attributedText = MarkdownRenderer.attributedText(for: block)
+        let query = searchHighlightQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard query.isEmpty == false else { return attributedText }
+
+        let plainText = String(attributedText.characters)
+        var searchStart = plainText.startIndex
+        while searchStart < plainText.endIndex,
+              let range = plainText.range(
+                of: query,
+                options: [.caseInsensitive, .diacriticInsensitive],
+                range: searchStart..<plainText.endIndex
+              ),
+              let lowerBound = AttributedString.Index(range.lowerBound, within: attributedText),
+              let upperBound = AttributedString.Index(range.upperBound, within: attributedText) {
+            attributedText[lowerBound..<upperBound].backgroundColor = .yellow.opacity(0.55)
+            searchStart = range.upperBound
+        }
+        return attributedText
+    }
+
     @ViewBuilder
     private var taskListLabel: some View {
         #if os(macOS)
         Toggle(isOn: .constant(block.isTaskCompleted == true)) {
-            Text(MarkdownRenderer.attributedText(for: block))
+            Text(displayAttributedText(for: block))
                 .font(ViewerFont.body(scale: fontScale))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .linkHoverCursor(MarkdownRenderer.attributedText(for: block))
@@ -1641,7 +2465,7 @@ struct MarkdownBlockView: View {
                 .font(ViewerFont.body(scale: fontScale))
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
-            Text(MarkdownRenderer.attributedText(for: block))
+            Text(displayAttributedText(for: block))
                 .font(ViewerFont.body(scale: fontScale))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .linkHoverCursor(MarkdownRenderer.attributedText(for: block))
@@ -1662,7 +2486,10 @@ struct MarkdownBlockView: View {
                     fontScale: fontScale,
                     tabularPresentation: tabularPresentation,
                     syntaxTheme: syntaxTheme,
-                    isPrinting: isPrinting
+                    isPrinting: isPrinting,
+                    searchHighlightQuery: searchHighlightQuery,
+                    activeSearchBlockID: activeSearchBlockID,
+                    onOpenMermaidPreview: onOpenMermaidPreview
                 )
             }
         }
@@ -1730,7 +2557,8 @@ struct MarkdownBlockView: View {
                 }
             }
             .padding(14)
-        } else if let tabularPresentation, table.contentKind == .plainText {
+        } else if shouldUseLazyTableViewport(for: table) {
+            let presentation = tabularPresentation ?? TabularDocumentPresentation()
             ScrollView([.horizontal, .vertical], showsIndicators: true) {
                 LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
                     Section {
@@ -1739,6 +2567,7 @@ struct MarkdownBlockView: View {
                                 table.rows[rowIndex],
                                 alignments: table.alignments,
                                 contentKind: table.contentKind,
+                                presentation: presentation,
                                 isHeader: false
                             )
                             Divider()
@@ -1748,6 +2577,7 @@ struct MarkdownBlockView: View {
                             table.header,
                             alignments: table.alignments,
                             contentKind: table.contentKind,
+                            presentation: presentation,
                             isHeader: true
                         )
                         .background(.regularMaterial)
@@ -1758,8 +2588,8 @@ struct MarkdownBlockView: View {
             }
             .frame(
                 minHeight: 260,
-                idealHeight: tabularTableHeight(rowCount: table.rows.count + 1, presentation: tabularPresentation),
-                maxHeight: tabularTableHeight(rowCount: table.rows.count + 1, presentation: tabularPresentation)
+                idealHeight: tabularTableHeight(rowCount: table.rows.count + 1, presentation: presentation),
+                maxHeight: tabularTableHeight(rowCount: table.rows.count + 1, presentation: presentation)
             )
         } else {
             ScrollView(.horizontal, showsIndicators: true) {
@@ -1817,6 +2647,7 @@ struct MarkdownBlockView: View {
         _ row: [MarkdownTableCell],
         alignments: [MarkdownTableAlignment],
         contentKind: MarkdownTableContentKind,
+        presentation: TabularDocumentPresentation,
         isHeader: Bool
     ) -> some View {
         HStack(alignment: .top, spacing: 0) {
@@ -1825,6 +2656,7 @@ struct MarkdownBlockView: View {
                     row[column],
                     columnAlignment: alignments[column],
                     contentKind: contentKind,
+                    presentation: presentation,
                     isHeader: isHeader
                 )
                 .padding(.horizontal, 8)
@@ -1837,9 +2669,10 @@ struct MarkdownBlockView: View {
         _ cell: MarkdownTableCell,
         columnAlignment: MarkdownTableAlignment,
         contentKind: MarkdownTableContentKind,
+        presentation: TabularDocumentPresentation? = nil,
         isHeader: Bool
     ) -> some View {
-        if let tabularPresentation {
+        if let tabularPresentation = presentation ?? tabularPresentation {
             if contentKind == .plainText {
                 Text(verbatim: cell.plainText)
                     .font(ViewerFont.body(scale: fontScale))
@@ -1882,6 +2715,13 @@ struct MarkdownBlockView: View {
                     .linkHoverCursor(attributedText)
             }
         }
+    }
+
+    private func shouldUseLazyTableViewport(for table: MarkdownTable) -> Bool {
+        if tabularPresentation != nil && table.contentKind == .plainText {
+            return true
+        }
+        return table.prefersLazyInteractiveViewport
     }
 
     private func tabularTableHeight(rowCount: Int, presentation: TabularDocumentPresentation) -> CGFloat {

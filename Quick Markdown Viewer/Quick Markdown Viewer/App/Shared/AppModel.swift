@@ -22,8 +22,16 @@ final class AppModel: ObservableObject {
     @Published private(set) var isPreparingPrint = false
     @Published private(set) var githubURLLoadErrorMessage: String?
     @Published private(set) var printErrorMessage: String?
+    @Published private(set) var printPreparationMessage: String?
     @Published private(set) var lastPrintRequestScope: String?
     @Published private(set) var lastPrintRequestStatus: String?
+    @Published var searchQuery = ""
+    @Published private(set) var searchScope: DocumentSearchScope = .currentDocument
+    @Published private(set) var searchResults: [DocumentSearchResult] = []
+    @Published private(set) var selectedSearchResultID: String?
+    @Published private(set) var isSearching = false
+    @Published private(set) var searchActivationCounter = 0
+    @Published private(set) var searchScrollTargetID: String?
     @Published private(set) var selectedPath: WorkspacePath?
     @Published private(set) var backStack: [NavigationEntry] = []
     @Published private(set) var forwardStack: [NavigationEntry] = []
@@ -43,6 +51,7 @@ final class AppModel: ObservableObject {
     private var bootstrapTask: Task<Void, Never>?
     private var workspaceLoadTask: Task<Void, Never>?
     private var documentLoadTask: Task<Void, Never>?
+    private var searchTask: Task<Void, Never>?
     private var commandServer: HarnessCommandServer?
     private var didWriteLaunchArtifacts = false
     private var workspaceProvider: (any WorkspaceProvider)?
@@ -54,6 +63,7 @@ final class AppModel: ObservableObject {
     private var activeSecurityScopedWorkspaceURL: URL?
     private var currentRestorationSession: WorkspaceWindowSession?
     private var shouldAllowRevealInFinder = false
+    private var pendingSearchScrollTargetID: String?
 
     init(
         launchOptions: HarnessLaunchOptions,
@@ -292,6 +302,13 @@ final class AppModel: ObservableObject {
             self.isLoadingDocument = false
             self.isReady = true
             self.readyReference = Date()
+            if let pendingSearchScrollTargetID = self.pendingSearchScrollTargetID {
+                self.searchScrollTargetID = pendingSearchScrollTargetID
+                self.pendingSearchScrollTargetID = nil
+            }
+            if self.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
+                self.runSearch()
+            }
             self.documentLoadTask = nil
         }
     }
@@ -852,7 +869,7 @@ final class AppModel: ObservableObject {
     nonisolated static func shouldRenderStructuredContent(for blocks: [MarkdownBlock]) -> Bool {
         blocks.contains { block in
             switch block.kind {
-            case .codeBlock, .table, .image, .animatedImage, .video:
+            case .codeBlock, .table, .image, .animatedImage, .video, .mermaidDiagram:
                 return true
             case .unorderedListItem, .orderedListItem:
                 return block.isTaskItem || shouldRenderStructuredContent(for: block.children)
@@ -922,7 +939,8 @@ final class AppModel: ObservableObject {
     }
 
     private func isMarkdownPath(_ path: String) -> Bool {
-        WorkspaceDocumentKind.forPath(path) == .markdown
+        let kind = WorkspaceDocumentKind.forPath(path)
+        return kind == .markdown || kind == .mermaid
     }
 }
 
@@ -953,6 +971,16 @@ extension AppModel {
         let outlineItems: [MarkdownOutlineItem]
     }
 
+    private struct PrintCompositionInput: Sendable {
+        let scope: DocumentPrintScope
+        let provider: any WorkspaceProvider
+        let targetFiles: [MarkdownFileNode]
+        let workspaceTitle: String
+        let fontScale: Double
+        let launchTheme: String?
+        let tabularPresentation: TabularDocumentPresentation
+    }
+
     enum PrintError: LocalizedError {
         case noSelectedDocument
         case noPrintableDocuments
@@ -974,7 +1002,7 @@ extension AppModel {
         let detachedTask = Task.detached(priority: .userInitiated) {
             let text = (try? provider.readFile(at: path)) ?? "Unable to read \(path.rawValue)"
             let kind = WorkspaceDocumentKind.forPath(path.rawValue) ?? .markdown
-            let parsedBlocks = blocks(for: text, kind: kind)
+            let parsedBlocks = blocks(for: text, kind: kind, path: path)
             let blocks: [MarkdownBlock]
             if kind == .markdown {
                 blocks = await hydrateMedia(in: parsedBlocks, provider: provider, documentPath: path)
@@ -996,7 +1024,72 @@ extension AppModel {
         }
     }
 
+    static func makePrintComposition(
+        forExternalPrintFileURLs fileURLs: [URL],
+        fontScale: Double = 1,
+        launchTheme: String? = nil,
+        tabularPresentation: TabularDocumentPresentation? = nil
+    ) async throws -> DocumentPrintComposition {
+        let printableFileURLs = fileURLs
+            .map { $0.resolvingSymlinksInPath().standardizedFileURL }
+            .filter { SupportedDocumentExtensions.contains($0.pathExtension) }
+        guard printableFileURLs.isEmpty == false else {
+            throw PrintError.noPrintableDocuments
+        }
+        let securityScopedURLs = printableFileURLs.filter { $0.startAccessingSecurityScopedResource() }
+        defer {
+            securityScopedURLs.forEach { $0.stopAccessingSecurityScopedResource() }
+        }
+
+        var sections: [DocumentPrintSection] = []
+        sections.reserveCapacity(printableFileURLs.count)
+        for fileURL in printableFileURLs {
+            let provider = LocalWorkspaceProvider(
+                rootURL: fileURL.deletingLastPathComponent(),
+                embeddedDocs: [:]
+            )
+            let path = WorkspacePath(rawValue: fileURL.lastPathComponent)
+            let result = await loadDocument(provider: provider, path: path)
+            sections.append(
+                DocumentPrintSection(
+                    path: path,
+                    title: fileURL.lastPathComponent,
+                    kind: result.kind,
+                    blocks: result.blocks
+                )
+            )
+        }
+
+        let workspaceTitle: String
+        if let firstURL = printableFileURLs.first, printableFileURLs.allSatisfy({ $0.deletingLastPathComponent() == firstURL.deletingLastPathComponent() }) {
+            workspaceTitle = firstURL.deletingLastPathComponent().lastPathComponent
+        } else {
+            workspaceTitle = "Printed Documents"
+        }
+
+        return DocumentPrintComposition(
+            scope: printableFileURLs.count == 1 ? .selectedFile : .allFiles,
+            workspaceTitle: workspaceTitle,
+            fontScale: fontScale,
+            launchTheme: launchTheme,
+            tabularPresentation: tabularPresentation ?? TabularDocumentPresentation(),
+            sections: sections
+        )
+    }
+
     func makePrintComposition(scope: DocumentPrintScope) async throws -> DocumentPrintComposition {
+        let input = try printCompositionInput(scope: scope)
+        beginPreparingPrint(scope: scope, documentCount: input.targetFiles.count)
+
+        defer {
+            isPreparingPrint = false
+            printPreparationMessage = nil
+        }
+
+        return try await Self.makePrintComposition(from: input)
+    }
+
+    private func printCompositionInput(scope: DocumentPrintScope) throws -> PrintCompositionInput {
         let targetFiles: [MarkdownFileNode]
         switch scope {
         case .selectedFile:
@@ -1014,15 +1107,39 @@ extension AppModel {
         guard let provider = workspaceProvider else {
             throw PrintError.noPrintableDocuments
         }
-        let workspaceTitle = workspaceRootDisplay
 
-        isPreparingPrint = true
-        printErrorMessage = nil
-        defer { isPreparingPrint = false }
+        return PrintCompositionInput(
+            scope: scope,
+            provider: provider,
+            targetFiles: targetFiles,
+            workspaceTitle: workspaceRootDisplay,
+            fontScale: Double(fontScale),
+            launchTheme: launchOptions.theme,
+            tabularPresentation: tabularPresentation
+        )
+    }
 
+    private nonisolated static func makePrintComposition(from input: PrintCompositionInput) async throws -> DocumentPrintComposition {
+        let sections = try await printSections(provider: input.provider, targetFiles: input.targetFiles)
+
+        return DocumentPrintComposition(
+            scope: input.scope,
+            workspaceTitle: input.workspaceTitle,
+            fontScale: input.fontScale,
+            launchTheme: input.launchTheme,
+            tabularPresentation: input.tabularPresentation,
+            sections: sections
+        )
+    }
+
+    private nonisolated static func printSections(
+        provider: any WorkspaceProvider,
+        targetFiles: [MarkdownFileNode]
+    ) async throws -> [DocumentPrintSection] {
         var sections: [DocumentPrintSection] = []
         sections.reserveCapacity(targetFiles.count)
         for file in targetFiles {
+            try Task.checkCancellation()
             let result = await Self.loadDocument(provider: provider, path: file.path)
             sections.append(
                 DocumentPrintSection(
@@ -1033,21 +1150,21 @@ extension AppModel {
                 )
             )
         }
+        return sections
+    }
 
-        let composition = DocumentPrintComposition(
-            scope: scope,
-            workspaceTitle: workspaceTitle,
-            fontScale: Double(fontScale),
-            launchTheme: launchOptions.theme,
-            tabularPresentation: tabularPresentation,
-            sections: sections
-        )
-
-        return composition
+    private func beginPreparingPrint(scope: DocumentPrintScope, documentCount: Int) {
+        isPreparingPrint = true
+        printErrorMessage = nil
+        printPreparationMessage = scope.preparationMessage(documentCount: documentCount)
+        lastPrintRequestScope = scope.rawValue
+        lastPrintRequestStatus = "preparing"
     }
 
     func recordPrintError(_ error: Error) {
+        isPreparingPrint = false
         printErrorMessage = error.localizedDescription
+        printPreparationMessage = nil
         lastPrintRequestStatus = "error"
     }
 
@@ -1061,7 +1178,143 @@ extension AppModel {
     }
 
     func recordPrintPresentationSucceeded() {
+        printPreparationMessage = nil
         lastPrintRequestStatus = "presented"
+    }
+
+    func recordPrintCancelled(scope: DocumentPrintScope? = nil) {
+        isPreparingPrint = false
+        printErrorMessage = nil
+        printPreparationMessage = nil
+        if let scope {
+            lastPrintRequestScope = scope.rawValue
+        }
+        lastPrintRequestStatus = "cancelled"
+    }
+
+    var selectedSearchResult: DocumentSearchResult? {
+        guard let selectedSearchResultID else { return nil }
+        return searchResults.first { $0.id == selectedSearchResultID }
+    }
+
+    func activateSearch(scope: DocumentSearchScope) {
+        searchScope = scope
+        searchActivationCounter += 1
+        runSearch()
+    }
+
+    func updateSearchQuery(_ query: String) {
+        guard searchQuery != query else { return }
+        searchQuery = query
+        runSearch()
+    }
+
+    func selectSearchResult(_ result: DocumentSearchResult) {
+        selectedSearchResultID = result.id
+        if selectedPath == result.path {
+            searchScrollTargetID = result.blockID
+        } else {
+            pendingSearchScrollTargetID = result.blockID
+            openFile(result.path)
+        }
+    }
+
+    func selectNextSearchResult() {
+        guard searchResults.isEmpty == false else { return }
+        let currentIndex = selectedSearchResultID.flatMap { selectedID in
+            searchResults.firstIndex { $0.id == selectedID }
+        }
+        let nextIndex: Int
+        if let currentIndex {
+            nextIndex = searchResults.index(after: currentIndex) == searchResults.endIndex ? searchResults.startIndex : searchResults.index(after: currentIndex)
+        } else {
+            nextIndex = searchResults.startIndex
+        }
+        selectSearchResult(searchResults[nextIndex])
+    }
+
+    func clearSearchScrollTarget() {
+        searchScrollTargetID = nil
+    }
+
+    private func runSearch() {
+        searchTask?.cancel()
+        selectedSearchResultID = nil
+        searchResults = []
+
+        let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard query.isEmpty == false else {
+            isSearching = false
+            return
+        }
+
+        isSearching = true
+        switch searchScope {
+        case .currentDocument:
+            guard let selectedPath else {
+                isSearching = false
+                return
+            }
+            let fileName = selectedFileDisplayName
+            let documentText = documentText
+            let blocks = documentBlocks
+            searchTask = Task { [weak self] in
+                let results = await Task.detached(priority: .userInitiated) {
+                    DocumentSearchEngine.results(
+                        query: query,
+                        path: selectedPath,
+                        fileName: fileName,
+                        documentText: documentText,
+                        blocks: blocks
+                    )
+                }.value
+                guard !Task.isCancelled else { return }
+                self?.finishSearch(with: results)
+            }
+        case .allDocuments:
+            guard let provider = workspaceProvider else {
+                isSearching = false
+                return
+            }
+            let files = files
+            searchTask = Task { [weak self] in
+                let results = await Self.searchAllDocuments(
+                    query: query,
+                    provider: provider,
+                    files: files
+                )
+                guard !Task.isCancelled else { return }
+                self?.finishSearch(with: results)
+            }
+        }
+    }
+
+    private func finishSearch(with results: [DocumentSearchResult]) {
+        searchResults = results
+        selectedSearchResultID = results.first?.id
+        isSearching = false
+    }
+
+    private nonisolated static func searchAllDocuments(
+        query: String,
+        provider: any WorkspaceProvider,
+        files: [MarkdownFileNode]
+    ) async -> [DocumentSearchResult] {
+        var allResults: [DocumentSearchResult] = []
+        for file in files {
+            if Task.isCancelled { return [] }
+            let result = await loadDocument(provider: provider, path: file.path)
+            allResults.append(
+                contentsOf: DocumentSearchEngine.results(
+                    query: query,
+                    path: file.path,
+                    fileName: file.name,
+                    documentText: result.text,
+                    blocks: result.blocks
+                )
+            )
+        }
+        return allResults
     }
 
     private func exportPrintPDF(_ composition: DocumentPrintComposition, to destinationURL: URL) async throws {
@@ -1070,10 +1323,21 @@ extension AppModel {
         }
     }
 
-    private nonisolated static func blocks(for text: String, kind: WorkspaceDocumentKind) -> [MarkdownBlock] {
+    private nonisolated static func blocks(
+        for text: String,
+        kind: WorkspaceDocumentKind,
+        path: WorkspacePath? = nil
+    ) -> [MarkdownBlock] {
         switch kind {
         case .markdown:
             return MarkdownRenderer.blocks(from: text)
+        case .mermaid:
+            return [
+                MermaidMarkdownBlockCatalog.standaloneBlock(
+                    from: text,
+                    path: path ?? WorkspacePath(rawValue: "Mermaid diagram")
+                )
+            ]
         case .csv, .tsv:
             guard let table = DelimitedTextDocumentParser.markdownTable(from: text, kind: kind) else {
                 return []

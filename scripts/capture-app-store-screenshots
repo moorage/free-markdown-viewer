@@ -40,11 +40,13 @@ setopt no_bg_nice
 mkdir -p "${OUT_DIR}"
 
 typeset -a SHOTS=(
-  "Open Markdown Folders.md|open-markdown-folders"
-  "Architecture Overview.md|architecture-overview"
-  "Code Sample.md|code-sample"
-  "Image Preview.md|image-preview"
-  "Navigation Notes.md|navigation-notes"
+  "Open Markdown Folders.md|open-markdown-folders|files"
+  "Outline Navigation.md|outline-navigation|outline"
+  "Full Text Search.md|full-text-search|search"
+  "Mermaid Workflow.md|mermaid-workflow|plain"
+  "Metrics.csv|tables-csv|plain"
+  "Media Preview.md|media-preview|plain"
+  "Code and Printing.md|code-print-quicklook|plain"
 )
 
 run_simctl() {
@@ -96,6 +98,7 @@ capture_ios_platform() {
   local device_class="$1"
   local sim_id
   local device_dir="${OUT_DIR}/${device_class}"
+  rm -rf "${device_dir}"
   mkdir -p "${device_dir}"
 
   case "${device_class}" in
@@ -152,7 +155,21 @@ capture_ios_platform() {
   local shot
   for shot in "${SHOTS[@]}"; do
     local file_name="${shot%%|*}"
-    local slug="${shot##*|}"
+    local rest="${shot#*|}"
+    local slug="${rest%%|*}"
+    local feature="${rest#*|}"
+    typeset -a presentation_args=()
+    case "${feature}" in
+      files)
+        presentation_args=(--ui-test-show-sidebar)
+        ;;
+      outline)
+        presentation_args=(--ui-test-show-outline)
+        ;;
+      search)
+        presentation_args=(--ui-test-show-sidebar --ui-test-search-query "lifecycle" --ui-test-search-scope "allDocuments")
+        ;;
+    esac
     local harness_dir="${container_root}/Documents/HarnessArtifacts/app-store-${device_class}-${slug}"
     local state_path="${harness_dir}/state.json"
     local perf_path="${harness_dir}/perf.json"
@@ -167,7 +184,8 @@ capture_ios_platform() {
       --device-class "${device_class}" \
       --dump-visible-state "${state_path}" \
       --dump-perf-state "${perf_path}" \
-      --ui-test-mode 1 >/dev/null
+      --ui-test-mode 1 \
+      "${presentation_args[@]}" >/dev/null
 
     for _ in {1..80}; do
       if [[ -f "${state_path}" && -f "${perf_path}" ]]; then
@@ -194,18 +212,34 @@ capture_ios_platform() {
 
 capture_macos_platform() {
   local device_dir="${OUT_DIR}/macos"
+  rm -rf "${device_dir}"
   mkdir -p "${device_dir}"
   local shot
   for shot in "${SHOTS[@]}"; do
     local file_name="${shot%%|*}"
-    local slug="${shot##*|}"
+    local rest="${shot#*|}"
+    local slug="${rest%%|*}"
+    local feature="${rest#*|}"
+    typeset -a presentation_args=()
+    case "${feature}" in
+      files)
+        presentation_args=(--ui-test-show-sidebar)
+        ;;
+      outline)
+        presentation_args=(--ui-test-show-outline)
+        ;;
+      search)
+        presentation_args=(--ui-test-show-sidebar --ui-test-search-query "lifecycle" --ui-test-search-scope "allDocuments")
+        ;;
+    esac
     local checkpoint="app-store-macos-${slug}"
     zsh -o no_bg_nice "${SCRIPT_DIR}/capture-checkpoint" \
       --fixture "${file_name}" \
       --fixture-root "${FIXTURE_ROOT}" \
       --platform-target macos \
       --window-size "${MAC_WINDOW_SIZE}" \
-      --checkpoint "${checkpoint}" >/dev/null
+      --checkpoint "${checkpoint}" \
+      "${presentation_args[@]}" >/dev/null
 
     cp "${CHECKPOINTS_DIR}/${checkpoint}/state.json" "${device_dir}/${slug}.state.json"
     cp "${CHECKPOINTS_DIR}/${checkpoint}/perf.json" "${device_dir}/${slug}.perf.json"

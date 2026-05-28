@@ -5,47 +5,53 @@ Use this file as the source for App Store Connect listing text and screenshot pl
 ## App identity
 
 - App name: `Quick Markdown Viewer`
-- Subtitle option 1: `Open Markdown folders fast`
-- Subtitle option 2: `Local-first Markdown reader`
-- Subtitle option 3: `Browse docs across Apple devices`
+- Subtitle: `Read docs, diagrams, tables`
 - Primary category: `Productivity`
 - Pricing: `Free`
 
 ## Promotional text
 
-Open Markdown folders on Mac, iPhone, and iPad with a fast, local-first viewer that keeps documents readable and easy to navigate.
+Read local Markdown folders, search documents, jump with outlines, render Mermaid diagrams, preview media, inspect CSV/TSV tables, and print without leaving your files.
 
 ## What's New
 
 Use this for the `What's New` field on the next App Store version:
 
-- Open a document outline from the right side and jump directly to Markdown headings
-- Highlight the current section in the outline while reading
-- Resize the outline pane on Mac and iPad
-- View large CSV and TSV files with a faster lazy table surface
-- Check for newer App Store versions, with skip controls and a Mac menu command
+Quick Markdown Viewer now covers more of a complete documentation workflow:
+
+- Full-text search for the current document or every open document, with clickable results and in-document highlights
+- Faster file browsing for large folders, including collapsible folders and keyboard navigation
+- Native Mermaid diagram rendering with zoom, pan, and detachable macOS diagram windows
+- Background Print All preparation with cancellation and empty-output protection
+- Markdown Quick Look preview extension on macOS
+- Faster rendering for Markdown tables with long paragraph-style cells
+- Better macOS Finder file drops, including opening the dropped file's parent folder with the file selected
 
 ## Description
 
-Quick Markdown Viewer is a simple, local-first app for opening folders full of Markdown files and browsing them across macOS, iPhone, and iPad.
+Quick Markdown Viewer is a local-first reader for Markdown folders, documentation packets, CSV/TSV tables, and media-rich notes on Mac, iPhone, and iPad.
 
-Use it to read notes, documentation, knowledge bases, exported reports, and project folders without setting up an account or relying on a web service.
+Open a folder of files you already have, or open a public GitHub repository URL when you need to inspect remote docs. The app keeps reading fast and direct: no account, no subscription, no in-app purchase, and no tracking layer.
 
 Features:
 
-- Open a folder and browse Markdown files from a sidebar
+- Open local folders and browse Markdown, CSV, and TSV files in a file sidebar
+- Expand and collapse folders, filter large file trees, and use keyboard navigation on macOS
+- Search the current document with Command-F or all open documents with Command-Shift-F
+- Click search results in the sidebar to jump to matches highlighted in the document
+- Read Markdown with native rendering for headings, lists, tables, code blocks, links, images, GIFs, and local video
+- Render Mermaid diagrams natively, then zoom and pan diagram previews
+- Detach Mermaid diagram previews into resizable macOS windows
+- Open a document outline, jump to headings, and track the current section while reading
+- Open CSV and TSV files as native tables with controls for wrapping and sizing
+- Preview linked media without converting your Markdown files
+- Print the current document or assemble a cancellable background Print All packet
+- Preview Markdown from Finder with the macOS Quick Look extension
+- Install the optional `qmv` command-line launcher on macOS
 - Open public GitHub repository and repository tree URLs, including branch and tag paths
-- Hide dependency and vendor folders from each window's sidebar with editable ignore patterns
-- Read Markdown with native rendering for headings, lists, tables, code blocks, images, animated images, and local video
-- Open CSV and TSV files alongside Markdown and view them with native table rendering
-- Open a right-side outline for Markdown headings and jump around long documents
-- Render direct remote image and video links authored inside Markdown
-- Print the current file or the entire workspace with rendered Markdown and table output
-- Navigate quickly between files with back and forward history
+- Hide dependency and vendor folders with editable ignore patterns per window
+- Navigate between files with back and forward history
 - Adjust viewer font size for comfortable reading
-- Adjust CSV and TSV wrapping plus table sizing for easier reading
-- Work entirely with files you choose from Finder or the Files app
-- On macOS, optionally install the `qmv` command-line launcher to reopen folders from Terminal
 
 Quick Markdown Viewer is designed to stay lightweight and direct:
 
@@ -53,25 +59,22 @@ Quick Markdown Viewer is designed to stay lightweight and direct:
 - no subscription
 - no in-app purchase
 - no tracking
+- no web view renderer
 
 ## Keywords
 
-Pick one final set under Apple’s character limit. Start with this:
+Use this final keyword set:
 
-- markdown,viewer,notes,docs,documentation,readme,md,text,writer
-
-Shorter alternative:
-
-- markdown,viewer,docs,notes,readme,text,md
+`markdown,viewer,mermaid,docs,readme,notes,csv,table,quicklook,search`
 
 ## Support and policy URLs
 
 - Marketing URL: `https://www.matthewpaulmoore.com/apps/free-markdown-viewer`
 - Support URL: `https://www.matthewpaulmoore.com/apps/free-markdown-viewer/support`
-
-The website slug stays on `free-markdown-viewer` for now because those pages are live today; only the visible app name is changing in this workstream.
 - Privacy Policy URL: `https://www.matthewpaulmoore.com/legal/privacy`
 - Terms URL: `https://www.matthewpaulmoore.com/legal/terms`
+
+The website slug stays on `free-markdown-viewer` because those pages are live today; only the visible app name is `Quick Markdown Viewer`.
 
 ## App Review notes
 
@@ -79,90 +82,38 @@ Primary draft source:
 
 - `docs/release/app-review-notes.md`
 
-## Screenshot shot list
+## Screenshot Shot List
 
-Capture the same content set on each platform so the listing feels consistent.
-
-### Shared content setup
-
-Use one polished demo folder with:
-
-- one typography-heavy Markdown file
-- one file with a table
-- one file with local image references
-- one file with a code block
-
-Avoid placeholder-looking filenames if possible.
+Capture the same seven feature shots on each platform so the listing feels consistent.
 
 Repository-owned capture set:
 
-- `Fixtures/app-store/Open Markdown Folders.md`
-- `Fixtures/app-store/Architecture Overview.md`
-- `Fixtures/app-store/Code Sample.md`
-- `Fixtures/app-store/Image Preview.md`
-- `Fixtures/app-store/Navigation Notes.md`
+1. `Fixtures/app-store/Open Markdown Folders.md` -> `open-markdown-folders`
+2. `Fixtures/app-store/Outline Navigation.md` -> `outline-navigation`
+3. `Fixtures/app-store/Full Text Search.md` -> `full-text-search`
+4. `Fixtures/app-store/Mermaid Workflow.md` -> `mermaid-workflow`
+5. `Fixtures/app-store/Metrics.csv` -> `tables-csv`
+6. `Fixtures/app-store/Media Preview.md` -> `media-preview`
+7. `Fixtures/app-store/Code and Printing.md` -> `code-print-quicklook`
 
 Repeatable capture command:
 
-- `./scripts/capture-app-store-screenshots`
+- `./scripts/capture-app-store-screenshots --platform all`
 
-### iPhone screenshots
+Generated artifacts:
 
-Suggested sequence:
+- `artifacts/app-store-screenshots/iphone/*.png`
+- `artifacts/app-store-screenshots/ipad/*.png`
+- `artifacts/app-store-screenshots/macos/*.png`
 
-1. Sidebar open with a clean list of Markdown files
-2. Rich document view showing headings, paragraphs, and lists
-3. Table rendering in the viewer
-4. Media rendering with image or animated image content
-5. Font size controls in use on a readable document
+## Screenshot Captions
 
-Suggested captions:
+Suggested sequence for every platform:
 
-- `Open Markdown folders from Files`
-- `Browse documents with a clean sidebar`
-- `Read tables, code, and rich formatting`
-- `View local images right in your notes`
-- `Adjust text size for comfortable reading`
-
-### iPad screenshots
-
-Suggested sequence:
-
-1. Two-column browsing layout with sidebar and document visible together
-2. Large formatted document view
-3. Table-heavy document
-4. Media-rich document with image preview
-5. Navigation controls with back/forward flow
-
-Suggested captions:
-
-- `See your files and document at the same time`
-- `Read long Markdown documents comfortably`
-- `Handle structured content like tables with ease`
-- `Keep local media next to your notes`
-- `Move through your folder quickly`
-
-### macOS screenshots
-
-Suggested sequence:
-
-1. Full desktop window with sidebar and document
-2. Table rendering
-3. Code block and typography rendering
-4. Media rendering
-5. Font-size-adjusted reading view
-
-Suggested captions:
-
-- `Browse Markdown folders on your Mac`
-- `Render tables and structured documents clearly`
-- `Read code blocks and documentation natively`
-- `Keep linked local media visible`
-- `Tune the viewer to your preferred reading size`
-
-## Final listing decisions to make
-
-- choose one subtitle
-- choose one keyword set
-- choose final screenshot captions
-- confirm `Quick Markdown Viewer` is the final App Store name
+1. `Browse local Markdown folders`
+2. `Jump through long docs with outlines`
+3. `Search one file or every open document`
+4. `Render Mermaid diagrams natively`
+5. `Inspect CSV and TSV tables`
+6. `Preview linked images, GIFs, and video`
+7. `Read code, Quick Look, and print`

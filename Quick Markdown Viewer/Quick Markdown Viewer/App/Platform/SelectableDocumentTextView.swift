@@ -254,6 +254,11 @@ enum SelectableDocumentFormatter {
             return rendered
         case .codeBlock, .rawHTML:
             return NSMutableAttributedString(string: block.sourceText, attributes: attributes)
+        case .mermaidDiagram:
+            guard let diagram = block.mermaidDiagram else {
+                return NSMutableAttributedString(string: block.plainText, attributes: attributes)
+            }
+            return NSMutableAttributedString(string: diagram.plainTextSummary, attributes: attributes)
         case .table:
             guard let table = block.table else {
                 return NSMutableAttributedString(string: block.plainText, attributes: attributes)
@@ -330,7 +335,7 @@ enum SelectableDocumentFormatter {
         switch block.kind {
         case .heading:
             attributes[.font] = headingFont(level: block.level ?? 1, fontScale: fontScale)
-        case .paragraph, .unorderedListItem, .orderedListItem, .image, .animatedImage, .video:
+        case .paragraph, .unorderedListItem, .orderedListItem, .image, .animatedImage, .video, .mermaidDiagram:
             attributes[.font] = bodyFont(fontScale: fontScale)
         case .blockquote:
             paragraphStyle.firstLineHeadIndent = indentWidth + 12

@@ -4,13 +4,15 @@ This document is the top-level codemap for the live repository. It names the maj
 
 ## System overview
 
-This repository is building a universal Apple-platform Markdown viewer with five major subsystems:
+This repository is building a universal Apple-platform Markdown viewer with seven major subsystems:
 
 1. workspace browsing
 2. navigation and history
 3. markdown parsing and lightweight rendering state
-4. media classification and playback hosts
-5. platform shells and harness tooling
+4. native Mermaid diagram parsing/rendering
+5. media classification and playback hosts
+6. macOS Quick Look preview extension
+7. platform shells and harness tooling
 
 The live codebase is still early. The Xcode template exists, but most durable structure is being added by the harness bootstrap plan.
 
@@ -46,6 +48,45 @@ Primary code areas:
 - `Quick Markdown Viewer/Quick Markdown ViewerTests/`
 - `Quick Markdown Viewer/Quick Markdown ViewerUITests/`
 
+### Native Mermaid diagrams
+
+Purpose:
+
+- detect inline `mermaid` fenced blocks and standalone `.mermaid` / `.mmd` files
+- compile Mermaid source into a safe typed Swift model
+- render diagrams with native SwiftUI/CoreGraphics surfaces and media-style zoom/pan preview
+
+Primary code areas:
+
+- `Quick Markdown Viewer/Quick Markdown Viewer/App/Shared/Mermaid/`
+- `Quick Markdown Viewer/Quick Markdown Viewer/App/Shell/MermaidDiagramViews.swift`
+
+Stable concepts:
+
+- `MermaidDiagramKind`
+- `MermaidCompiler`
+- `MarkdownMermaidDiagram`
+- `MermaidScene`
+- `MermaidDiagramBlockView`
+
+### macOS Quick Look extension
+
+Purpose:
+
+- provide Finder Quick Look previews for Markdown files by bundling a macOS app extension
+- render read-only Markdown previews with native AppKit text surfaces
+- keep the extension enabled by default through normal app-extension registration, without a separate installer step
+
+Primary code areas:
+
+- `Quick Markdown Viewer/Quick Markdown Viewer QuickLook/`
+- `Quick Markdown Viewer/QuickLookPreview-Info.plist`
+
+Stable concepts:
+
+- `PreviewViewController`
+- `MarkdownQuickLookPreviewFormatter`
+
 ### Fixtures and artifacts
 
 Purpose:
@@ -77,6 +118,7 @@ Primary code areas:
 
 - shared state and contracts stay in platform-neutral Swift files
 - AppKit usage stays behind `#if os(macOS)` adapters
+- Quick Look extension code stays macOS-only and uses AppKit/QuickLook APIs only inside the extension target
 - UIKit usage stays behind `#if os(iOS)` adapters
 - shell scripts call shared helpers in `scripts/lib/`
 - docs verification and repo-map generation must use only standard Python 3 library modules

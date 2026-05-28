@@ -9,6 +9,7 @@ struct AppRootView: View {
     let onOpenGitHubURLPrompt: (() -> Void)?
     let onPrintSelectedDocument: (() -> Void)?
     let onPrintAllDocuments: (() -> Void)?
+    let onCancelPrintPreparation: (() -> Void)?
     let onInstallCommandLineTool: (() -> Void)?
     let shouldShowCommandLineToolPrompt: Bool
     #if os(macOS)
@@ -24,6 +25,7 @@ struct AppRootView: View {
                 onOpenGitHubURLPrompt: onOpenGitHubURLPrompt,
                 onPrintSelectedDocument: onPrintSelectedDocument,
                 onPrintAllDocuments: onPrintAllDocuments,
+                onCancelPrintPreparation: onCancelPrintPreparation,
                 onInstallCommandLineTool: onInstallCommandLineTool,
                 shouldShowCommandLineToolPrompt: shouldShowCommandLineToolPrompt
             )
@@ -35,7 +37,7 @@ struct AppRootView: View {
                     #if os(macOS)
                     if let liveWindow {
                         model.installScreenshotWriter { url in
-                            try PlatformScreenshotWriter.write(window: liveWindow, to: url)
+                            try writeWindowScreenshot(window: liveWindow, to: url)
                         }
                     } else {
                         model.installScreenshotWriter { url in
@@ -46,6 +48,7 @@ struct AppRootView: View {
                                     onOpenGitHubURLPrompt: onOpenGitHubURLPrompt,
                                     onPrintSelectedDocument: onPrintSelectedDocument,
                                     onPrintAllDocuments: onPrintAllDocuments,
+                                    onCancelPrintPreparation: onCancelPrintPreparation,
                                     onInstallCommandLineTool: onInstallCommandLineTool,
                                     shouldShowCommandLineToolPrompt: shouldShowCommandLineToolPrompt
                                 )
@@ -63,6 +66,7 @@ struct AppRootView: View {
                                 onOpenGitHubURLPrompt: onOpenGitHubURLPrompt,
                                 onPrintSelectedDocument: onPrintSelectedDocument,
                                 onPrintAllDocuments: onPrintAllDocuments,
+                                onCancelPrintPreparation: onCancelPrintPreparation,
                                 onInstallCommandLineTool: onInstallCommandLineTool,
                                 shouldShowCommandLineToolPrompt: shouldShowCommandLineToolPrompt
                             )
@@ -85,7 +89,7 @@ struct AppRootView: View {
                 .background(WindowAccessorView { window in
                     liveWindow = window
                     model.installScreenshotWriter { url in
-                        try PlatformScreenshotWriter.write(window: window, to: url)
+                        try writeWindowScreenshot(window: window, to: url)
                     }
                     model.fulfillLaunchArtifactRequestsIfNeeded()
                 })
@@ -96,6 +100,16 @@ struct AppRootView: View {
     private func resolvedRenderSize(from liveSize: CGSize) -> CGSize {
         model.launchOptions.windowSize ?? liveSize
     }
+
+    #if os(macOS)
+    private func writeWindowScreenshot(window: NSWindow, to url: URL) throws {
+        window.title = model.windowTitle
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.08))
+        try PlatformScreenshotWriter.write(window: window, to: url)
+    }
+    #endif
 }
 
 #if os(macOS)

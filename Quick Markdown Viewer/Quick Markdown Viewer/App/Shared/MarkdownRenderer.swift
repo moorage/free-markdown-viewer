@@ -7,6 +7,28 @@ nonisolated enum MarkdownRenderer {
         let kind: ContainerKind
     }
 
+    private struct TableMatch {
+        let header: [String]
+        let alignments: [MarkdownTableAlignment]
+        let rows: [[String]]
+        let nextIndex: Int
+
+        var columnCount: Int {
+            header.count
+        }
+
+        var rowCount: Int {
+            rows.count
+        }
+
+        var longestCellCharacterCount: Int {
+            ([header] + rows)
+                .flatMap { $0 }
+                .map(\.count)
+                .max() ?? 0
+        }
+    }
+
     private enum ContainerKind {
         case root
         case unorderedList(indentLevel: Int)
@@ -67,7 +89,8 @@ nonisolated enum MarkdownRenderer {
         } else {
             parsedBlocks = coreBlocks(from: normalized)
         }
-        return MarkdownCodeBlockCatalog.annotate(blocks: parsedBlocks, source: normalized)
+        let codeAnnotatedBlocks = MarkdownCodeBlockCatalog.annotate(blocks: parsedBlocks, source: normalized)
+        return MermaidMarkdownBlockCatalog.annotate(blocks: codeAnnotatedBlocks)
     }
 
     private nonisolated static func coreBlocks(from markdown: String) -> [MarkdownBlock] {
@@ -406,7 +429,7 @@ nonisolated enum MarkdownRenderer {
             sourceText = ""
             plainText = ""
             attributedText = nil
-        case .image, .animatedImage, .video:
+        case .image, .animatedImage, .video, .mermaidDiagram:
             sourceText = builder.sourceText
             plainText = ""
             attributedText = nil
@@ -431,7 +454,7 @@ nonisolated enum MarkdownRenderer {
         let effectivePlainText: String
         if builder.kind == .rawHTML {
             effectivePlainText = plainText
-        } else if builder.kind == .image || builder.kind == .animatedImage || builder.kind == .video || builder.kind == .thematicBreak {
+        } else if builder.kind == .image || builder.kind == .animatedImage || builder.kind == .video || builder.kind == .mermaidDiagram || builder.kind == .thematicBreak {
             effectivePlainText = plainText
         } else if taskState.0 {
             effectivePlainText = normalizeVisibleText(String(taskState.2.characters))
@@ -1146,25 +1169,24 @@ nonisolated enum MarkdownRenderer {
         return blocks.isEmpty ? [emptyParagraph()] : blocks
     }
 
-    private nonisolated static func table(from lines: [String], at index: Int) -> (header: [MarkdownTableCell], alignments: [MarkdownTableAlignment], rows: [[MarkdownTableCell]], nextIndex: Int)? {
+    private nonisolated static func table(from lines: [String], at index: Int) -> TableMatch? {
         guard index + 1 < lines.count else { return nil }
         guard let header = splitTableRow(lines[index]), !header.isEmpty else { return nil }
         guard let alignments = parseTableDivider(lines[index + 1]), alignments.count == header.count else { return nil }
 
-        var rows: [[MarkdownTableCell]] = []
+        var rows: [[String]] = []
         var cursor = index + 2
         while cursor < lines.count {
             guard let row = splitTableRow(lines[cursor]), row.count == header.count else { break }
             rows.append(row)
             cursor += 1
         }
-        return (header, alignments, rows, cursor)
+        return TableMatch(header: header, alignments: alignments, rows: rows, nextIndex: cursor)
     }
 
-    private nonisolated static func splitTableRow(_ line: String) -> [MarkdownTableCell]? {
+    private nonisolated static func splitTableRow(_ line: String) -> [String]? {
         guard let rawCells = rawTableCells(from: line) else { return nil }
-        let cells = rawCells.map(tableCell(from:))
-        return cells.contains(where: { !$0.plainText.isEmpty }) ? cells : nil
+        return rawCells.contains(where: { !normalizeVisibleText($0).isEmpty }) ? rawCells : nil
     }
 
     private nonisolated static func rawTableCells(from line: String) -> [String]? {
@@ -1205,10 +1227,20 @@ nonisolated enum MarkdownRenderer {
     }
 
     private nonisolated static func tableBlock(
-        from tableMatch: (header: [MarkdownTableCell], alignments: [MarkdownTableAlignment], rows: [[MarkdownTableCell]], nextIndex: Int),
+        from tableMatch: TableMatch,
         id: String
     ) -> MarkdownBlock {
-        let tableText = ([tableMatch.header] + tableMatch.rows)
+        let shouldPreferPlainText = MarkdownTable.prefersLazyInteractiveViewport(
+            rowCount: tableMatch.rowCount,
+            columnCount: tableMatch.columnCount,
+            longestCellCharacterCount: tableMatch.longestCellCharacterCount
+        ) && tableUsesPlainTextCells(tableMatch)
+        let contentKind: MarkdownTableContentKind = shouldPreferPlainText ? .plainText : .markdown
+        let header = tableMatch.header.map { tableCell(from: $0, contentKind: contentKind) }
+        let rows = tableMatch.rows.map { row in
+            row.map { tableCell(from: $0, contentKind: contentKind) }
+        }
+        let tableText = ([header] + rows)
             .flatMap { $0 }
             .map(\.plainText)
             .joined(separator: " ")
@@ -1224,9 +1256,9 @@ nonisolated enum MarkdownRenderer {
             isTaskCompleted: nil,
             table: MarkdownTable(
                 alignments: tableMatch.alignments,
-                header: tableMatch.header,
-                rows: tableMatch.rows,
-                contentKind: .markdown
+                header: header,
+                rows: rows,
+                contentKind: contentKind
             ),
             image: nil,
             video: nil,
@@ -1235,7 +1267,21 @@ nonisolated enum MarkdownRenderer {
         )
     }
 
-    private nonisolated static func tableCell(from source: String) -> MarkdownTableCell {
+    private nonisolated static func tableUsesPlainTextCells(_ tableMatch: TableMatch) -> Bool {
+        ([tableMatch.header] + tableMatch.rows)
+            .flatMap { $0 }
+            .allSatisfy { !mayContainInlineMarkdownSyntax($0) }
+    }
+
+    private nonisolated static func tableCell(from source: String, contentKind: MarkdownTableContentKind) -> MarkdownTableCell {
+        if contentKind == .plainText || !mayContainInlineMarkdownSyntax(source) {
+            return MarkdownTableCell(
+                plainText: normalizeVisibleText(source),
+                sourceText: source,
+                attributedText: nil
+            )
+        }
+
         let attributed = attributedText(for: source)
         let plainText = normalizedInlineText(source)
         return MarkdownTableCell(
@@ -1243,5 +1289,19 @@ nonisolated enum MarkdownRenderer {
             sourceText: source,
             attributedText: attributed
         )
+    }
+
+    private nonisolated static func mayContainInlineMarkdownSyntax(_ source: String) -> Bool {
+        guard !source.isEmpty else { return false }
+        if source.contains("`") || source.contains("![") || source.contains("](") || source.contains("][") {
+            return true
+        }
+        if source.contains("<") || source.contains("&") {
+            return true
+        }
+        if source.contains("*") || source.contains("_") || source.contains("~") {
+            return true
+        }
+        return false
     }
 }

@@ -1,0 +1,10 @@
+---
+title: Native Mermaid Flowchart
+---
+flowchart TD
+  accTitle: Native Mermaid Flowchart
+  Start([Start]) --> Parse[Parse Mermaid]
+  Parse --> Render{Native Swift?}
+  Render -->|yes| Preview[Zoom and pan]
+  Render -.->|diagnostic| Source[Preserve source]
+

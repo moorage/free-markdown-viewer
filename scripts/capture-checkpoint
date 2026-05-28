@@ -13,6 +13,10 @@ DEVICE_CLASS="mac"
 CHECKPOINT=""
 FIXTURE_ROOT_OVERRIDE=""
 WINDOW_SIZE="1024x768"
+UI_TEST_SHOW_SIDEBAR=0
+UI_TEST_SHOW_OUTLINE=0
+UI_TEST_SEARCH_QUERY=""
+UI_TEST_SEARCH_SCOPE=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -40,6 +44,22 @@ while [[ $# -gt 0 ]]; do
       WINDOW_SIZE="${2:-}"
       shift 2
       ;;
+    --ui-test-show-sidebar)
+      UI_TEST_SHOW_SIDEBAR=1
+      shift
+      ;;
+    --ui-test-show-outline)
+      UI_TEST_SHOW_OUTLINE=1
+      shift
+      ;;
+    --ui-test-search-query)
+      UI_TEST_SEARCH_QUERY="${2:-}"
+      shift 2
+      ;;
+    --ui-test-search-scope)
+      UI_TEST_SEARCH_SCOPE="${2:-}"
+      shift 2
+      ;;
     *)
       echo "unknown argument: $1" >&2
       exit 1
@@ -51,6 +71,20 @@ done
 [[ -n "${CHECKPOINT}" ]] || { echo "--checkpoint is required" >&2; exit 1; }
 
 ACTIVE_FIXTURE_ROOT="${FIXTURE_ROOT_OVERRIDE:-${FIXTURE_ROOT}}"
+
+typeset -a UI_TEST_PRESENTATION_ARGS=()
+if [[ "${UI_TEST_SHOW_SIDEBAR}" == "1" ]]; then
+  UI_TEST_PRESENTATION_ARGS+=(--ui-test-show-sidebar)
+fi
+if [[ "${UI_TEST_SHOW_OUTLINE}" == "1" ]]; then
+  UI_TEST_PRESENTATION_ARGS+=(--ui-test-show-outline)
+fi
+if [[ -n "${UI_TEST_SEARCH_QUERY}" ]]; then
+  UI_TEST_PRESENTATION_ARGS+=(--ui-test-search-query "${UI_TEST_SEARCH_QUERY}")
+fi
+if [[ -n "${UI_TEST_SEARCH_SCOPE}" ]]; then
+  UI_TEST_PRESENTATION_ARGS+=(--ui-test-search-scope "${UI_TEST_SEARCH_SCOPE}")
+fi
 
 OUT_DIR="${CHECKPOINTS_DIR}/${CHECKPOINT}"
 rm -rf "${OUT_DIR}"
@@ -71,7 +105,8 @@ if [[ "${PLATFORM_TARGET}" == "macos" ]]; then
     --dump-visible-state "${STATE_PATH}" \
     --dump-perf-state "${PERF_PATH}" \
     --screenshot-path "${SCREENSHOT_PATH}" \
-    --ui-test-mode 1 &
+    --ui-test-mode 1 \
+    "${UI_TEST_PRESENTATION_ARGS[@]}" &
   APP_PID=$!
   trap 'kill ${APP_PID} >/dev/null 2>&1 || true' EXIT
   for _ in {1..40}; do
@@ -128,7 +163,8 @@ elif [[ "${PLATFORM_TARGET}" == "ios" ]]; then
     --dump-visible-state "${STATE_PATH}" \
     --dump-perf-state "${PERF_PATH}" \
     --screenshot-path "${SCREENSHOT_PATH}" \
-    --ui-test-mode 1 >/dev/null
+    --ui-test-mode 1 \
+    "${UI_TEST_PRESENTATION_ARGS[@]}" >/dev/null
 
   for _ in {1..80}; do
     if [[ -f "${STATE_PATH}" && -f "${PERF_PATH}" && -f "${SCREENSHOT_PATH}" ]]; then

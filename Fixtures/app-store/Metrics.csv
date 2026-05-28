@@ -1,0 +1,6 @@
+Metric,Current,Target,Notes
+Documents opened,248,Unlimited,Large folders stay browsable
+Search results,37,Instant,Clickable matches in the sidebar
+Mermaid diagrams,12,Zoomable,Pan and detach on macOS
+Print jobs,1 background job,Cancellable,Current document or all documents
+Quick Look,Enabled,Default,Preview Markdown from Finder

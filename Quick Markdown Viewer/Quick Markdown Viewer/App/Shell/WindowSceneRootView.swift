@@ -1,9 +1,38 @@
 import SwiftUI
+import UniformTypeIdentifiers
 #if os(macOS)
 import AppKit
 #else
-import UniformTypeIdentifiers
 import UIKit
+#endif
+
+#if os(macOS)
+enum MacSearchCommand: Equatable {
+    case currentDocument
+    case allDocuments
+    case nextResult
+}
+
+@MainActor
+enum MacSearchCommandDispatcher {
+    private static var handlerID: UUID?
+    private static var handler: ((MacSearchCommand) -> Void)?
+
+    static func setHandler(id: UUID, _ handler: @escaping (MacSearchCommand) -> Void) {
+        handlerID = id
+        self.handler = handler
+    }
+
+    static func clearHandler(id: UUID) {
+        guard handlerID == id else { return }
+        handlerID = nil
+        handler = nil
+    }
+
+    static func send(_ command: MacSearchCommand) {
+        handler?(command)
+    }
+}
 #endif
 
 struct WindowSceneRootView: View {
@@ -12,6 +41,7 @@ struct WindowSceneRootView: View {
     @ObservedObject private var updateChecker: AppUpdateChecker
     private let sceneID: String
     @State private var isPresentingGitHubURLPrompt = false
+    @State private var printTask: Task<Void, Never>?
     #if os(macOS)
     @ObservedObject private var externalWorkspaceOpenCoordinator = ExternalWorkspaceOpenCoordinator.shared
     @ObservedObject private var commandLineToolManager = MacCommandLineToolManager.shared
@@ -49,6 +79,7 @@ struct WindowSceneRootView: View {
             onOpenGitHubURLPrompt: openGitHubURLPromptAction,
             onPrintSelectedDocument: printSelectedDocumentAction,
             onPrintAllDocuments: printAllDocumentsAction,
+            onCancelPrintPreparation: cancelPrintPreparationAction,
             onInstallCommandLineTool: installCommandLineToolAction,
             shouldShowCommandLineToolPrompt: shouldShowCommandLineToolPrompt
         )
@@ -60,6 +91,9 @@ struct WindowSceneRootView: View {
             .focusedSceneValue(\.printAllDocumentsAction, printAllDocumentsFocusedAction)
             .focusedSceneValue(\.increaseFontSizeAction, IncreaseFontSizeAction(handler: model.increaseFontSize))
             .focusedSceneValue(\.decreaseFontSizeAction, DecreaseFontSizeAction(handler: model.decreaseFontSize))
+            .onDrop(of: [UTType.fileURL.identifier, UTType.url.identifier], isTargeted: nil) { providers in
+                openDroppedWorkspaces(from: providers)
+            }
             .onAppear {
                 sessionStore.scheduleAdditionalWindows(openWindow: openWindow)
                 commandLineToolManager.setInstallCommandLineToolPresenter(installCommandLineTool)
@@ -169,16 +203,33 @@ struct WindowSceneRootView: View {
         printAllDocuments
     }
 
+    private var cancelPrintPreparationAction: (() -> Void)? {
+        guard model.isPreparingPrint else { return nil }
+        return cancelPrintPreparation
+    }
+
     private func printSelectedDocument() {
-        Task {
-            await presentPrint(scope: .selectedFile)
-        }
+        startPrint(scope: .selectedFile)
     }
 
     private func printAllDocuments() {
-        Task {
-            await presentPrint(scope: .allFiles)
+        startPrint(scope: .allFiles)
+    }
+
+    private func startPrint(scope: DocumentPrintScope) {
+        guard printTask == nil else { return }
+        printTask = Task {
+            await presentPrint(scope: scope)
+            await MainActor.run {
+                printTask = nil
+            }
         }
+    }
+
+    private func cancelPrintPreparation() {
+        printTask?.cancel()
+        printTask = nil
+        model.recordPrintCancelled()
     }
 
     @ViewBuilder
@@ -214,6 +265,7 @@ struct WindowSceneRootView: View {
     private func presentPrint(scope: DocumentPrintScope) async {
         do {
             let composition = try await model.makePrintComposition(scope: scope)
+            try Task.checkCancellation()
             model.clearPrintError()
             model.recordPrintPresentationStarted(scope: scope)
             if model.launchOptions.uiTestMode {
@@ -226,6 +278,8 @@ struct WindowSceneRootView: View {
             PlatformPrintPresenter.present(composition)
             #endif
             model.recordPrintPresentationSucceeded()
+        } catch is CancellationError {
+            model.recordPrintCancelled(scope: scope)
         } catch {
             model.recordPrintError(error)
         }
@@ -265,6 +319,8 @@ struct WindowSceneRootView: View {
         guard model.shouldAutoPromptForFolderOnLaunch else { return }
 
         DispatchQueue.main.async {
+            guard !sessionStore.shouldSuppressAutomaticFolderPrompt(for: sceneID) else { return }
+            guard model.shouldAutoPromptForFolderOnLaunch else { return }
             openFolder()
         }
     }
@@ -371,12 +427,50 @@ struct WindowSceneRootView: View {
         pasteboard.setString(command, forType: .string)
     }
 
+    private func openDroppedWorkspaces(from providers: [NSItemProvider]) -> Bool {
+        var acceptedDrop = false
+
+        for provider in providers {
+            guard let typeIdentifier = droppedFileTypeIdentifier(for: provider) else { continue }
+            acceptedDrop = true
+            provider.loadItem(forTypeIdentifier: typeIdentifier, options: nil) { item, error in
+                guard error == nil,
+                      let fileURL = ExternalWorkspaceOpenCoordinator.fileURL(fromDroppedItem: item),
+                      let request = ExternalWorkspaceOpenCoordinator.normalizedRequest(
+                        for: fileURL,
+                        presentation: .newWindow
+                      ) else {
+                    return
+                }
+                Task { @MainActor in
+                    ExternalWorkspaceOpenCoordinator.shared.enqueue(request)
+                }
+            }
+        }
+
+        if acceptedDrop {
+            sessionStore.suppressAutomaticFolderPrompt(for: sceneID)
+        }
+        return acceptedDrop
+    }
+
+    private func droppedFileTypeIdentifier(for provider: NSItemProvider) -> String? {
+        if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+            return UTType.fileURL.identifier
+        }
+        if provider.hasItemConformingToTypeIdentifier(UTType.url.identifier) {
+            return UTType.url.identifier
+        }
+        return nil
+    }
+
     private func handleExternalWorkspaceOpen(requestID: UUID?) {
         guard let requestID, let request = externalWorkspaceOpenCoordinator.claimRequest(id: requestID) else {
             return
         }
+        sessionStore.suppressAutomaticFolderPrompt(for: sceneID)
 
-        if shouldReuseCurrentWindowForExternalOpen {
+        if request.presentation == .reuseEmptyWindow && shouldReuseCurrentWindowForExternalOpen {
             model.openFolder(at: request.rootURL, selectedPathOverride: request.selectedPath)
         } else {
             sessionStore.scheduleExternalWorkspaceWindow(
@@ -586,6 +680,30 @@ struct DecreaseFontSizeAction {
     }
 }
 
+struct SearchCurrentDocumentAction {
+    let handler: () -> Void
+
+    func callAsFunction() {
+        handler()
+    }
+}
+
+struct SearchAllDocumentsAction {
+    let handler: () -> Void
+
+    func callAsFunction() {
+        handler()
+    }
+}
+
+struct SelectNextSearchResultAction {
+    let handler: () -> Void
+
+    func callAsFunction() {
+        handler()
+    }
+}
+
 private struct OpenFolderActionKey: FocusedValueKey {
     typealias Value = OpenFolderAction
 }
@@ -612,6 +730,18 @@ private struct IncreaseFontSizeActionKey: FocusedValueKey {
 
 private struct DecreaseFontSizeActionKey: FocusedValueKey {
     typealias Value = DecreaseFontSizeAction
+}
+
+private struct SearchCurrentDocumentActionKey: FocusedValueKey {
+    typealias Value = SearchCurrentDocumentAction
+}
+
+private struct SearchAllDocumentsActionKey: FocusedValueKey {
+    typealias Value = SearchAllDocumentsAction
+}
+
+private struct SelectNextSearchResultActionKey: FocusedValueKey {
+    typealias Value = SelectNextSearchResultAction
 }
 
 extension FocusedValues {
@@ -649,6 +779,21 @@ extension FocusedValues {
         get { self[DecreaseFontSizeActionKey.self] }
         set { self[DecreaseFontSizeActionKey.self] = newValue }
     }
+
+    var searchCurrentDocumentAction: SearchCurrentDocumentAction? {
+        get { self[SearchCurrentDocumentActionKey.self] }
+        set { self[SearchCurrentDocumentActionKey.self] = newValue }
+    }
+
+    var searchAllDocumentsAction: SearchAllDocumentsAction? {
+        get { self[SearchAllDocumentsActionKey.self] }
+        set { self[SearchAllDocumentsActionKey.self] = newValue }
+    }
+
+    var selectNextSearchResultAction: SelectNextSearchResultAction? {
+        get { self[SelectNextSearchResultActionKey.self] }
+        set { self[SelectNextSearchResultActionKey.self] = newValue }
+    }
 }
 
 struct WindowOpenFolderCommands: Commands {
@@ -661,6 +806,9 @@ struct WindowOpenFolderCommands: Commands {
     @FocusedValue(\.printAllDocumentsAction) private var printAllDocumentsAction
     @FocusedValue(\.increaseFontSizeAction) private var increaseFontSizeAction
     @FocusedValue(\.decreaseFontSizeAction) private var decreaseFontSizeAction
+    @FocusedValue(\.searchCurrentDocumentAction) private var searchCurrentDocumentAction
+    @FocusedValue(\.searchAllDocumentsAction) private var searchAllDocumentsAction
+    @FocusedValue(\.selectNextSearchResultAction) private var selectNextSearchResultAction
 
     var body: some Commands {
         CommandGroup(after: .appInfo) {
@@ -710,6 +858,33 @@ struct WindowOpenFolderCommands: Commands {
             }
             .keyboardShortcut("p", modifiers: [.command, .shift])
             .disabled(printAllDocumentsAction == nil)
+        }
+
+        CommandGroup(replacing: .textEditing) {
+            Button("Find in Document") {
+                searchCurrentDocumentAction?()
+            }
+            .keyboardShortcut("f", modifiers: [.command])
+            .disabled(searchCurrentDocumentAction == nil)
+
+            Button("Find in All Documents") {
+                searchAllDocumentsAction?()
+            }
+            .keyboardShortcut("f", modifiers: [.command, .shift])
+            .disabled(searchAllDocumentsAction == nil)
+
+            Button("Find Next") {
+                selectNextSearchResultAction?()
+            }
+            .keyboardShortcut("g", modifiers: [.command])
+            .disabled(selectNextSearchResultAction == nil)
+
+            Divider()
+
+            Button("Select All") {
+                NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil)
+            }
+            .keyboardShortcut("a", modifiers: [.command])
         }
 
         CommandGroup(after: .toolbar) {

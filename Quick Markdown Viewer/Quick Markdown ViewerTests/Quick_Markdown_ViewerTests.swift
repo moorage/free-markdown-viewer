@@ -74,13 +74,35 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
     private func firstPDFPageCGImage(from url: URL, size: CGSize) throws -> CGImage {
         let document = try XCTUnwrap(PDFDocument(url: url))
         let page = try XCTUnwrap(document.page(at: 0))
-        #if os(macOS)
-        let thumbnail = page.thumbnail(of: size, for: .mediaBox)
-        var proposedRect = CGRect(origin: .zero, size: thumbnail.size)
-        return try XCTUnwrap(thumbnail.cgImage(forProposedRect: &proposedRect, context: nil, hints: nil))
-        #elseif os(iOS)
-        return try XCTUnwrap(page.thumbnail(of: size, for: .mediaBox).cgImage)
-        #endif
+        let width = max(Int(size.width.rounded()), 1)
+        let height = max(Int(size.height.rounded()), 1)
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let bytesPerPixel = 4
+        let bytesPerRow = width * bytesPerPixel
+        var buffer = [UInt8](repeating: 0, count: height * bytesPerRow)
+        let bitmapInfo = CGImageAlphaInfo.premultipliedLast.rawValue
+        let context = try XCTUnwrap(
+            CGContext(
+                data: &buffer,
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
+                bytesPerRow: bytesPerRow,
+                space: colorSpace,
+                bitmapInfo: bitmapInfo
+            )
+        )
+        let bounds = page.bounds(for: .mediaBox)
+        let scale = min(size.width / bounds.width, size.height / bounds.height)
+        context.setFillColor(CGColor(gray: 1, alpha: 1))
+        context.fill(CGRect(origin: .zero, size: CGSize(width: width, height: height)))
+        context.saveGState()
+        context.translateBy(x: 0, y: CGFloat(height))
+        context.scaleBy(x: scale, y: -scale)
+        context.translateBy(x: -bounds.minX, y: -bounds.minY)
+        page.draw(with: .mediaBox, to: context)
+        context.restoreGState()
+        return try XCTUnwrap(context.makeImage())
     }
 
     private func quantizedColorStats(
@@ -113,15 +135,19 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
         }
 
         context.interpolationQuality = .high
-        context.draw(
-            image,
-            in: CGRect(
-                x: -resolvedCropRect.origin.x,
-                y: resolvedCropRect.origin.y - CGFloat(image.height),
-                width: CGFloat(image.width),
-                height: CGFloat(image.height)
+        if let croppedImage = image.cropping(to: resolvedCropRect) {
+            context.draw(croppedImage, in: CGRect(origin: .zero, size: resolvedCropRect.size))
+        } else {
+            context.draw(
+                image,
+                in: CGRect(
+                    x: -resolvedCropRect.origin.x,
+                    y: -resolvedCropRect.origin.y,
+                    width: CGFloat(image.width),
+                    height: CGFloat(image.height)
+                )
             )
-        )
+        }
 
         var counts: [UInt32: Int] = [:]
         counts.reserveCapacity(256)
@@ -140,6 +166,18 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
         let dominantCount = counts.values.max() ?? 0
         let sampledPixelCount = max(counts.values.reduce(0, +), 1)
         return (counts.count, Double(dominantCount) / Double(sampledPixelCount))
+    }
+
+    private func sidebarRowDescriptions(_ rows: [SidebarFileTree.Row]) -> [String] {
+        rows.map { row in
+            switch row {
+            case let .folder(folder):
+                let state = folder.isExpanded ? "expanded" : "collapsed"
+                return "folder:\(folder.label):\(folder.depth):\(state)"
+            case let .file(file):
+                return "file:\(file.file.name):\(file.depth)"
+            }
+        }
     }
 
     #if os(iOS)
@@ -234,6 +272,10 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
             "--ui-test-github-fixture", "/tmp/github-fixture.json",
             "--ui-test-open-linked-media", "https://example.com/rickrolled.gif",
             "--ui-test-reset-command-line-tool-install-state",
+            "--ui-test-show-sidebar",
+            "--ui-test-show-outline",
+            "--ui-test-search-query", "lifecycle",
+            "--ui-test-search-scope", "allDocuments",
             "--platform-target", "ios",
             "--device-class", "ipad",
             "--dump-visible-state", stateURL.path,
@@ -248,6 +290,10 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
         XCTAssertEqual(options.uiTestGitHubFixtureURL?.path, "/tmp/github-fixture.json")
         XCTAssertEqual(options.uiTestOpenLinkedMediaURL?.absoluteString, "https://example.com/rickrolled.gif")
         XCTAssertTrue(options.uiTestResetCommandLineToolInstallState)
+        XCTAssertTrue(options.uiTestShowSidebar)
+        XCTAssertTrue(options.uiTestShowOutline)
+        XCTAssertEqual(options.uiTestSearchQuery, "lifecycle")
+        XCTAssertEqual(options.uiTestSearchScope, "allDocuments")
         XCTAssertEqual(options.platformTarget, .ios)
         XCTAssertEqual(options.deviceClass, .ipad)
         XCTAssertEqual(options.dumpVisibleStateURL?.path, stateURL.path)
@@ -360,7 +406,7 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
         XCTAssertTrue(script.contains("target=\"${1:-.}\""))
         XCTAssertTrue(script.contains("/usr/bin/open -b \"com.souschefstudio.Free-Markdown-Viewer\""))
         XCTAssertTrue(script.contains("$(basename \"$target\")"))
-        XCTAssertTrue(script.contains("usage: qmv [directory-or-markdown-file]"))
+        XCTAssertTrue(script.contains("usage: qmv [directory-or-supported-file]"))
     }
 
     func testCommandLineToolDefaultInstallURLUsesLocalBinInHomeDirectory() {
@@ -499,6 +545,32 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
         let request = try XCTUnwrap(ExternalWorkspaceOpenCoordinator.normalizedRequest(for: markdownURL))
         XCTAssertEqual(request.rootURL.path, tempRoot.path)
         XCTAssertEqual(request.selectedPath?.rawValue, "notes.md")
+        XCTAssertEqual(request.presentation, .reuseEmptyWindow)
+    }
+
+    func testExternalWorkspaceOpenCoordinatorCanForceNewWindowForDroppedMarkdownFile() throws {
+        let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        let markdownURL = tempRoot.appendingPathComponent("notes.md")
+        try "# Notes".write(to: markdownURL, atomically: true, encoding: .utf8)
+
+        let request = try XCTUnwrap(
+            ExternalWorkspaceOpenCoordinator.normalizedRequest(for: markdownURL, presentation: .newWindow)
+        )
+        XCTAssertEqual(request.rootURL.path, tempRoot.path)
+        XCTAssertEqual(request.selectedPath?.rawValue, "notes.md")
+        XCTAssertEqual(request.presentation, .newWindow)
+    }
+
+    func testExternalWorkspaceOpenCoordinatorReadsDroppedFileURLData() throws {
+        let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        let markdownURL = tempRoot.appendingPathComponent("notes.md")
+        try "# Notes".write(to: markdownURL, atomically: true, encoding: .utf8)
+        let droppedItem = try XCTUnwrap(markdownURL.absoluteString.data(using: .utf8)) as NSData
+
+        let fileURL = try XCTUnwrap(ExternalWorkspaceOpenCoordinator.fileURL(fromDroppedItem: droppedItem))
+        XCTAssertEqual(fileURL.path, markdownURL.path)
     }
 
     func testExternalWorkspaceOpenCoordinatorNormalizesCSVFileToWorkspaceAndSelection() throws {
@@ -510,6 +582,7 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
         let request = try XCTUnwrap(ExternalWorkspaceOpenCoordinator.normalizedRequest(for: csvURL))
         XCTAssertEqual(request.rootURL.path, tempRoot.path)
         XCTAssertEqual(request.selectedPath?.rawValue, "table.csv")
+        XCTAssertEqual(request.presentation, .reuseEmptyWindow)
     }
 
     func testExternalWorkspaceOpenCoordinatorRejectsUnsupportedFiles() throws {
@@ -538,6 +611,7 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
         let request = try XCTUnwrap(coordinator.claimRequest(id: requestID))
         XCTAssertEqual(request.rootURL.path, tempRoot.path)
         XCTAssertEqual(request.selectedPath?.rawValue, "notes.md")
+        XCTAssertEqual(request.presentation, .reuseEmptyWindow)
     }
 
     @MainActor
@@ -555,6 +629,36 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
         let request = try XCTUnwrap(coordinator.claimRequest(id: requestID))
         XCTAssertEqual(request.rootURL.path, tempRoot.path)
         XCTAssertNil(request.selectedPath)
+    }
+
+    func testAppDelegateAdvertisesLaunchServicesPrintFileSupport() {
+        let appDelegate = QuickMarkdownViewerAppDelegate()
+        let selector = #selector(NSApplicationDelegate.application(_:printFiles:withSettings:showPrintPanels:))
+
+        XCTAssertTrue(appDelegate.responds(to: selector))
+    }
+
+    @MainActor
+    func testExternalPrintCompositionBuildsFromPrintFileURLs() async throws {
+        let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+
+        let markdownURL = tempRoot.appendingPathComponent("notes.md")
+        let csvURL = tempRoot.appendingPathComponent("table.csv")
+        let mermaidURL = tempRoot.appendingPathComponent("diagram.mmd")
+        try "# Notes\n\nExternal print path.".write(to: markdownURL, atomically: true, encoding: .utf8)
+        try "Name,Count\nAlpha,1".write(to: csvURL, atomically: true, encoding: .utf8)
+        try "flowchart TD\n    A[Start] --> B[Done]".write(to: mermaidURL, atomically: true, encoding: .utf8)
+
+        let composition = try await AppModel.makePrintComposition(
+            forExternalPrintFileURLs: [markdownURL, csvURL, mermaidURL]
+        )
+
+        XCTAssertEqual(composition.scope, .allFiles)
+        XCTAssertEqual(composition.sections.map(\.title), ["notes.md", "table.csv", "diagram.mmd"])
+        XCTAssertTrue(composition.plainText.contains("External print path."))
+        XCTAssertTrue(composition.plainText.contains("Name | Count"))
+        XCTAssertTrue(composition.plainText.contains("Mermaid Diagram"))
     }
     #endif
 
@@ -810,6 +914,28 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
         XCTAssertFalse(policy.shouldSuppressAutomaticFolderPrompt(for: "explicit-new-window", hasRestoredSession: false))
     }
 
+    func testAutomaticFolderPromptPolicySuppressesProgrammaticOpenScene() {
+        var policy = AutomaticFolderPromptPolicy()
+
+        XCTAssertTrue(policy.shouldSuppressAutomaticFolderPrompt(for: "launch-scene", hasRestoredSession: false))
+
+        policy.suppressAutomaticFolderPrompt(for: "drop-source-window")
+
+        XCTAssertTrue(policy.shouldSuppressAutomaticFolderPrompt(for: "drop-source-window", hasRestoredSession: false))
+        XCTAssertFalse(policy.shouldSuppressAutomaticFolderPrompt(for: "explicit-new-window", hasRestoredSession: false))
+    }
+
+    func testAutomaticFolderPromptPolicyCanCancelAlreadyAllowedPrompt() {
+        var policy = AutomaticFolderPromptPolicy()
+
+        XCTAssertTrue(policy.shouldSuppressAutomaticFolderPrompt(for: "launch-scene", hasRestoredSession: false))
+        XCTAssertFalse(policy.shouldSuppressAutomaticFolderPrompt(for: "drop-source-window", hasRestoredSession: false))
+
+        policy.suppressAutomaticFolderPrompt(for: "drop-source-window")
+
+        XCTAssertTrue(policy.shouldSuppressAutomaticFolderPrompt(for: "drop-source-window", hasRestoredSession: false))
+    }
+
     @MainActor
     func testIntegrationWorkspaceLoadsFixtureAndSnapshot() async throws {
         let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -845,6 +971,48 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
         XCTAssertEqual(snapshot.visibleBlocks.first?.kind, "heading")
         XCTAssertEqual(model.restorationSession?.rootPath, tempRoot.path)
         XCTAssertEqual(model.restorationSession?.selectedFile, "fixture.md")
+    }
+
+    @MainActor
+    func testAppModelLoadsSmallWideMarkdownTableThroughLazyPlainTextPath() async throws {
+        let longDigest = String(repeating: "AI infrastructure and agent workflows need bounded table rendering. ", count: 8)
+        let workspace = try makeTemporaryWorkspace(named: "AI News Workspace", files: [
+            "ai-news.md": """
+            | Rank | Topic | Digest |
+            |---:|---|---|
+            | 1 | AI economics | \(longDigest) |
+            | 2 | Agent tooling | \(longDigest) |
+            """
+        ])
+        let model = AppModel(
+            launchOptions: HarnessLaunchOptions(
+                fixtureRoot: workspace,
+                openFile: "ai-news.md",
+                uiTestOpenFolderURL: nil,
+                theme: nil,
+                windowSize: nil,
+                disableFileWatch: true,
+                dumpVisibleStateURL: nil,
+                dumpPerfStateURL: nil,
+                screenshotPathURL: nil,
+                commandDirectoryURL: nil,
+                uiTestMode: true,
+                platformTarget: .macos,
+                deviceClass: .mac
+            )
+        )
+        retainForTestLifetime(model)
+
+        model.bootstrap()
+        for _ in 0..<100 where model.isLoadingDocument || !model.isReady {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+
+        let table = try XCTUnwrap(model.documentBlocks.first(where: { $0.kind == .table })?.table)
+        XCTAssertEqual(model.selectedPath?.rawValue, "ai-news.md")
+        XCTAssertTrue(table.prefersLazyInteractiveViewport)
+        XCTAssertEqual(table.contentKind, .plainText)
+        XCTAssertNil(table.rows.first?.last?.attributedText)
     }
 
     @MainActor
@@ -1392,6 +1560,71 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
         XCTAssertTrue(composition.plainText.contains("Alpha | 1"))
     }
 
+    func testMacPrintPresenterRetainsModalPrintOperationUntilCallback() throws {
+        let sourceURL = repoRootURL.appendingPathComponent(
+            "Quick Markdown Viewer/Quick Markdown Viewer/App/Platform/PlatformPrintPresenter.swift"
+        )
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+
+        XCTAssertTrue(source.contains("ModalPrintOperationRetainer"))
+        XCTAssertTrue(source.contains("activeRetainers[ObjectIdentifier(operation)] = retainer"))
+        XCTAssertTrue(source.contains("delegate: retainer"))
+        XCTAssertTrue(source.contains("printOperationDidRun"))
+        XCTAssertFalse(source.contains("runModal(for: window, delegate: nil"))
+    }
+
+    func testMacPrintToolbarUsesIconOnlyControls() throws {
+        let sourceURL = repoRootURL.appendingPathComponent(
+            "Quick Markdown Viewer/Quick Markdown Viewer/App/Shell/ViewerShellView.swift"
+        )
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let controlStart = try XCTUnwrap(source.range(of: "private var macPrintControl: AnyView?"))
+        let controlEnd = try XCTUnwrap(source.range(of: "private var showsFilesButton: Bool"))
+        let controlSource = String(source[controlStart.lowerBound..<controlEnd.lowerBound])
+
+        XCTAssertTrue(controlSource.contains("ControlGroup"))
+        XCTAssertTrue(controlSource.contains("Image(systemName: \"printer\")"))
+        XCTAssertTrue(controlSource.contains("Image(systemName: \"printer.fill\")"))
+        XCTAssertTrue(controlSource.contains(".labelStyle(.iconOnly)"))
+        XCTAssertFalse(controlSource.contains("Button(\"All\")"))
+        XCTAssertFalse(controlSource.contains("Capsule(style: .continuous)"))
+        XCTAssertTrue(source.contains(".accessibilityIdentifier(AccessibilityIDs.uiTestPrintSelectedAction)"))
+        XCTAssertTrue(source.contains(".accessibilityIdentifier(AccessibilityIDs.uiTestPrintAllAction)"))
+        XCTAssertTrue(source.contains(".opacity(0)"))
+    }
+
+    func testAppStoreScreenshotHarnessCanOpenOutlineAndSearchStates() throws {
+        let harnessURL = repoRootURL.appendingPathComponent(
+            "Quick Markdown Viewer/Quick Markdown Viewer/Harness/HarnessLaunchOptions.swift"
+        )
+        let shellURL = repoRootURL.appendingPathComponent(
+            "Quick Markdown Viewer/Quick Markdown Viewer/App/Shell/ViewerShellView.swift"
+        )
+        let captureURL = repoRootURL.appendingPathComponent("scripts/capture-app-store-screenshots")
+        let checkpointURL = repoRootURL.appendingPathComponent("scripts/capture-checkpoint")
+        let harnessSource = try String(contentsOf: harnessURL, encoding: .utf8)
+        let shellSource = try String(contentsOf: shellURL, encoding: .utf8)
+        let captureSource = try String(contentsOf: captureURL, encoding: .utf8)
+        let checkpointSource = try String(contentsOf: checkpointURL, encoding: .utf8)
+
+        XCTAssertTrue(harnessSource.contains("let uiTestShowOutline: Bool"))
+        XCTAssertTrue(harnessSource.contains("let uiTestShowSidebar: Bool"))
+        XCTAssertTrue(harnessSource.contains("let uiTestSearchQuery: String?"))
+        XCTAssertTrue(harnessSource.contains("--ui-test-show-sidebar"))
+        XCTAssertTrue(harnessSource.contains("--ui-test-show-outline"))
+        XCTAssertTrue(harnessSource.contains("--ui-test-search-query"))
+        XCTAssertTrue(shellSource.contains("applyUITestPresentationOptionsIfNeeded"))
+        XCTAssertTrue(shellSource.contains("showSidebarForUITestPresentation"))
+        XCTAssertTrue(shellSource.contains("isOutlinePresented = true"))
+        XCTAssertTrue(shellSource.contains("model.updateSearchQuery(searchQuery)"))
+        XCTAssertTrue(captureSource.contains("Outline Navigation.md|outline-navigation|outline"))
+        XCTAssertTrue(captureSource.contains("Full Text Search.md|full-text-search|search"))
+        XCTAssertTrue(captureSource.contains("--ui-test-show-sidebar --ui-test-search-query \"lifecycle\" --ui-test-search-scope \"allDocuments\""))
+        XCTAssertTrue(checkpointSource.contains("UI_TEST_PRESENTATION_ARGS+=(--ui-test-show-sidebar)"))
+        XCTAssertTrue(checkpointSource.contains("UI_TEST_PRESENTATION_ARGS+=(--ui-test-show-outline)"))
+        XCTAssertTrue(checkpointSource.contains("UI_TEST_PRESENTATION_ARGS+=(--ui-test-search-query"))
+    }
+
     @MainActor
     func testPrintAllDocumentsUsesWorkspaceOrder() async throws {
         let workspace = try makeTemporaryWorkspace(named: "Print All Workspace", files: [
@@ -1426,6 +1659,119 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
         XCTAssertTrue(composition.plainText.contains("=== alpha.md ==="))
         XCTAssertTrue(composition.plainText.contains("=== beta.tsv ==="))
         XCTAssertTrue(composition.plainText.contains("=== table.csv ==="))
+    }
+
+    @MainActor
+    func testPrintAllPublishesPreparingStateDuringLargeComposition() async throws {
+        let repeatedBody = (1...160)
+            .map { "Paragraph \($0) with enough text to exercise Markdown parsing for a larger print job." }
+            .joined(separator: "\n\n")
+        let files = Dictionary(
+            uniqueKeysWithValues: (1...80).map { index in
+                (String(format: "document-%03d.md", index), "# Document \(index)\n\n\(repeatedBody)")
+            }
+        )
+        let workspace = try makeTemporaryWorkspace(named: "Large Print All Workspace", files: files)
+
+        let model = AppModel(
+            launchOptions: HarnessLaunchOptions(
+                fixtureRoot: workspace,
+                openFile: "document-001.md",
+                uiTestOpenFolderURL: nil,
+                theme: nil,
+                windowSize: nil,
+                disableFileWatch: true,
+                dumpVisibleStateURL: nil,
+                dumpPerfStateURL: nil,
+                screenshotPathURL: nil,
+                commandDirectoryURL: nil,
+                uiTestMode: true,
+                platformTarget: .macos,
+                deviceClass: .mac
+            )
+        )
+        retainForTestLifetime(model)
+        model.bootstrap()
+        try await Task.sleep(nanoseconds: 300_000_000)
+
+        let printTask = Task {
+            try await model.makePrintComposition(scope: .allFiles)
+        }
+
+        var observedPreparing = false
+        for _ in 0..<100 {
+            if model.isPreparingPrint, model.lastPrintRequestStatus == "preparing" {
+                observedPreparing = true
+                XCTAssertEqual(model.printPreparationMessage, "Preparing 80 documents for print...")
+                XCTAssertFalse(model.canPrintAllDocuments)
+                break
+            }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+
+        XCTAssertTrue(observedPreparing)
+        let composition = try await printTask.value
+        XCTAssertEqual(composition.sections.count, 80)
+        XCTAssertFalse(model.isPreparingPrint)
+        XCTAssertNil(model.printPreparationMessage)
+        XCTAssertTrue(model.canPrintAllDocuments)
+    }
+
+    @MainActor
+    func testPrintAllPreparationCanBeCancelled() async throws {
+        let repeatedBody = (1...220)
+            .map { "Paragraph \($0) with enough text to keep print assembly cancellable." }
+            .joined(separator: "\n\n")
+        let files = Dictionary(
+            uniqueKeysWithValues: (1...160).map { index in
+                (String(format: "cancel-%03d.md", index), "# Cancel \(index)\n\n\(repeatedBody)")
+            }
+        )
+        let workspace = try makeTemporaryWorkspace(named: "Cancellable Print All Workspace", files: files)
+
+        let model = AppModel(
+            launchOptions: HarnessLaunchOptions(
+                fixtureRoot: workspace,
+                openFile: "cancel-001.md",
+                uiTestOpenFolderURL: nil,
+                theme: nil,
+                windowSize: nil,
+                disableFileWatch: true,
+                dumpVisibleStateURL: nil,
+                dumpPerfStateURL: nil,
+                screenshotPathURL: nil,
+                commandDirectoryURL: nil,
+                uiTestMode: true,
+                platformTarget: .macos,
+                deviceClass: .mac
+            )
+        )
+        retainForTestLifetime(model)
+        model.bootstrap()
+        try await Task.sleep(nanoseconds: 300_000_000)
+
+        let printTask = Task {
+            try await model.makePrintComposition(scope: .allFiles)
+        }
+
+        for _ in 0..<100 where model.isPreparingPrint == false {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertTrue(model.isPreparingPrint)
+
+        printTask.cancel()
+        do {
+            _ = try await printTask.value
+            XCTFail("Expected print preparation cancellation to throw.")
+        } catch is CancellationError {
+            model.recordPrintCancelled(scope: .allFiles)
+        }
+
+        XCTAssertFalse(model.isPreparingPrint)
+        XCTAssertNil(model.printPreparationMessage)
+        XCTAssertEqual(model.lastPrintRequestScope, DocumentPrintScope.allFiles.rawValue)
+        XCTAssertEqual(model.lastPrintRequestStatus, "cancelled")
+        XCTAssertTrue(model.canPrintAllDocuments)
     }
 
     @MainActor
@@ -1472,7 +1818,65 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
         XCTAssertGreaterThan(data.count, 500)
         let document = try XCTUnwrap(PDFDocument(url: outputURL))
         XCTAssertGreaterThanOrEqual(document.pageCount, 1)
+        let pageImage = try firstPDFPageCGImage(from: outputURL, size: DocumentPrintPageLayout.letter.paperSize)
+        let stats = try quantizedColorStats(
+            for: pageImage,
+            cropRect: CGRect(origin: .zero, size: DocumentPrintPageLayout.letter.paperSize),
+            quantizationStep: 24
+        )
+        XCTAssertGreaterThan(stats.uniqueCount, 1)
     }
+
+    #if os(macOS)
+    @MainActor
+    func testMacPrintOperationPDFOutputIsNotBlank() throws {
+        let blocks = MarkdownRenderer.blocks(from: """
+        # Native Print Preview
+
+        This content must survive the same AppKit print operation path used by the print sheet.
+
+        - Visible text
+        - Visible bullets
+
+        | Area | Status |
+        | --- | --- |
+        | Print Preview | Non-empty |
+        """)
+        let composition = DocumentPrintComposition(
+            scope: .selectedFile,
+            workspaceTitle: "Native Print Preview Workspace",
+            fontScale: 1,
+            launchTheme: nil,
+            tabularPresentation: TabularDocumentPresentation(),
+            sections: [
+                DocumentPrintSection(
+                    path: WorkspacePath(rawValue: "native-print-preview.md"),
+                    title: "native-print-preview.md",
+                    kind: .markdown,
+                    blocks: blocks
+                )
+            ]
+        )
+        let outputURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("native-print-operation.pdf")
+
+        try PlatformPrintPresenter.exportPrintOperationPDF(composition, to: outputURL)
+
+        let data = try Data(contentsOf: outputURL)
+        XCTAssertTrue(data.starts(with: Data("%PDF".utf8)))
+        XCTAssertGreaterThan(data.count, 500)
+        let document = try XCTUnwrap(PDFDocument(url: outputURL))
+        XCTAssertGreaterThanOrEqual(document.pageCount, 1)
+        let pageImage = try firstPDFPageCGImage(from: outputURL, size: DocumentPrintPageLayout.letter.paperSize)
+        let stats = try quantizedColorStats(
+            for: pageImage,
+            cropRect: CGRect(origin: .zero, size: DocumentPrintPageLayout.letter.paperSize),
+            quantizationStep: 24
+        )
+        XCTAssertGreaterThan(stats.uniqueCount, 1)
+    }
+    #endif
 
     @MainActor
     func testExportPrintedMarkdownDocumentWithRichFeaturesWritesExpectedPDFContent() async throws {
@@ -1799,6 +2203,178 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
         )
     }
 
+    func testSidebarFileTreeCompactsSingleChildFolderChains() {
+        let files = [
+            MarkdownFileNode(path: WorkspacePath(rawValue: "alpha.md"), name: "alpha.md", kind: .markdown),
+            MarkdownFileNode(path: WorkspacePath(rawValue: "emptyfolder/fullfolder/notes.md"), name: "notes.md", kind: .markdown),
+            MarkdownFileNode(path: WorkspacePath(rawValue: "emptyfolder/fullfolder/table.csv"), name: "table.csv", kind: .csv),
+        ]
+
+        let collapsedRows = SidebarFileTree.visibleRows(from: files, expandedFolderIDs: [])
+        XCTAssertEqual(sidebarRowDescriptions(collapsedRows), [
+            "folder:emptyfolder / fullfolder:0:collapsed",
+            "file:alpha.md:0",
+        ])
+
+        let expandedRows = SidebarFileTree.visibleRows(
+            from: files,
+            expandedFolderIDs: ["emptyfolder/fullfolder"]
+        )
+        XCTAssertEqual(sidebarRowDescriptions(expandedRows), [
+            "folder:emptyfolder / fullfolder:0:expanded",
+            "file:notes.md:1",
+            "file:table.csv:1",
+            "file:alpha.md:0",
+        ])
+    }
+
+    func testSidebarFileTreeSupportsVisibleRowNavigation() {
+        let files = [
+            MarkdownFileNode(path: WorkspacePath(rawValue: "docs/release/plan.md"), name: "plan.md", kind: .markdown),
+            MarkdownFileNode(path: WorkspacePath(rawValue: "docs/release/qa.md"), name: "qa.md", kind: .markdown),
+        ]
+        let rows = SidebarFileTree.visibleRows(from: files, expandedFolderIDs: ["docs/release"])
+
+        XCTAssertEqual(
+            SidebarFileTree.folderPathPrefixes(for: WorkspacePath(rawValue: "docs/release/plan.md")),
+            Set(["docs", "docs/release"])
+        )
+        XCTAssertEqual(SidebarFileTree.adjacentRowID(from: nil, within: rows, offset: 1), "folder:docs/release")
+        XCTAssertEqual(
+            SidebarFileTree.adjacentRowID(from: "folder:docs/release", within: rows, offset: 1),
+            "file:docs/release/plan.md"
+        )
+        XCTAssertEqual(
+            SidebarFileTree.adjacentRowID(from: "file:docs/release/qa.md", within: rows, offset: -1),
+            "file:docs/release/plan.md"
+        )
+    }
+
+    func testSidebarFileTreeSnapshotHandlesLargeFolderExpansion() {
+        let files = (0..<5_000).map { index in
+            let name = String(format: "file-%04d.md", index)
+            return MarkdownFileNode(
+                path: WorkspacePath(rawValue: "docs/\(name)"),
+                name: name,
+                kind: .markdown
+            )
+        }
+        let snapshot = SidebarFileTree.Snapshot(files: files)
+
+        let collapsedRows = snapshot.visibleRows(expandedFolderIDs: [])
+        XCTAssertEqual(sidebarRowDescriptions(collapsedRows), [
+            "folder:docs:0:collapsed",
+        ])
+
+        let expandedRows = snapshot.visibleRows(expandedFolderIDs: ["docs"])
+        XCTAssertEqual(expandedRows.count, 5_001)
+        XCTAssertEqual(expandedRows.first?.id, "folder:docs")
+        XCTAssertEqual(expandedRows.last?.id, "file:docs/file-4999.md")
+    }
+
+    func testDocumentSearchEngineReturnsBlockAnchoredMatches() {
+        let documentText = """
+        # Lifecycle Overview
+
+        The patient lifecycle starts with intake.
+
+        Follow-up lifecycle notes are tracked separately.
+        """
+        let blocks = MarkdownRenderer.blocks(from: documentText)
+
+        let results = DocumentSearchEngine.results(
+            query: "LIFECYCLE",
+            path: WorkspacePath(rawValue: "case.md"),
+            fileName: "case.md",
+            documentText: documentText,
+            blocks: blocks
+        )
+
+        XCTAssertEqual(results.count, 3)
+        XCTAssertEqual(results.map(\.path.rawValue), ["case.md", "case.md", "case.md"])
+        XCTAssertEqual(results.map(\.lineNumber), [1, 3, 5])
+        XCTAssertTrue(results.allSatisfy { $0.blockID.isEmpty == false })
+        XCTAssertTrue(results.first?.snippet.contains("Lifecycle Overview") == true)
+    }
+
+    @MainActor
+    func testAppModelSearchesAllDocumentsAndSelectsNextResult() async throws {
+        let workspace = try makeTemporaryWorkspace(named: "Search Workspace", files: [
+            "alpha.md": "# Alpha\n\nLifecycle alpha.",
+            "nested/beta.md": "# Beta\n\nLifecycle beta."
+        ])
+        let model = AppModel(
+            launchOptions: HarnessLaunchOptions(
+                fixtureRoot: workspace,
+                openFile: "alpha.md",
+                uiTestOpenFolderURL: nil,
+                theme: nil,
+                windowSize: nil,
+                disableFileWatch: true,
+                dumpVisibleStateURL: nil,
+                dumpPerfStateURL: nil,
+                screenshotPathURL: nil,
+                commandDirectoryURL: nil,
+                uiTestMode: true,
+                platformTarget: .macos,
+                deviceClass: .mac
+            )
+        )
+        retainForTestLifetime(model)
+        model.bootstrap()
+        try await Task.sleep(nanoseconds: 300_000_000)
+
+        model.updateSearchQuery("lifecycle")
+        model.activateSearch(scope: .allDocuments)
+
+        for _ in 0..<100 where model.isSearching {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+
+        XCTAssertEqual(model.searchResults.map(\.path.rawValue), ["alpha.md", "nested/beta.md"])
+        XCTAssertEqual(model.searchResults.map(\.lineNumber), [3, 3])
+        XCTAssertEqual(model.selectedSearchResult?.path.rawValue, "alpha.md")
+
+        model.selectNextSearchResult()
+        XCTAssertEqual(model.selectedSearchResult?.path.rawValue, "nested/beta.md")
+        model.selectNextSearchResult()
+        XCTAssertEqual(model.selectedSearchResult?.path.rawValue, "alpha.md")
+    }
+
+    #if os(macOS)
+    @MainActor
+    func testMacSearchMenuControllerMapsFindShortcuts() throws {
+        func event(key: String, keyCode: UInt16, modifiers: NSEvent.ModifierFlags) throws -> NSEvent {
+            try XCTUnwrap(NSEvent.keyEvent(
+                with: .keyDown,
+                location: .zero,
+                modifierFlags: modifiers,
+                timestamp: 0,
+                windowNumber: 0,
+                context: nil,
+                characters: key,
+                charactersIgnoringModifiers: key.lowercased(),
+                isARepeat: false,
+                keyCode: keyCode
+            ))
+        }
+
+        XCTAssertEqual(
+            MacSearchMenuController.command(for: try event(key: "f", keyCode: 3, modifiers: [.command])),
+            .currentDocument
+        )
+        XCTAssertEqual(
+            MacSearchMenuController.command(for: try event(key: "F", keyCode: 3, modifiers: [.command, .shift])),
+            .allDocuments
+        )
+        XCTAssertEqual(
+            MacSearchMenuController.command(for: try event(key: "g", keyCode: 5, modifiers: [.command])),
+            .nextResult
+        )
+        XCTAssertNil(MacSearchMenuController.command(for: try event(key: "f", keyCode: 3, modifiers: [.command, .option])))
+    }
+    #endif
+
     func testMarkdownRendererParsesMultipleBlockKinds() {
         let markdown = """
         # Heading
@@ -2014,6 +2590,81 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
             ]
         )
         XCTAssertEqual(blocks[0].table?.alignments, [.leading, .leading, .leading])
+    }
+
+    func testMarkdownRendererMarksLargePlainPipeTableAsPlainText() throws {
+        let rows = (1...250).map { index in
+            "| \(index) | linkedin | Person \(index) | https://example.com/in/person-\(index) | \(index) | \(index / 2) | \(index / 2) | 1 |"
+        }.joined(separator: "\n")
+        let markdown = """
+        # Report
+
+        | Rank | Provider | Display | Key | Total | From me | From them | Conversations |
+        |---:|---|---|---|---:|---:|---:|---:|
+        \(rows)
+        """
+
+        let blocks = MarkdownRenderer.blocks(from: markdown)
+        let table = try XCTUnwrap(blocks.last?.table)
+
+        XCTAssertEqual(blocks.map(\.kind), [.heading, .table])
+        XCTAssertTrue(table.prefersLazyInteractiveViewport)
+        XCTAssertEqual(table.contentKind, .plainText)
+        XCTAssertEqual(table.rows.count, 250)
+        XCTAssertNil(table.header.first?.attributedText)
+        XCTAssertNil(table.rows.last?.last?.attributedText)
+    }
+
+    func testMarkdownRendererMarksSmallWidePlainPipeTableForLazyViewport() throws {
+        let longDigest = String(repeating: "AI infrastructure and agent workflows need bounded table rendering. ", count: 7)
+        let markdown = """
+        | Rank | Topic | Digest |
+        |---:|---|---|
+        | 1 | AI economics | \(longDigest) |
+        | 2 | Agent tooling | \(longDigest) |
+        """
+
+        let table = try XCTUnwrap(MarkdownRenderer.blocks(from: markdown).first?.table)
+
+        XCTAssertTrue(table.prefersLazyInteractiveViewport)
+        XCTAssertEqual(table.contentKind, .plainText)
+        XCTAssertNil(table.rows.first?.last?.attributedText)
+    }
+
+    func testMarkdownRendererKeepsSmallNormalPipeTableInDocumentFlow() throws {
+        let markdown = """
+        | Area | Status |
+        |---|---|
+        | Open | Ready |
+        | Print | Done |
+        """
+
+        let table = try XCTUnwrap(MarkdownRenderer.blocks(from: markdown).first?.table)
+
+        XCTAssertFalse(table.prefersLazyInteractiveViewport)
+        XCTAssertEqual(table.contentKind, .markdown)
+    }
+
+    func testMarkdownRendererPreservesLargePipeTableLinksWhenCellsContainMarkdown() throws {
+        let rows = (1...250).map { index in
+            let display = index == 1 ? "[Submission](./app-store-submission.md)" : "Person \(index)"
+            return "| \(index) | \(display) | \(index) |"
+        }.joined(separator: "\n")
+        let markdown = """
+        | Rank | Display | Total |
+        |---:|---|---:|
+        \(rows)
+        """
+
+        let blocks = MarkdownRenderer.blocks(from: markdown)
+        let table = try XCTUnwrap(blocks.first?.table)
+        let linkedCell = try XCTUnwrap(table.rows.first?[1])
+
+        XCTAssertTrue(table.prefersLazyInteractiveViewport)
+        XCTAssertEqual(table.contentKind, .markdown)
+        XCTAssertEqual(linkedCell.plainText, "Submission")
+        XCTAssertEqual(linkedCell.attributedText?.runs.first?.link, URL(string: "./app-store-submission.md"))
+        XCTAssertNil(table.rows.last?[1].attributedText)
     }
 
     func testMarkdownRendererPreservesRelativeLinksInsideTables() throws {
@@ -2394,6 +3045,35 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
         )
     }
 
+    func testDocumentOutlineActiveRowUsesNavigationFocusStyle() throws {
+        let sourceURL = repoRootURL.appendingPathComponent(
+            "Quick Markdown Viewer/Quick Markdown Viewer/App/Shell/ViewerShellView.swift"
+        )
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let rowStart = try XCTUnwrap(source.range(of: "private struct DocumentOutlineRow: View"))
+        let rowEnd = try XCTUnwrap(source.range(of: "private struct DocumentOutlineTitleText: View"))
+        let rowSource = String(source[rowStart.lowerBound..<rowEnd.lowerBound])
+
+        XCTAssertTrue(rowSource.contains(".foregroundStyle(isActive ? Color.accentColor : Color.primary)"))
+        XCTAssertTrue(rowSource.contains(".stroke(Color.secondary.opacity(0.42), lineWidth: 1)"))
+        XCTAssertFalse(rowSource.contains(".fill(Color.accentColor.opacity(0.14))"))
+        XCTAssertFalse(rowSource.contains(".frame(width: 3)"))
+    }
+
+    func testDocumentOutlineTrackingDebouncesFastScrollUpdates() throws {
+        let sourceURL = repoRootURL.appendingPathComponent(
+            "Quick Markdown Viewer/Quick Markdown Viewer/App/Shell/ViewerShellView.swift"
+        )
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+
+        XCTAssertTrue(source.contains("private enum DocumentOutlineTracking"))
+        XCTAssertTrue(source.contains("updateIntervalNanoseconds: UInt64 = 80_000_000"))
+        XCTAssertTrue(source.contains("@State private var pendingHeadingOffsets: [String: CGFloat]"))
+        XCTAssertTrue(source.contains("@State private var activeOutlineUpdateTask: Task<Void, Never>?"))
+        XCTAssertTrue(source.contains("scheduleActiveOutlineUpdate(headingOffsets)"))
+        XCTAssertTrue(source.contains("Task.sleep(nanoseconds: DocumentOutlineTracking.updateIntervalNanoseconds)"))
+    }
+
     @MainActor
     func testAppModelPublishesOutlineItemsForLoadedMarkdownDocument() async throws {
         let workspace = try makeTemporaryWorkspace(named: "Outline Workspace", files: [
@@ -2534,6 +3214,63 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
         try await Task.sleep(nanoseconds: 150_000_000)
 
         XCTAssertNil(secondChecker.activeAlert)
+    }
+
+    func testQuickLookPreviewExtensionDeclaresMarkdownSupport() throws {
+        let infoURL = repoRootURL.appendingPathComponent("Quick Markdown Viewer/QuickLookPreview-Info.plist")
+        let data = try Data(contentsOf: infoURL)
+        let plist = try XCTUnwrap(
+            PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any]
+        )
+        let extensionDictionary = try XCTUnwrap(plist["NSExtension"] as? [String: Any])
+        let attributes = try XCTUnwrap(extensionDictionary["NSExtensionAttributes"] as? [String: Any])
+
+        XCTAssertEqual(plist["CFBundleExecutable"] as? String, "$(EXECUTABLE_NAME)")
+        XCTAssertEqual(extensionDictionary["NSExtensionPointIdentifier"] as? String, "com.apple.quicklook.preview")
+        XCTAssertEqual(
+            extensionDictionary["NSExtensionPrincipalClass"] as? String,
+            "$(PRODUCT_MODULE_NAME).PreviewViewController"
+        )
+        XCTAssertEqual(attributes["QLIsDataBasedPreview"] as? Bool, false)
+        XCTAssertEqual(attributes["QLSupportsSearchableItems"] as? Bool, false)
+        XCTAssertEqual(attributes["QLSupportedContentTypes"] as? [String], ["net.daringfireball.markdown"])
+    }
+
+    func testMacDocumentTypeDeclarationsIncludeHandlerRanks() throws {
+        let infoURL = repoRootURL.appendingPathComponent("Quick Markdown Viewer/Info-macOS.plist")
+        let data = try Data(contentsOf: infoURL)
+        let plist = try XCTUnwrap(
+            PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any]
+        )
+        let documentTypes = try XCTUnwrap(plist["CFBundleDocumentTypes"] as? [[String: Any]])
+
+        for documentType in documentTypes {
+            XCTAssertEqual(documentType["LSHandlerRank"] as? String, "Alternate")
+        }
+    }
+
+    func testQuickLookPreviewExtensionTargetIsEmbeddedForMacOS() throws {
+        let projectURL = repoRootURL.appendingPathComponent(
+            "Quick Markdown Viewer/Quick Markdown Viewer.xcodeproj/project.pbxproj"
+        )
+        let project = try String(contentsOf: projectURL, encoding: .utf8)
+
+        XCTAssertTrue(project.contains("Quick Markdown Viewer QuickLook.appex in Embed App Extensions"))
+        XCTAssertTrue(project.contains("productType = \"com.apple.product-type.app-extension\";"))
+        XCTAssertTrue(project.contains("platformFilters = (macos, );"))
+        XCTAssertTrue(project.contains("SUPPORTED_PLATFORMS = macosx;"))
+    }
+
+    func testQuickLookPreviewSourceUsesNativeMarkdownRendering() throws {
+        let sourceURL = repoRootURL.appendingPathComponent(
+            "Quick Markdown Viewer/Quick Markdown Viewer QuickLook/PreviewViewController.swift"
+        )
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+
+        XCTAssertTrue(source.contains("QLPreviewingController"))
+        XCTAssertTrue(source.contains("AttributedString(markdown:"))
+        XCTAssertFalse(source.contains("WKWebView"))
+        XCTAssertFalse(source.contains("JavaScript"))
     }
 
     private func makeTemporaryWorkspace(named folderName: String, files: [String: String]) throws -> URL {

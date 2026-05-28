@@ -16,6 +16,7 @@ Users should be able to open a right-side outline surface while reading Markdown
 - [x] (2026-05-12T22:35Z) Added a visible active state to the outline toolbar/top-bar button while the outline drawer or sheet is open.
 - [x] (2026-05-12T23:02Z) Added a draggable resize handle for the inline outline pane on macOS and regular-width iOS/iPad layouts.
 - [x] (2026-05-12T23:18Z) Replaced the custom macOS resize handle with native `HSplitView` resizing after the custom handle let window dragging win.
+- [x] (2026-05-26T05:56Z) Replaced the active outline row's filled accent selection with a gray outline plus accent text so heading jumps do not look like a second selected document/view.
 
 ## Surprises & Discoveries
 
@@ -33,6 +34,8 @@ Users should be able to open a right-side outline surface while reading Markdown
   Evidence: `outlineSheetBinding` presents the outline as a sheet only when `isCompactPhoneLayout` is true; the resizable pane is restricted to `shouldShowInlineOutline`.
 - Observation: the custom SwiftUI drag handle is not reliable on macOS in this window.
   Evidence: dragging the handle moved the whole window instead of resizing the outline, so the mouse drag was being claimed by window dragging rather than the SwiftUI `DragGesture`.
+- Observation: the active outline row should read as a navigation target, not the app's current content selection.
+  Evidence: while a clicked outline row scrolls the document to a heading, the document pane is still the viewed content; a filled accent row plus scrolling content made the active state look like it was dancing between two current views.
 
 ## Decision Log
 
@@ -48,6 +51,8 @@ Users should be able to open a right-side outline surface while reading Markdown
   Rationale: this is a layout affordance, not document data; clamping keeps the document readable across macOS and iPad window sizes without adding storage or migration concerns.
 - Decision: use native `HSplitView` for macOS outline resizing and keep the custom handle for iOS/iPad only.
   Rationale: `HSplitView` owns AppKit split-divider mouse tracking and avoids conflicts with window dragging; iOS has no AppKit split divider and still needs the SwiftUI drag/touch handle.
+- Decision: style the active outline row with accent-colored text and a gray rounded outline instead of a filled accent background and leading accent bar.
+  Rationale: this matches the lighter navigation-focus treatment used for folder focus in the file sidebar and avoids implying that both the outline row and document content are independently selected.
 
 ## Outcomes & Retrospective
 
@@ -55,7 +60,7 @@ Markdown documents now publish `outlineItems` from the detached document-load pa
 
 Outline items also carry title runs derived from the heading `AttributedString`. Inline-code runs are rendered in the right-side outline with `ViewerFont.monospacedBody`, while normal runs use `ViewerFont.body`; leading and trailing whitespace is trimmed without stripping separator spaces around code spans.
 
-When the outline is open, rendered heading blocks publish their scroll-view-relative offsets through SwiftUI preferences. The shell resolves those offsets to the last heading at the top threshold, keeps the current section stable between headings, and highlights the matching outline row with an accent background and leading bar.
+When the outline is open, rendered heading blocks publish their scroll-view-relative offsets through SwiftUI preferences. The shell resolves those offsets to the last heading at the top threshold, keeps the current section stable between headings, and marks the matching outline row with accent text plus a gray rounded outline.
 
 The outline toggle also reflects open state directly in the app chrome with accent foreground, a subtle rounded background, and an accessibility value of `Shown` or `Hidden`.
 
@@ -111,6 +116,8 @@ Validation completed from `/Users/matthewmoore/Projects/free-markdown-viewer`:
 15. `./scripts/build --platform ios`
 16. `./scripts/test-ui-ios --device both --smoke` (iPhone smoke passed; iPad build passed, then the preferred `iPad Pro 11-inch (M5)` simulator hung in `simctl launch`)
 17. Manual iPad smoke on `iPad (A16)` simulator `C1DAE170-A0B7-44F1-A23E-B0697677435A` passed and wrote `artifacts/checkpoints/shell-smoke-ipad-manual/`
+18. `xcodebuild -quiet -project "Quick Markdown Viewer/Quick Markdown Viewer.xcodeproj" -scheme "Quick Markdown Viewer" -configuration Debug -derivedDataPath /tmp/qmv-outline-focus-style-tests -destination "platform=macOS,arch=arm64" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" "-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testDocumentOutlineActiveRowUsesNavigationFocusStyle" "-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testActiveOutlineBlockIDTracksLastHeadingAtViewportTop" test`
+19. `xcodebuild -quiet -project "Quick Markdown Viewer/Quick Markdown Viewer.xcodeproj" -scheme "Quick Markdown Viewer" -configuration Debug -derivedDataPath /tmp/qmv-outline-focus-style-build -destination "platform=macOS,arch=arm64" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build`
 
 ## Validation and Acceptance
 
@@ -120,6 +127,7 @@ Acceptance:
 - The outline lists Markdown headings in document order with indentation by heading level.
 - Selecting an outline item scrolls the main document pane to that heading.
 - While the outline is visible, the outline row matching the current reader section is highlighted.
+- While the outline is visible, the outline row matching the current reader section uses a lighter navigation-focus style instead of the filled selected-document style.
 - While the outline is visible, the outline toggle itself has a visible active state.
 - On macOS and regular-width iOS/iPad layouts, the inline outline pane can be resized without hiding the document.
 - Outline generation is done from the detached document-load path and not in SwiftUI `body`.

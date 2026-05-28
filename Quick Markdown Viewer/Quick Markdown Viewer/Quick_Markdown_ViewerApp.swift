@@ -76,6 +76,11 @@ struct Quick_Markdown_ViewerApp: App {
 }
 
 #if os(macOS)
+nonisolated enum ExternalWorkspaceOpenPresentation: Equatable {
+    case reuseEmptyWindow
+    case newWindow
+}
+
 @MainActor
 final class ExternalWorkspaceOpenCoordinator: ObservableObject {
     static let shared = ExternalWorkspaceOpenCoordinator()
@@ -93,27 +98,84 @@ final class ExternalWorkspaceOpenCoordinator: ObservableObject {
         pendingRequests.removeValue(forKey: id)
     }
 
-    nonisolated static func normalizedRequest(for incomingURL: URL) -> ExternalWorkspaceOpenRequest? {
+    nonisolated static func normalizedRequest(
+        for incomingURL: URL,
+        presentation: ExternalWorkspaceOpenPresentation = .reuseEmptyWindow
+    ) -> ExternalWorkspaceOpenRequest? {
         let resolvedURL = incomingURL.resolvingSymlinksInPath().standardizedFileURL
         var isDirectory: ObjCBool = false
         if FileManager.default.fileExists(atPath: resolvedURL.path, isDirectory: &isDirectory), isDirectory.boolValue {
-            return ExternalWorkspaceOpenRequest(rootURL: resolvedURL, selectedPath: nil)
+            return ExternalWorkspaceOpenRequest(
+                rootURL: resolvedURL,
+                selectedPath: nil,
+                presentation: presentation
+            )
         }
         guard SupportedDocumentExtensions.contains(resolvedURL.pathExtension) else { return nil }
         let rootURL = resolvedURL.deletingLastPathComponent().resolvingSymlinksInPath().standardizedFileURL
         return ExternalWorkspaceOpenRequest(
             rootURL: rootURL,
-            selectedPath: WorkspacePath(rawValue: resolvedURL.lastPathComponent)
+            selectedPath: WorkspacePath(rawValue: resolvedURL.lastPathComponent),
+            presentation: presentation
         )
+    }
+
+    nonisolated static func fileURL(fromDroppedItem item: NSSecureCoding?) -> URL? {
+        guard let item else { return nil }
+
+        if let url = item as? URL {
+            return standardizedFileURL(from: url)
+        }
+        if let data = item as? Data {
+            if let url = URL(dataRepresentation: data, relativeTo: nil) {
+                return standardizedFileURL(from: url)
+            }
+            if let value = String(data: data, encoding: .utf8) {
+                return fileURL(fromDroppedString: value)
+            }
+        }
+        if let value = item as? String {
+            return fileURL(fromDroppedString: value)
+        }
+        return nil
+    }
+
+    private nonisolated static func fileURL(fromDroppedString value: String) -> URL? {
+        let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let url = URL(string: trimmedValue), url.isFileURL {
+            return standardizedFileURL(from: url)
+        }
+        guard trimmedValue.hasPrefix("/") else { return nil }
+        return standardizedFileURL(from: URL(fileURLWithPath: trimmedValue))
+    }
+
+    private nonisolated static func standardizedFileURL(from url: URL) -> URL? {
+        guard url.isFileURL else { return nil }
+        return url.resolvingSymlinksInPath().standardizedFileURL
     }
 }
 
-struct ExternalWorkspaceOpenRequest: Equatable {
+nonisolated struct ExternalWorkspaceOpenRequest: Equatable {
     let rootURL: URL
     let selectedPath: WorkspacePath?
+    let presentation: ExternalWorkspaceOpenPresentation
+
+    init(
+        rootURL: URL,
+        selectedPath: WorkspacePath?,
+        presentation: ExternalWorkspaceOpenPresentation = .reuseEmptyWindow
+    ) {
+        self.rootURL = rootURL
+        self.selectedPath = selectedPath
+        self.presentation = presentation
+    }
 }
 
 final class QuickMarkdownViewerAppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        MacSearchMenuController.shared.install()
+    }
+
     func application(_ sender: NSApplication, openFiles filenames: [String]) {
         for filename in filenames {
             let url = URL(fileURLWithPath: filename)
@@ -126,6 +188,35 @@ final class QuickMarkdownViewerAppDelegate: NSObject, NSApplicationDelegate {
         sender.reply(toOpenOrPrint: .success)
     }
 
+    func application(
+        _ application: NSApplication,
+        printFiles filenames: [String],
+        withSettings printSettings: [NSPrintInfo.AttributeKey: Any],
+        showPrintPanels: Bool
+    ) -> NSApplication.PrintReply {
+        guard filenames.isEmpty == false else {
+            return .printingFailure
+        }
+
+        let fileURLs = filenames.map(URL.init(fileURLWithPath:))
+        Task { @MainActor in
+            do {
+                let composition = try await AppModel.makePrintComposition(forExternalPrintFileURLs: fileURLs)
+                PlatformPrintPresenter.present(
+                    composition,
+                    from: application.keyWindow,
+                    printInfo: PlatformPrintPresenter.printInfo(from: printSettings),
+                    showsPrintPanel: showPrintPanels
+                )
+                application.reply(toOpenOrPrint: .success)
+            } catch {
+                application.reply(toOpenOrPrint: .failure)
+            }
+        }
+
+        return .printingReplyLater
+    }
+
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls {
             guard let request = ExternalWorkspaceOpenCoordinator.normalizedRequest(for: url) else {
@@ -133,6 +224,119 @@ final class QuickMarkdownViewerAppDelegate: NSObject, NSApplicationDelegate {
             }
             ExternalWorkspaceOpenCoordinator.shared.enqueue(request)
         }
+    }
+}
+
+@MainActor
+final class MacSearchMenuController: NSObject, NSMenuItemValidation {
+    static let shared = MacSearchMenuController()
+    private var keyMonitor: Any?
+
+    private override init() {}
+
+    func install() {
+        installKeyMonitorIfNeeded()
+        configureEditMenu()
+        DispatchQueue.main.async { [weak self] in
+            self?.configureEditMenu()
+        }
+    }
+
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        switch menuItem.action {
+        case #selector(findInDocument(_:)),
+             #selector(findInAllDocuments(_:)),
+             #selector(findNext(_:)):
+            return true
+        default:
+            return true
+        }
+    }
+
+    private func installKeyMonitorIfNeeded() {
+        guard keyMonitor == nil else { return }
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            if let command = Self.command(for: event) {
+                MacSearchCommandDispatcher.send(command)
+                return nil
+            }
+            return event
+        }
+    }
+
+    static func command(for event: NSEvent) -> MacSearchCommand? {
+        let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
+        guard modifiers.contains(.command),
+              modifiers.isDisjoint(with: [.option, .control]),
+              let key = event.charactersIgnoringModifiers?.lowercased() else {
+            return nil
+        }
+
+        if key == "f" {
+            return modifiers.contains(.shift) ? .allDocuments : .currentDocument
+        }
+
+        guard key == "g", modifiers.contains(.shift) == false else { return nil }
+        return .nextResult
+    }
+
+    @objc private func findInDocument(_ sender: NSMenuItem) {
+        MacSearchCommandDispatcher.send(.currentDocument)
+    }
+
+    @objc private func findInAllDocuments(_ sender: NSMenuItem) {
+        MacSearchCommandDispatcher.send(.allDocuments)
+    }
+
+    @objc private func findNext(_ sender: NSMenuItem) {
+        MacSearchCommandDispatcher.send(.nextResult)
+    }
+
+    private func configureEditMenu() {
+        guard let editMenu = NSApp.mainMenu?.item(withTitle: "Edit")?.submenu else { return }
+        configureItem(
+            in: editMenu,
+            title: "Find in Document",
+            keyEquivalent: "f",
+            modifiers: [.command],
+            action: #selector(findInDocument(_:))
+        )
+        configureItem(
+            in: editMenu,
+            title: "Find in All Documents",
+            keyEquivalent: "f",
+            modifiers: [.command, .shift],
+            action: #selector(findInAllDocuments(_:))
+        )
+        configureItem(
+            in: editMenu,
+            title: "Find Next",
+            keyEquivalent: "g",
+            modifiers: [.command],
+            action: #selector(findNext(_:))
+        )
+    }
+
+    private func configureItem(
+        in menu: NSMenu,
+        title: String,
+        keyEquivalent: String,
+        modifiers: NSEvent.ModifierFlags,
+        action: Selector
+    ) {
+        let item = menu.items.first { $0.title == title } ?? insertedSearchItem(in: menu, title: title)
+        item.target = self
+        item.action = action
+        item.keyEquivalent = keyEquivalent
+        item.keyEquivalentModifierMask = modifiers
+        item.isEnabled = true
+    }
+
+    private func insertedSearchItem(in menu: NSMenu, title: String) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        let insertionIndex = menu.items.firstIndex { $0.title == "Select All" }.map { $0 + 1 } ?? menu.items.count
+        menu.insertItem(item, at: min(insertionIndex, menu.items.count))
+        return item
     }
 }
 
@@ -418,7 +622,7 @@ final class MacCommandLineToolManager: ObservableObject {
         set -eu
 
         if [ "$#" -gt 1 ]; then
-          echo "usage: qmv [directory-or-markdown-file]" >&2
+          echo "usage: qmv [directory-or-supported-file]" >&2
           exit 64
         fi
 

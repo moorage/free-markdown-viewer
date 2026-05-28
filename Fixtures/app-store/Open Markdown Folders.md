@@ -1,12 +1,12 @@
 # Open Markdown Folders
 
-Markdown Viewer lets you open a folder of local Markdown files and read through them without an account, sync service, or subscription.
+Open a local folder or a GitHub URL, then browse every readable document in a fast file sidebar.
 
-Use it for:
+Built for the files people already have:
 
-- project notes
-- team handbooks
-- exported reports
-- local knowledge bases
+- Markdown notes, READMEs, and runbooks
+- CSV and TSV tables
+- linked images, GIFs, and videos
+- folders with hundreds of documents
 
-Everything stays on device in the files you choose.
+Everything stays local unless you explicitly open a remote GitHub document. No account, sync service, or tracking layer is required.

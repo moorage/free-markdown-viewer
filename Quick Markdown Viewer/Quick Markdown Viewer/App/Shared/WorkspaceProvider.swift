@@ -119,6 +119,8 @@ enum SupportedDocumentExtensions {
         "mdown",
         "mkd",
         "mkdn",
+        "mermaid",
+        "mmd",
         "csv",
         "tsv",
     ]

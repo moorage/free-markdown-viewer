@@ -61,6 +61,7 @@ Capture a deterministic checkpoint:
 ## Repo map
 
 - `Quick Markdown Viewer/` - Xcode project, app target, unit tests, and UI tests
+- `Quick Markdown Viewer/Quick Markdown Viewer QuickLook/` - bundled macOS Quick Look preview extension source
 - `Fixtures/` - deterministic markdown/media fixtures and expected outputs
 - `scripts/` - build, test, capture, docs, and knowledge tooling
 - `docs/` - durable planning, harness contracts, and internal reliability/security docs
@@ -71,4 +72,5 @@ Capture a deterministic checkpoint:
 
 - The renderer stays native. No `WKWebView`, HTML, CSS, or JavaScript rendering belongs in this repository.
 - Shared core logic must remain platform-neutral. AppKit and UIKit belong only in thin host adapters.
+- The macOS Quick Look extension is bundled with the app and enabled by default through app-extension registration; users disable it through System Settings if needed.
 - `artifacts/` is runtime-only and ignored by git.

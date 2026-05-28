@@ -1,0 +1,43 @@
+{
+  "accessibilityTitle": "Native sequence",
+  "diagnosticMessages": [],
+  "displayTitle": "Native sequence",
+  "kind": "sequenceDiagram",
+  "scene": {
+    "edges": [
+      {
+        "label": "Open Mermaid file",
+        "sourceID": "user",
+        "style": "solid",
+        "targetID": "app"
+      },
+      {
+        "label": "Render native diagram",
+        "sourceID": "app",
+        "style": "dotted",
+        "targetID": "user"
+      }
+    ],
+    "kind": "sequenceDiagram",
+    "metrics": [],
+    "nodes": [
+      {
+        "id": "app",
+        "label": "App",
+        "lane": null,
+        "shape": "person"
+      },
+      {
+        "id": "user",
+        "label": "User",
+        "lane": null,
+        "shape": "person"
+      }
+    ],
+    "sections": [],
+    "subtitle": "Native common syntax",
+    "title": "Native sequence"
+  },
+  "sourceFile": "mermaid/sequence_basic.mermaid",
+  "supportStatus": "nativeCommon"
+}

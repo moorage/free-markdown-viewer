@@ -23,6 +23,10 @@ struct HarnessLaunchOptions {
     let uiTestGitHubFixtureURL: URL?
     let uiTestOpenLinkedMediaURL: URL?
     let uiTestResetCommandLineToolInstallState: Bool
+    let uiTestShowSidebar: Bool
+    let uiTestShowOutline: Bool
+    let uiTestSearchQuery: String?
+    let uiTestSearchScope: String?
     let theme: String?
     let windowSize: CGSize?
     let disableFileWatch: Bool
@@ -42,6 +46,10 @@ struct HarnessLaunchOptions {
         fixtureRoot: URL?,
         openFile: String?,
         uiTestOpenFolderURL: URL?,
+        uiTestShowSidebar: Bool = false,
+        uiTestShowOutline: Bool = false,
+        uiTestSearchQuery: String? = nil,
+        uiTestSearchScope: String? = nil,
         theme: String?,
         windowSize: CGSize?,
         disableFileWatch: Bool,
@@ -61,6 +69,10 @@ struct HarnessLaunchOptions {
             uiTestGitHubFixtureURL: nil,
             uiTestOpenLinkedMediaURL: nil,
             uiTestResetCommandLineToolInstallState: false,
+            uiTestShowSidebar: uiTestShowSidebar,
+            uiTestShowOutline: uiTestShowOutline,
+            uiTestSearchQuery: uiTestSearchQuery,
+            uiTestSearchScope: uiTestSearchScope,
             theme: theme,
             windowSize: windowSize,
             disableFileWatch: disableFileWatch,
@@ -82,6 +94,10 @@ struct HarnessLaunchOptions {
         uiTestGitHubFixtureURL: URL?,
         uiTestOpenLinkedMediaURL: URL?,
         uiTestResetCommandLineToolInstallState: Bool,
+        uiTestShowSidebar: Bool = false,
+        uiTestShowOutline: Bool = false,
+        uiTestSearchQuery: String? = nil,
+        uiTestSearchScope: String? = nil,
         theme: String?,
         windowSize: CGSize?,
         disableFileWatch: Bool,
@@ -100,6 +116,10 @@ struct HarnessLaunchOptions {
         self.uiTestGitHubFixtureURL = uiTestGitHubFixtureURL
         self.uiTestOpenLinkedMediaURL = uiTestOpenLinkedMediaURL
         self.uiTestResetCommandLineToolInstallState = uiTestResetCommandLineToolInstallState
+        self.uiTestShowSidebar = uiTestShowSidebar
+        self.uiTestShowOutline = uiTestShowOutline
+        self.uiTestSearchQuery = uiTestSearchQuery
+        self.uiTestSearchScope = uiTestSearchScope
         self.theme = theme
         self.windowSize = windowSize
         self.disableFileWatch = disableFileWatch
@@ -156,6 +176,10 @@ struct HarnessLaunchOptions {
             uiTestGitHubFixtureURL: resolveURL(after: "--ui-test-github-fixture"),
             uiTestOpenLinkedMediaURL: resolveURL(after: "--ui-test-open-linked-media"),
             uiTestResetCommandLineToolInstallState: arguments.contains("--ui-test-reset-command-line-tool-install-state"),
+            uiTestShowSidebar: arguments.contains("--ui-test-show-sidebar"),
+            uiTestShowOutline: arguments.contains("--ui-test-show-outline"),
+            uiTestSearchQuery: value(after: "--ui-test-search-query"),
+            uiTestSearchScope: value(after: "--ui-test-search-scope"),
             theme: value(after: "--theme"),
             windowSize: windowSize,
             disableFileWatch: arguments.contains("--disable-file-watch"),

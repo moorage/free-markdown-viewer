@@ -1,0 +1,74 @@
+{
+  "accessibilityTitle": "Native Mermaid Flowchart",
+  "diagnosticMessages": [],
+  "displayTitle": "Native Mermaid Flowchart",
+  "kind": "flowchart",
+  "scene": {
+    "edges": [
+      {
+        "label": null,
+        "sourceID": "start",
+        "style": "solid",
+        "targetID": "parse"
+      },
+      {
+        "label": null,
+        "sourceID": "parse",
+        "style": "solid",
+        "targetID": "render"
+      },
+      {
+        "label": "yes",
+        "sourceID": "render",
+        "style": "solid",
+        "targetID": "preview"
+      },
+      {
+        "label": "diagnostic",
+        "sourceID": "render",
+        "style": "dotted",
+        "targetID": "source"
+      }
+    ],
+    "direction": "topBottom",
+    "kind": "flowchart",
+    "metrics": [],
+    "nodes": [
+      {
+        "id": "start",
+        "label": "Start",
+        "lane": null,
+        "shape": "stadium"
+      },
+      {
+        "id": "parse",
+        "label": "Parse Mermaid",
+        "lane": null,
+        "shape": "rectangle"
+      },
+      {
+        "id": "render",
+        "label": "Native Swift?",
+        "lane": null,
+        "shape": "decision"
+      },
+      {
+        "id": "preview",
+        "label": "Zoom and pan",
+        "lane": null,
+        "shape": "rectangle"
+      },
+      {
+        "id": "source",
+        "label": "Preserve source",
+        "lane": null,
+        "shape": "rectangle"
+      }
+    ],
+    "sections": [],
+    "subtitle": "Native common syntax",
+    "title": "Native Mermaid Flowchart"
+  },
+  "sourceFile": "mermaid/flowchart_basic.mmd",
+  "supportStatus": "nativeCommon"
+}

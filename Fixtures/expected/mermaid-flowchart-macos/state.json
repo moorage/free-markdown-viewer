@@ -1,0 +1,26 @@
+{
+  "deviceClass" : "mac",
+  "history" : {
+    "backCount" : 0,
+    "forwardCount" : 0
+  },
+  "platform" : "macos",
+  "selectedFile" : "mermaid\/flowchart_basic.mmd",
+  "sidebar" : {
+    "selectedNode" : "mermaid\/flowchart_basic.mmd"
+  },
+  "viewport" : {
+    "height" : 768,
+    "width" : 1024,
+    "x" : 0,
+    "y" : 0
+  },
+  "visibleBlocks" : [
+    {
+      "id" : "block.0",
+      "kind" : "mermaidDiagram",
+      "text" : "Mermaid Diagram\nNative Mermaid Flowchart\nFlowchart\nNative common syntax\nmermaid\/flowchart_basic.mmd"
+    }
+  ],
+  "workspaceRoot" : "Fixtures\/docs"
+}

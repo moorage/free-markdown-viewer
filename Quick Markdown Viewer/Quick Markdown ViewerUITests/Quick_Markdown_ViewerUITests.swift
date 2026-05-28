@@ -317,15 +317,15 @@ final class Quick_Markdown_ViewerUITests: XCTestCase {
         XCTAssertTrue(printButton.waitForExistence(timeout: 5))
         printButton.click()
 
-        XCTAssertTrue(waitForStaticText(app.staticTexts["print.request.scope"], label: "selectedFile", timeout: 5))
-        XCTAssertTrue(waitForStaticText(app.staticTexts["print.request.status"], label: "presented", timeout: 5))
+        XCTAssertTrue(waitForElement(app.descendants(matching: .any)["print.request.scope"], label: "selectedFile", timeout: 5))
+        XCTAssertTrue(waitForElement(app.descendants(matching: .any)["print.request.status"], label: "presented", timeout: 5))
 
         let printAllButton = app.buttons["ui-test.printAllAction"].firstMatch
         XCTAssertTrue(printAllButton.waitForExistence(timeout: 5))
         printAllButton.click()
 
-        XCTAssertTrue(waitForStaticText(app.staticTexts["print.request.scope"], label: "allFiles", timeout: 5))
-        XCTAssertTrue(waitForStaticText(app.staticTexts["print.request.status"], label: "presented", timeout: 5))
+        XCTAssertTrue(waitForElement(app.descendants(matching: .any)["print.request.scope"], label: "allFiles", timeout: 5))
+        XCTAssertTrue(waitForElement(app.descendants(matching: .any)["print.request.status"], label: "presented", timeout: 5))
     }
     #endif
 
@@ -361,6 +361,131 @@ final class Quick_Markdown_ViewerUITests: XCTestCase {
 
         app.typeKey(XCUIKeyboardKey.upArrow.rawValue, modifierFlags: [])
         XCTAssertTrue(app.staticTexts["Keyboard Workspace > beta.md"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testSidebarCompactsFoldersAndExpandsWithArrowKeys() throws {
+        let app = XCUIApplication()
+        let workspace = try makeWorkspace(named: "Tree Workspace", files: [
+            "emptyfolder/fullfolder/nested.md": "# Nested\n\nDeep file.",
+            "root.md": "# Root\n\nTop level file."
+        ])
+
+        app.launchArguments = [
+            "--fixture-root", workspace.path,
+            "--open-file", "root.md",
+            "--ui-test-mode", "1",
+        ]
+        app.launch()
+        app.activate()
+
+        XCTAssertTrue(app.windows.element(boundBy: 0).waitForExistence(timeout: 5))
+
+        let compactFolder = app.buttons["sidebar.folder.emptyfolder.fullfolder"]
+        XCTAssertTrue(compactFolder.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["sidebar.node.emptyfolder.fullfolder.nested.md"].exists)
+
+        compactFolder.click()
+        let nestedNode = app.buttons["sidebar.node.emptyfolder.fullfolder.nested.md"]
+        XCTAssertTrue(nestedNode.waitForExistence(timeout: 5))
+
+        app.typeKey(XCUIKeyboardKey.leftArrow.rawValue, modifierFlags: [])
+        XCTAssertFalse(nestedNode.exists)
+
+        app.typeKey(XCUIKeyboardKey.rightArrow.rawValue, modifierFlags: [])
+        XCTAssertTrue(nestedNode.waitForExistence(timeout: 5))
+
+        app.typeKey(XCUIKeyboardKey.downArrow.rawValue, modifierFlags: [])
+        XCTAssertTrue(waitForWindowTitle(app, label: "Tree Workspace > nested.md", timeout: 5))
+
+        app.typeKey(XCUIKeyboardKey.leftArrow.rawValue, modifierFlags: [])
+        app.typeKey(XCUIKeyboardKey.leftArrow.rawValue, modifierFlags: [])
+        XCTAssertTrue(compactFolder.waitForExistence(timeout: 5))
+        XCTAssertFalse(nestedNode.exists)
+    }
+
+    @MainActor
+    func testSearchCurrentDocumentFindsMatchesAndNextResultStaysInDocument() throws {
+        let app = XCUIApplication()
+        let workspace = try makeWorkspace(named: "Search Current Workspace", files: [
+            "alpha.md": "# Lifecycle Overview\n\nLifecycle starts here.\n\nAnother lifecycle reference.",
+            "beta.md": "# Beta\n\nLifecycle exists outside the selected document."
+        ])
+
+        app.launchArguments = [
+            "--fixture-root", workspace.path,
+            "--open-file", "alpha.md",
+            "--ui-test-mode", "1",
+        ]
+        app.launch()
+        app.activate()
+
+        XCTAssertTrue(waitForWindowTitle(app, label: "Search Current Workspace > alpha.md", timeout: 5))
+
+        let searchTab = sidebarSearchTab(in: app)
+        XCTAssertTrue(searchTab.waitForExistence(timeout: 5))
+        searchTab.click()
+
+        let searchField = searchField(in: app)
+        XCTAssertTrue(searchField.waitForExistence(timeout: 5))
+        searchField.click()
+        searchField.typeText("lifecycle")
+        XCTAssertEqual(searchField.value as? String, "lifecycle")
+        XCTAssertTrue(waitForElement(app.descendants(matching: .any)["search.query"], label: "lifecycle", timeout: 2))
+        XCTAssertTrue(waitForElement(app.descendants(matching: .any)["search.resultCount"], label: "3", timeout: 5))
+
+        let alphaResult = app.descendants(matching: .any)["search.result.file.alpha-md"].firstMatch
+        XCTAssertTrue(alphaResult.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.descendants(matching: .any)["search.result.file.beta-md"].firstMatch.exists)
+
+        alphaResult.click()
+        XCTAssertTrue(waitForWindowTitle(app, label: "Search Current Workspace > alpha.md", timeout: 5))
+
+        let nextButton = app.buttons["search.next"]
+        XCTAssertTrue(nextButton.waitForExistence(timeout: 5))
+        nextButton.click()
+        XCTAssertTrue(waitForWindowTitle(app, label: "Search Current Workspace > alpha.md", timeout: 5))
+    }
+
+    @MainActor
+    func testSearchAllDocumentsFindsMatchesAndOpensClickedResult() throws {
+        let app = XCUIApplication()
+        let workspace = try makeWorkspace(named: "Search All Workspace", files: [
+            "alpha.md": "# Alpha\n\nNo global token here.",
+            "notes/beta.md": "# Beta\n\nThe globaltoken result lives here.",
+            "notes/gamma.md": "# Gamma\n\nAnother globaltoken result."
+        ])
+
+        app.launchArguments = [
+            "--fixture-root", workspace.path,
+            "--open-file", "alpha.md",
+            "--ui-test-mode", "1",
+        ]
+        app.launch()
+        app.activate()
+
+        XCTAssertTrue(waitForWindowTitle(app, label: "Search All Workspace > alpha.md", timeout: 5))
+
+        let searchTab = sidebarSearchTab(in: app)
+        XCTAssertTrue(searchTab.waitForExistence(timeout: 5))
+        searchTab.click()
+
+        let searchField = searchField(in: app)
+        XCTAssertTrue(searchField.waitForExistence(timeout: 5))
+        let allScope = app.radioButtons["All"].firstMatch
+        XCTAssertTrue(allScope.waitForExistence(timeout: 5))
+        allScope.click()
+        searchField.click()
+        searchField.typeText("globaltoken")
+        XCTAssertEqual(searchField.value as? String, "globaltoken")
+        XCTAssertTrue(waitForElement(app.descendants(matching: .any)["search.query"], label: "globaltoken", timeout: 2))
+        XCTAssertTrue(waitForElement(app.descendants(matching: .any)["search.resultCount"], label: "2", timeout: 5))
+
+        let betaResult = app.descendants(matching: .any)["search.result.file.notes-beta-md"].firstMatch
+        XCTAssertTrue(betaResult.waitForExistence(timeout: 5))
+        betaResult.click()
+
+        XCTAssertTrue(waitForWindowTitle(app, label: "Search All Workspace > beta.md", timeout: 5))
     }
 
     #if os(iOS)
@@ -484,10 +609,14 @@ final class Quick_Markdown_ViewerUITests: XCTestCase {
         throw XCTSkip("Timed out waiting for harness response for \(command)")
     }
 
-    private func waitForStaticText(_ element: XCUIElement, label: String, timeout: TimeInterval) -> Bool {
+    private func waitForElement(_ element: XCUIElement, label: String, timeout: TimeInterval) -> Bool {
         let predicate = NSPredicate(format: "label == %@", label)
         let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
         return XCTWaiter().wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    private func waitForWindowTitle(_ app: XCUIApplication, label: String, timeout: TimeInterval) -> Bool {
+        waitForElement(app.descendants(matching: .any)["nav.title"], label: label, timeout: timeout)
     }
 
     private func waitForWindowCount(_ app: XCUIApplication, expected: Int, timeout: TimeInterval) -> Bool {
@@ -496,6 +625,18 @@ final class Quick_Markdown_ViewerUITests: XCTestCase {
         }
         let expectation = XCTNSPredicateExpectation(predicate: predicate, object: nil)
         return XCTWaiter().wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    private func searchField(in app: XCUIApplication) -> XCUIElement {
+        let searchField = app.searchFields["search.field"]
+        if searchField.waitForExistence(timeout: 1) {
+            return searchField
+        }
+        return app.textFields["search.field"]
+    }
+
+    private func sidebarSearchTab(in app: XCUIApplication) -> XCUIElement {
+        app.buttons["sidebar.tab.search"].firstMatch
     }
 
     #if os(iOS)

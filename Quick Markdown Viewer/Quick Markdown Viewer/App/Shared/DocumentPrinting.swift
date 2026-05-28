@@ -13,6 +13,15 @@ enum DocumentPrintScope: String, Sendable {
             return "Print All"
         }
     }
+
+    func preparationMessage(documentCount: Int) -> String {
+        switch self {
+        case .selectedFile:
+            return "Preparing document for print..."
+        case .allFiles:
+            return "Preparing \(documentCount) documents for print..."
+        }
+    }
 }
 
 struct DocumentPrintSection: Equatable, Sendable {
@@ -23,7 +32,7 @@ struct DocumentPrintSection: Equatable, Sendable {
 
     var plainText: String {
         switch kind {
-        case .markdown:
+        case .markdown, .mermaid:
             return DocumentPlainTextRenderer.render(blocks: blocks)
         case .csv, .tsv:
             guard let table = blocks.first?.table else { return "" }
@@ -122,6 +131,9 @@ enum DocumentPlainTextRenderer {
             return ["Video", video.altText, video.sourceURL]
                 .filter { !$0.isEmpty }
                 .joined(separator: "\n")
+        case .mermaidDiagram:
+            guard let diagram = block.mermaidDiagram else { return block.plainText }
+            return diagram.plainTextSummary
         case .thematicBreak:
             return String(repeating: "-", count: 24)
         }

@@ -8,6 +8,7 @@ nonisolated struct WorkspacePath: Hashable, Codable, Identifiable, Sendable {
 
 nonisolated enum WorkspaceDocumentKind: String, Hashable, Codable, Sendable {
     case markdown
+    case mermaid
     case csv
     case tsv
 
@@ -15,7 +16,7 @@ nonisolated enum WorkspaceDocumentKind: String, Hashable, Codable, Sendable {
         switch self {
         case .csv, .tsv:
             return true
-        case .markdown:
+        case .markdown, .mermaid:
             return false
         }
     }
@@ -24,6 +25,8 @@ nonisolated enum WorkspaceDocumentKind: String, Hashable, Codable, Sendable {
         switch self {
         case .markdown:
             return "doc.text"
+        case .mermaid:
+            return "point.3.connected.trianglepath.dotted"
         case .csv, .tsv:
             return "tablecells"
         }
@@ -34,6 +37,8 @@ nonisolated enum WorkspaceDocumentKind: String, Hashable, Codable, Sendable {
         switch fileExtension {
         case "md", "markdown", "mdown", "mkd", "mkdn":
             return .markdown
+        case "mermaid", "mmd":
+            return .mermaid
         case "csv":
             return .csv
         case "tsv":
@@ -87,6 +92,7 @@ enum MarkdownBlockKind: String, Hashable, Sendable {
     case image
     case animatedImage
     case video
+    case mermaidDiagram
     case rawHTML
     case thematicBreak
 }
@@ -109,10 +115,39 @@ enum MarkdownTableContentKind: String, Hashable, Sendable {
 }
 
 struct MarkdownTable: Hashable, Sendable {
+    nonisolated static let lazyViewportRowThreshold = 200
+    nonisolated static let lazyViewportCellThreshold = 1_000
+    nonisolated static let lazyViewportCellCharacterThreshold = 320
+
     let alignments: [MarkdownTableAlignment]
     let header: [MarkdownTableCell]
     let rows: [[MarkdownTableCell]]
     let contentKind: MarkdownTableContentKind
+
+    nonisolated var prefersLazyInteractiveViewport: Bool {
+        Self.prefersLazyInteractiveViewport(
+            rowCount: rows.count,
+            columnCount: header.count,
+            longestCellCharacterCount: longestCellCharacterCount
+        )
+    }
+
+    nonisolated static func prefersLazyInteractiveViewport(
+        rowCount: Int,
+        columnCount: Int,
+        longestCellCharacterCount: Int = 0
+    ) -> Bool {
+        rowCount >= lazyViewportRowThreshold ||
+        (rowCount + 1) * columnCount >= lazyViewportCellThreshold ||
+        longestCellCharacterCount >= lazyViewportCellCharacterThreshold
+    }
+
+    private nonisolated var longestCellCharacterCount: Int {
+        ([header] + rows)
+            .flatMap { $0 }
+            .map(\.plainText.count)
+            .max() ?? 0
+    }
 }
 
 struct MarkdownImage: Hashable, Sendable {
@@ -159,6 +194,7 @@ struct MarkdownBlock: Identifiable, Hashable, Sendable {
     let table: MarkdownTable?
     let image: MarkdownImage?
     let video: MarkdownVideo?
+    let mermaidDiagram: MarkdownMermaidDiagram?
     let attributedText: AttributedString?
     let children: [MarkdownBlock]
     let codeBlock: MarkdownCodeBlock?
@@ -176,6 +212,7 @@ struct MarkdownBlock: Identifiable, Hashable, Sendable {
         table: MarkdownTable?,
         image: MarkdownImage?,
         video: MarkdownVideo?,
+        mermaidDiagram: MarkdownMermaidDiagram? = nil,
         attributedText: AttributedString?,
         children: [MarkdownBlock],
         codeBlock: MarkdownCodeBlock? = nil
@@ -192,6 +229,7 @@ struct MarkdownBlock: Identifiable, Hashable, Sendable {
         self.table = table
         self.image = image
         self.video = video
+        self.mermaidDiagram = mermaidDiagram
         self.attributedText = attributedText
         self.children = children
         self.codeBlock = codeBlock
@@ -203,6 +241,7 @@ extension MarkdownBlock {
         kind: MarkdownBlockKind? = nil,
         image: MarkdownImage? = nil,
         video: MarkdownVideo? = nil,
+        mermaidDiagram: MarkdownMermaidDiagram? = nil,
         children: [MarkdownBlock]? = nil,
         codeBlock: MarkdownCodeBlock? = nil
     ) -> MarkdownBlock {
@@ -219,6 +258,7 @@ extension MarkdownBlock {
             table: table,
             image: image ?? self.image,
             video: video ?? self.video,
+            mermaidDiagram: mermaidDiagram ?? self.mermaidDiagram,
             attributedText: attributedText,
             children: children ?? self.children,
             codeBlock: codeBlock ?? self.codeBlock

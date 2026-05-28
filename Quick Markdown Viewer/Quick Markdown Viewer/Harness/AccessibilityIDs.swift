@@ -2,8 +2,14 @@ import Foundation
 
 enum AccessibilityIDs {
     static let sidebarList = "sidebar.list"
+    static let sidebarFilesTab = "sidebar.tab.files"
+    static let sidebarSearchTab = "sidebar.tab.search"
     static let sidebarFilterField = "sidebar.filterField"
     static let sidebarFilterClearButton = "sidebar.filterClear"
+    static let searchField = "search.field"
+    static let searchNextButton = "search.next"
+    static let searchQueryState = "search.query"
+    static let searchResultCountState = "search.resultCount"
     static let backButton = "nav.back"
     static let forwardButton = "nav.forward"
     static let title = "nav.title"
@@ -12,6 +18,8 @@ enum AccessibilityIDs {
     static let printMenuButton = "toolbar.print"
     static let printSelectedButton = "toolbar.printSelected"
     static let printAllButton = "toolbar.printAll"
+    static let printPreparingIndicator = "print.preparing"
+    static let printCancelButton = "print.cancel"
     static let printRequestScope = "print.request.scope"
     static let printRequestStatus = "print.request.status"
     static let uiTestPrintSelectedAction = "ui-test.printSelectedAction"
@@ -49,9 +57,28 @@ enum AccessibilityIDs {
     static let mediaPreviewContainer = "media-preview.container"
     static let mediaPreviewCloseButton = "media-preview.close"
     static let mediaPreviewOpenInBrowserButton = "media-preview.open-in-browser"
+    static let mermaidPreviewContainer = "mermaid-preview.container"
+    static let mermaidPreviewCloseButton = "mermaid-preview.close"
+    static let mermaidPreviewZoomInButton = "mermaid-preview.zoomIn"
+    static let mermaidPreviewZoomOutButton = "mermaid-preview.zoomOut"
+    static let mermaidPreviewFitButton = "mermaid-preview.fit"
+    static let mermaidPreviewResetButton = "mermaid-preview.reset"
+    static let mermaidPreviewOpenWindowButton = "mermaid-preview.openWindow"
 
     static func sidebarNode(_ path: String) -> String {
         "sidebar.node.\(path.replacingOccurrences(of: "/", with: "."))"
+    }
+
+    static func sidebarFolderNode(_ path: String) -> String {
+        "sidebar.folder.\(path.replacingOccurrences(of: "/", with: "."))"
+    }
+
+    static func searchResult(_ id: String) -> String {
+        "search.result.\(sanitizedBlockID(id))"
+    }
+
+    static func searchResultFile(_ fileName: String) -> String {
+        "search.result.file.\(sanitizedBlockID(fileName))"
     }
 
     static func imageBlock(_ blockID: String) -> String {
@@ -64,6 +91,10 @@ enum AccessibilityIDs {
 
     static func videoPlayButton(_ blockID: String) -> String {
         "video.playButton.\(sanitizedBlockID(blockID))"
+    }
+
+    static func mermaidBlock(_ blockID: String) -> String {
+        "block.mermaid.\(sanitizedBlockID(blockID))"
     }
 
     static func documentOutlineItem(_ blockID: String) -> String {

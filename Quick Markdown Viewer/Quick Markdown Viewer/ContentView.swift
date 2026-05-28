@@ -13,6 +13,7 @@ struct ContentView: View {
     let onOpenGitHubURLPrompt: (() -> Void)?
     let onPrintSelectedDocument: (() -> Void)?
     let onPrintAllDocuments: (() -> Void)?
+    let onCancelPrintPreparation: (() -> Void)?
     let onInstallCommandLineTool: (() -> Void)?
     let shouldShowCommandLineToolPrompt: Bool
 
@@ -23,6 +24,7 @@ struct ContentView: View {
             onOpenGitHubURLPrompt: onOpenGitHubURLPrompt,
             onPrintSelectedDocument: onPrintSelectedDocument,
             onPrintAllDocuments: onPrintAllDocuments,
+            onCancelPrintPreparation: onCancelPrintPreparation,
             onInstallCommandLineTool: onInstallCommandLineTool,
             shouldShowCommandLineToolPrompt: shouldShowCommandLineToolPrompt
         )
