@@ -1,104 +1,159 @@
-# App Store Update Checks
+# App Store Self-Update Removal
 
 ## Purpose / Big Picture
 
-The app should check the applicable App Store listing for a newer released version, encourage users to download it when available, let them skip the prompt once, and let them skip prompts until the next released version. On macOS, users should also be able to run a manual update check from the menu bar.
+Remove the app-managed App Store update-checking feature after App Store review rejected the macOS build because Mac apps are not allowed to check for updates themselves and notify users. The accepted behavior is that Quick Markdown Viewer no longer contacts Apple's lookup endpoint for update checks, no longer presents update prompts, and no longer exposes a macOS `Check for Updates...` menu item.
 
 ## Progress
 
-- [x] (2026-05-12T00:00Z) Confirmed the product bundle identifier is `com.souschefstudio.Free-Markdown-Viewer` and the live App Store app ID is tracked in repo notes as `6761271951`.
-- [x] (2026-05-12T19:22Z) Added an App Store lookup/update-checking service with injectable fetching and version comparison.
-- [x] (2026-05-12T19:22Z) Added automatic non-blocking update checks and prompt state with skip and skip-until-next-version behavior.
-- [x] (2026-05-12T19:22Z) Added macOS menu command for manual checks.
-- [x] (2026-05-12T19:22Z) Added focused tests and validation evidence.
+- [x] (2026-06-04T00:00Z) Confirmed the update feature is centralized in `AppUpdateChecker`, app-root injection, scene lifecycle alert wiring, macOS commands, focused unit tests, and App Review notes.
+- [x] (2026-06-04T00:00Z) Removed the update checker service, automatic checks, manual macOS menu item, alert presentation, skip-version state tests, and review-note references to update prompts.
+- [x] (2026-06-04T00:00Z) Ran focused unit/build validation plus ExecPlan and docs checks.
+- [x] (2026-06-04T00:00Z) Confirmed App Store Connect has iOS `1.5` `READY_FOR_SALE`, macOS `1.5` version `63537360-b39f-4168-87ad-57816bc4e355` in `REJECTED`, and rejected macOS review submission `61043c3f-9351-4eab-9377-5938c639a225`.
+- [x] (2026-06-04T06:00Z) Archived, exported, uploaded, attached, and submitted macOS replacement build `1.5 (13)`.
 
 ## Surprises & Discoveries
 
-- Observation: the macOS app already has `com.apple.security.network.client` for remote media and GitHub workspaces.
-  Evidence: `Quick_Markdown_Viewer.entitlements` includes `com.apple.security.network.client`.
-- Observation: the app has no existing update-checking service or menu command.
-  Evidence: searches for `AppStore`, `StoreKit`, and `Check for Updates` found no app code.
-- Observation: the local Xcode install reports an out-of-date CoreSimulator framework, but macOS-hosted unit tests still run.
-  Evidence: focused `xcodebuild ... test` emitted `CoreSimulator is out of date` and then completed the selected macOS tests successfully.
-- Observation: after installing the iOS simulator runtime, iOS build and smoke validation now pass on healthy simulator devices.
-  Evidence: `./scripts/build --platform ios` succeeded against the iOS 26.5 iPhone simulator, `./scripts/test-ui-ios --device both --smoke` passed the iPhone checkpoint and built iPad, and a manual iPad smoke run passed on the iOS 26.5 `iPad (A16)` simulator; the preferred `iPad Pro 11-inch (M5)` simulator hung in `simctl install`/`simctl launch`.
+- Observation: the update checks were shared app behavior, not only macOS behavior.
+  Evidence: `Quick_Markdown_ViewerApp.swift` owned one `AppUpdateChecker` and injected it into every `WindowSceneRootView`.
+- Observation: the Xcode project uses filesystem-synchronized source groups for app and test sources.
+  Evidence: `project.pbxproj` declares `PBXFileSystemSynchronizedRootGroup` for `Quick Markdown Viewer` and `Quick Markdown ViewerTests`, so deleting `AppUpdateChecker.swift` removes it from target discovery without editing a per-file build phase entry.
+- Observation: only macOS needs a replacement App Store review submission for this rejection.
+  Evidence: App Store Connect reports iOS `1.5` version `a87dc731-e48e-4f4e-9669-fe81c8130de1` as `READY_FOR_SALE`, while macOS `1.5` version `63537360-b39f-4168-87ad-57816bc4e355` is `REJECTED`.
 
 ## Decision Log
 
-- Decision: use a small App Store lookup client rather than StoreKit purchase APIs.
-  Rationale: this app only needs to compare the released App Store version with the installed marketing version and open the store listing; it does not need purchase state.
-- Decision: store only the skipped App Store version in `UserDefaults`.
-  Rationale: "skip until next version" is naturally keyed by the version the user skipped, while one-time skip should only dismiss the current prompt in memory.
-- Decision: perform automatic checks asynchronously on app launch/active and surface results through SwiftUI alerts.
-  Rationale: update checks should never block document loading or rendering.
+- Decision: remove the self-update feature entirely instead of hiding only the macOS menu command.
+  Rationale: the automatic lookup and prompt path also notified users, and leaving dormant update-check code would preserve the App Store review risk.
+- Decision: add a small negative regression test over app source files.
+  Rationale: the requirement is an absence-of-behavior compliance constraint, and the test prevents reintroducing the deleted service, endpoint, or menu title in the app shell.
+- Decision: submit macOS only as `1.5 (13)`.
+  Rationale: the rejected platform is macOS, iOS `1.5` is already live, and App Store Connect already consumed macOS build `12`.
 
 ## Outcomes & Retrospective
 
-The app now owns `AppUpdateChecker`, an injectable service that queries Apple's lookup endpoint, compares the released App Store version against the installed marketing version, and publishes SwiftUI alert state. Automatic checks run asynchronously and silently ignore lookup failures. Manual checks, exposed on macOS through `Check for Updates…`, show update, up-to-date, or error alerts. Users can dismiss a prompt once or skip prompts until the App Store reports a later version.
+Quick Markdown Viewer now relies on the App Store for update distribution and does not perform app-managed update checks or notifications. The app-root update checker state, automatic lifecycle checks, update alert, skip-version state, and macOS `Check for Updates...` command are removed. Reviewer-facing release notes now explicitly say the app does not check for updates itself or prompt users about updates.
+
+The macOS App Store replacement is submitted. App Store Connect reports macOS app-store-version `63537360-b39f-4168-87ad-57816bc4e355` as `WAITING_FOR_REVIEW`, attached to valid App Store-eligible build `a2d3517b-d8b4-4fcb-a859-7e2e3149459b` (`1.5 (13)`). Fresh macOS review submission `d4d9bc77-c4b5-4d5d-abbd-ca1ed798c52a` is `WAITING_FOR_REVIEW`; stale rejected submission `61043c3f-9351-4eab-9377-5938c639a225` was canceled and now reports `COMPLETE`.
 
 ## Context and Orientation
 
 Relevant code:
 
-- `Quick Markdown Viewer/Quick Markdown Viewer/Quick_Markdown_ViewerApp.swift` owns app scene and macOS commands.
-- `Quick Markdown Viewer/Quick Markdown Viewer/App/Shell/WindowSceneRootView.swift` owns scene lifecycle and alert presentation.
-- `Quick Markdown Viewer/Quick Markdown Viewer/App/Shell/ViewerShellView.swift` owns app chrome but should not perform network work directly.
-- `Quick Markdown Viewer/Quick Markdown ViewerTests/Quick_Markdown_ViewerTests.swift` owns focused shared-service tests.
+- `Quick Markdown Viewer/Quick Markdown Viewer/Quick_Markdown_ViewerApp.swift` owns app scene setup and macOS command registration.
+- `Quick Markdown Viewer/Quick Markdown Viewer/App/Shell/WindowSceneRootView.swift` owns scene lifecycle, prompts, and macOS command definitions.
+- `Quick Markdown Viewer/Quick Markdown ViewerTests/Quick_Markdown_ViewerTests.swift` owns the focused compliance regression test.
+- `docs/release/app-review-notes.md` owns reviewer-facing network-use notes.
+
+Removed code:
+
+- `Quick Markdown Viewer/Quick Markdown Viewer/App/Shared/AppUpdateChecker.swift`
 
 ## Plan of Work
 
-1. Add a shared `AppUpdateChecker` service that builds App Store lookup URLs, decodes lookup responses, compares dotted versions, and tracks prompt state.
-2. Inject the service into the app root and scene root.
-3. Trigger one automatic check per launch/active session without blocking document loading.
-4. Present update, up-to-date, and error alerts with actions to download, skip, or skip until the next version.
-5. Add a macOS `Check for Updates…` command that invokes a manual check.
-6. Add focused tests for version comparison, lookup URL construction, skip-until-next-version, and manual/automatic result behavior.
+1. Delete the shared update checker service and all references from app scene setup.
+2. Remove automatic lifecycle checks, update alerts, skip-version state, and the macOS manual update command.
+3. Remove update-check-specific unit tests and add a regression test that app sources do not declare self-update checks.
+4. Update release review notes and durable implementation notes so reviewer-facing docs match the binary.
+5. Run focused validation, docs validation, and a macOS build.
+6. Bump checked-in build metadata to `1.5 (13)`, archive/export/upload the macOS package, attach the valid build to the rejected macOS `1.5` version, and submit a fresh review submission.
 
 ## Concrete Steps
 
 From `/Users/matthewmoore/Projects/free-markdown-viewer`:
 
-1. Add `Quick Markdown Viewer/Quick Markdown Viewer/App/Shared/AppUpdateChecker.swift`.
-2. Edit `Quick_Markdown_ViewerApp.swift` and `WindowSceneRootView.swift`.
-3. Add tests in `Quick Markdown Viewer/Quick Markdown ViewerTests/Quick_Markdown_ViewerTests.swift`.
-4. Run `python3 scripts/check_execplan.py`.
-5. Run focused unit tests for update checking.
-6. Run the repository's narrow build/test validation for touched app code.
+1. Edit `Quick Markdown Viewer/Quick Markdown Viewer/Quick_Markdown_ViewerApp.swift`.
+2. Edit `Quick Markdown Viewer/Quick Markdown Viewer/App/Shell/WindowSceneRootView.swift`.
+3. Delete `Quick Markdown Viewer/Quick Markdown Viewer/App/Shared/AppUpdateChecker.swift`.
+4. Edit `Quick Markdown Viewer/Quick Markdown ViewerTests/Quick_Markdown_ViewerTests.swift`.
+5. Edit `docs/release/app-review-notes.md` and `.agents/DOCUMENTATION.md`.
+6. Run:
+   - `xcodebuild -quiet -project "Quick Markdown Viewer/Quick Markdown Viewer.xcodeproj" -scheme "Quick Markdown Viewer" -configuration Debug -derivedDataPath /tmp/qmv-update-removal-tests -destination "platform=macOS,arch=arm64" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" "-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testAppSourcesDoNotDeclareSelfUpdateChecks" test`
+   - `xcodebuild -quiet -project "Quick Markdown Viewer/Quick Markdown Viewer.xcodeproj" -scheme "Quick Markdown Viewer" -configuration Debug -derivedDataPath /tmp/qmv-update-removal-build -destination "platform=macOS,arch=arm64" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build`
+   - `./scripts/test-unit`
+   - `python3 scripts/check_execplan.py docs/exec-plans/active/2026-05-12-app-store-update-checks.md`
+   - `python3 scripts/knowledge/check_docs.py`
+   - `git diff --check`
+7. Submit macOS replacement:
+   - `APPLE_DEVELOPMENT_TEAM=GG34PA8F4A ./scripts/archive-release --platform macos --allow-provisioning-updates`
+   - `./scripts/export-app-store --platform macos --archive-path 'artifacts/archives/Quick Markdown Viewer-macos.xcarchive' --export-options-plist 'artifacts/export-options/macos-app-store-connect.plist' --allow-provisioning-updates`
+   - `source scripts/lib/xcode-env.sh && xcrun altool --upload-package 'artifacts/exports/macos/Quick Markdown Viewer.pkg' --api-key "$ASC_KEY_ID" --api-issuer "$ASC_ISSUER_ID" --p8-file-path "$ASC_KEY_PATH" --api-key-subject user --wait`
+   - poll App Store Connect for macOS build `13`
+   - patch macOS review notes
+   - attach build `13` to app-store-version `63537360-b39f-4168-87ad-57816bc4e355`
+   - create and submit a macOS review submission
 
 Validation completed from `/Users/matthewmoore/Projects/free-markdown-viewer`:
 
-1. `xcodebuild -quiet -project "Quick Markdown Viewer/Quick Markdown Viewer.xcodeproj" -scheme "Quick Markdown Viewer" -configuration Debug -derivedDataPath /tmp/qmv-outline-csv-update-unit -destination "platform=macOS,arch=arm64" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= "-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testMarkdownOutlineItemsUseHeadingBlocksInDocumentOrder" "-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testAppModelPublishesOutlineItemsForLoadedMarkdownDocument" "-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testDelimitedTextParserUsesPlainTextTableCellsForLargeCSV" "-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testAppStoreLookupConfigurationBuildsPlatformLookupURL" "-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testAppUpdateVersionComparisonUsesNumericSegments" "-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testAppUpdateCheckerManualCheckPromptsWhenAppStoreVersionIsNewer" "-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testAppUpdateCheckerSkipsAutomaticPromptUntilNextVersion" test`
-2. `python3 scripts/check_execplan.py`
-3. `python3 scripts/knowledge/check_docs.py`
-4. `./scripts/test-unit`
-5. `./scripts/build --platform all` (macOS build succeeded; iOS builds were skipped by the script because simulator platform discovery is unavailable)
-6. `xcodebuild -quiet -project "Quick Markdown Viewer/Quick Markdown Viewer.xcodeproj" -scheme "Quick Markdown Viewer" -sdk iphonesimulator -configuration Debug -derivedDataPath /tmp/qmv-outline-csv-update-ios-build CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= build` (blocked by missing simulator runtime for asset catalog compilation)
-7. `xcodebuild -quiet -project "Quick Markdown Viewer/Quick Markdown Viewer.xcodeproj" -scheme "Quick Markdown Viewer" -sdk iphoneos -destination "generic/platform=iOS" -configuration Debug -derivedDataPath /tmp/qmv-outline-csv-update-ios-device-build CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= build` (blocked by missing iOS 26.5 platform)
-8. `./scripts/build --platform ios`
-9. `./scripts/test-ui-ios --device both --smoke` (iPhone smoke passed; iPad build passed, then the preferred `iPad Pro 11-inch (M5)` simulator hung in `simctl launch`)
-10. Manual iPad smoke on `iPad (A16)` simulator `C1DAE170-A0B7-44F1-A23E-B0697677435A` passed and wrote `artifacts/checkpoints/shell-smoke-ipad-manual/`
+1. `xcodebuild -quiet -project "Quick Markdown Viewer/Quick Markdown Viewer.xcodeproj" -scheme "Quick Markdown Viewer" -configuration Debug -derivedDataPath /tmp/qmv-update-removal-tests -destination "platform=macOS,arch=arm64" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" "-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testAppSourcesDoNotDeclareSelfUpdateChecks" test`
+2. `xcodebuild -quiet -project "Quick Markdown Viewer/Quick Markdown Viewer.xcodeproj" -scheme "Quick Markdown Viewer" -configuration Debug -derivedDataPath /tmp/qmv-update-removal-build -destination "platform=macOS,arch=arm64" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build`
+3. `./scripts/test-unit`
+4. `python3 scripts/check_execplan.py docs/exec-plans/active/2026-05-12-app-store-update-checks.md`
+5. `python3 scripts/knowledge/check_docs.py`
+6. `git diff --check`
+7. `plutil -lint "Quick Markdown Viewer/Quick Markdown Viewer.xcodeproj/project.pbxproj"`
+8. `APPLE_DEVELOPMENT_TEAM=GG34PA8F4A ./scripts/archive-release --platform macos --allow-provisioning-updates`
+9. `./scripts/export-app-store --platform macos --archive-path 'artifacts/archives/Quick Markdown Viewer-macos.xcarchive' --export-options-plist 'artifacts/export-options/macos-app-store-connect.plist' --allow-provisioning-updates`
+10. `plutil -p 'artifacts/archives/Quick Markdown Viewer-macos.xcarchive/Products/Applications/Quick Markdown Viewer.app/Contents/Info.plist'`
+11. `plutil -p 'artifacts/archives/Quick Markdown Viewer-macos.xcarchive/Products/Applications/Quick Markdown Viewer.app/Contents/PlugIns/Quick Markdown Viewer QuickLook.appex/Contents/Info.plist'`
+12. `codesign -d --entitlements :- 'artifacts/archives/Quick Markdown Viewer-macos.xcarchive/Products/Applications/Quick Markdown Viewer.app'`
+13. `pkgutil --check-signature 'artifacts/exports/macos/Quick Markdown Viewer.pkg'`
+14. `source scripts/lib/xcode-env.sh && xcrun altool --upload-package 'artifacts/exports/macos/Quick Markdown Viewer.pkg' --api-key "$ASC_KEY_ID" --api-issuer "$ASC_ISSUER_ID" --p8-file-path "$ASC_KEY_PATH" --api-key-subject user --wait`
+15. `./scripts/app-store-connect request GET /v1/builds --query 'filter[app]=6761271951' --query 'filter[version]=13' --query 'filter[preReleaseVersion.version]=1.5' --query 'filter[preReleaseVersion.platform]=MAC_OS' --query 'include=preReleaseVersion' --query 'limit=5'`
+16. `./scripts/app-store-connect patch-review-detail --id 60feafff-cf62-4b27-8d20-4942f42b8586 --notes "$NOTES"`
+17. `./scripts/app-store-connect request PATCH /v1/appStoreVersions/63537360-b39f-4168-87ad-57816bc4e355/relationships/build --body '{"data":{"type":"builds","id":"a2d3517b-d8b4-4fcb-a859-7e2e3149459b"}}'`
+18. `./scripts/app-store-connect request POST /v1/reviewSubmissions --body '{"data":{"type":"reviewSubmissions","attributes":{"platform":"MAC_OS"},"relationships":{"app":{"data":{"type":"apps","id":"6761271951"}}}}}'`
+19. `./scripts/app-store-connect request PATCH /v1/reviewSubmissions/61043c3f-9351-4eab-9377-5938c639a225 --body '{"data":{"type":"reviewSubmissions","id":"61043c3f-9351-4eab-9377-5938c639a225","attributes":{"canceled":true}}}'`
+20. `./scripts/app-store-connect request POST /v1/reviewSubmissionItems --body '{"data":{"type":"reviewSubmissionItems","relationships":{"reviewSubmission":{"data":{"type":"reviewSubmissions","id":"d4d9bc77-c4b5-4d5d-abbd-ca1ed798c52a"}},"appStoreVersion":{"data":{"type":"appStoreVersions","id":"63537360-b39f-4168-87ad-57816bc4e355"}}}}}'`
+21. `./scripts/app-store-connect request PATCH /v1/reviewSubmissions/d4d9bc77-c4b5-4d5d-abbd-ca1ed798c52a --body '{"data":{"type":"reviewSubmissions","id":"d4d9bc77-c4b5-4d5d-abbd-ca1ed798c52a","attributes":{"submitted":true}}}'`
+22. `./scripts/app-store-connect request GET /v1/appStoreVersions/63537360-b39f-4168-87ad-57816bc4e355 --query 'include=build,appStoreReviewDetail' --query 'fields[appStoreVersions]=platform,versionString,appStoreState,appVersionState,build,appStoreReviewDetail' --query 'fields[builds]=version,processingState,buildAudienceType,uploadedDate,usesNonExemptEncryption'`
+23. `./scripts/app-store-connect request GET /v1/reviewSubmissions/d4d9bc77-c4b5-4d5d-abbd-ca1ed798c52a --query 'include=items'`
 
 ## Validation and Acceptance
 
-Acceptance:
+Acceptance requires:
 
-- Automatic update checks do not block app launch, workspace loading, or document rendering.
-- When the App Store version is newer, the app presents a download prompt.
-- Users can dismiss the prompt for now.
-- Users can skip the prompt until a later App Store version appears.
-- macOS exposes a menu-bar item to check for updates manually.
-- Manual checks report up-to-date and error states instead of silently doing nothing.
+- app sources no longer define `AppUpdateChecker`
+- app launch and active-scene lifecycle no longer run automatic update checks
+- macOS commands no longer include `Check for Updates...`
+- reviewer-facing release notes no longer describe App Store lookup update checks or update prompts
+- focused unit test and macOS build pass
+- ExecPlan and docs checks pass
+- macOS `1.5 (13)` package uploads successfully
+- App Store Connect reports macOS build `13` as `VALID`
+- macOS app-store-version `63537360-b39f-4168-87ad-57816bc4e355` has build `13` attached
+- a fresh macOS review submission is in an Apple-reviewable state
+
+Final acceptance evidence:
+
+- macOS app-store-version `63537360-b39f-4168-87ad-57816bc4e355`: `WAITING_FOR_REVIEW`
+- macOS build `a2d3517b-d8b4-4fcb-a859-7e2e3149459b`: version `13`, `VALID`, `APP_STORE_ELIGIBLE`
+- macOS review submission `d4d9bc77-c4b5-4d5d-abbd-ca1ed798c52a`: `WAITING_FOR_REVIEW`
+- macOS review submission item `ZDRkOWJjNzctYzRiNS00ZDVkLWFiYmQtY2ExZWQ3OThjNTJhfDZ8ODg2MTM2ODg1`: `READY_FOR_REVIEW`
+- stale rejected submission `61043c3f-9351-4eab-9377-5938c639a225`: canceled, state `COMPLETE`
 
 ## Idempotence and Recovery
 
-The update checker only reads App Store metadata and writes a skipped version string to `UserDefaults`. If the lookup endpoint is unavailable, manual checks should show a clear error and automatic checks should avoid interrupting the user.
+The removal is source-only and does not migrate persisted state. Existing `UserDefaults` values under the old skipped-version key become harmless orphaned preferences because no code reads them.
+
+If validation fails, search for remaining update-check references in app sources first, then rebuild after removing the reference or stale test expectation.
 
 ## Artifacts and Notes
 
-No generated artifacts are expected. Runtime build/test outputs remain under `artifacts/` or the selected Xcode derived-data path.
+No generated artifacts are expected. Xcode derived data lives under `/tmp/qmv-update-removal-*`.
+
+Release artifacts:
+
+- `artifacts/archives/Quick Markdown Viewer-macos.xcarchive`
+- `artifacts/exports/macos/Quick Markdown Viewer.pkg`
 
 ## Interfaces and Dependencies
 
-- Network dependency: Apple App Store lookup endpoint over HTTPS.
-- Opens the App Store listing URL through the platform URL-opening APIs.
-- No database or migration work.
+Removed dependency:
+
+- Apple's App Store lookup endpoint for app-managed update checks.
+
+Remaining network paths:
+
+- user-initiated public GitHub workspace loading
+- direct remote media URLs authored inside Markdown

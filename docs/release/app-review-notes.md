@@ -8,6 +8,8 @@ Quick Markdown Viewer is a free, local-first Markdown viewer for macOS, iPhone, 
 
 No account, sign-in, in-app purchase, analytics SDK, tracking, web view, background network service, or external credential is required.
 
+Resolution for the previous macOS rejection: this replacement build removes the app-managed App Store update checker, automatic update prompts, skip-version state, and macOS Check for Updates menu item.
+
 Primary review flow:
 
 1. Launch the app.
@@ -22,6 +24,6 @@ Primary review flow:
 10. Use Print for the current document or Print All for the workspace. Print All prepares in the background, can be cancelled, and blocks completely empty output before opening the system print panel.
 11. Optionally use the eye button to inspect Ignore Patterns. These only filter the sidebar and never delete, move, upload, or modify files.
 
-Network use: public GitHub snapshots explicitly opened by the user, direct media URLs authored inside Markdown, and Apple's App Store lookup endpoint for update checks. Update prompts can be skipped once or until the next released version; on macOS the manual action is Quick Markdown Viewer > Check for Updates.
+Network use: public GitHub snapshots explicitly opened by the user and direct media URLs authored inside Markdown. The app does not check for updates itself, prompt users about updates, or run a background network service.
 
 macOS sandbox entitlements: user-selected read-write is used for folders the reviewer chooses and for the explicit command-line tool install flow. user-selected executable is used only when the user chooses File > Install Command Line Tool or the empty-state Install qmv action; it writes one launcher at `~/.local/bin/qmv` after user-approved home-folder access. The app includes a Markdown Quick Look preview extension for Finder previews. The app does not silently install tools and does not request blanket Downloads, Documents, or full-disk access.
