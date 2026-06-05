@@ -19,11 +19,18 @@ rendering, and removal of app-managed update checks.
 - [x] (2026-06-05T19:50Z) Confirmed `1.5` is `READY_FOR_SALE` for both platforms and there are no existing `1.6` App Store versions.
 - [x] (2026-06-05T19:50Z) Bumped checked-in metadata to `MARKETING_VERSION = 1.6` and `CURRENT_PROJECT_VERSION = 14`.
 - [x] (2026-06-05T19:50Z) Updated App Store metadata and App Review notes for the Quick Look and self-update removal release.
+- [x] (2026-06-05T19:36Z) Archived and exported signed iOS and macOS App Store artifacts for `1.6 (14)`.
+- [x] (2026-06-05T19:39Z) Uploaded both artifacts and confirmed App Store Connect reports iOS build `a1960542-a804-4e88-833a-44d0477dc0f0` and macOS build `fd1d73b0-1834-418e-9e23-1ce14f58b07e` as `VALID`.
+- [x] (2026-06-05T19:43Z) Created `1.6` App Store versions, patched release notes and review notes, attached build `14`, and submitted both platforms for review.
+- [x] (2026-06-05T19:44Z) Verified App Store Connect reports both `1.6` platform versions as `WAITING_FOR_REVIEW`.
 
 ## Surprises & Discoveries
 
 - Observation: App Store Connect already has a valid macOS build `13` uploaded on 2026-06-03 and attached to the live `1.5` version.
   Evidence: `/v1/builds?filter[app]=6761271951&sort=-uploadedDate` reports macOS build `a2d3517b-d8b4-4fcb-a859-7e2e3149459b` as build `13`, while both `1.5` app-store-version records are `READY_FOR_SALE`.
+
+- Observation: The new `1.6` version rows copied stale iOS review notes that still described app-managed update checks.
+  Evidence: the first `include=appStoreReviewDetail` query showed the iOS review-detail notes mentioning Apple's App Store lookup endpoint before both platform review details were patched from `docs/release/app-review-notes.md`.
 
 ## Decision Log
 
@@ -33,7 +40,7 @@ rendering, and removal of app-managed update checks.
 
 ## Outcomes & Retrospective
 
-Pending.
+Completed. App Store Connect reports iOS `1.6` and macOS `1.6` in `WAITING_FOR_REVIEW` on valid build `14` records. The release metadata and review notes were patched from the repo-owned release docs before submission.
 
 ## Context and Orientation
 
@@ -52,6 +59,12 @@ Relevant App Store Connect resources:
 - app id: `6761271951`
 - current live iOS `1.5` app-store-version id: `a87dc731-e48e-4f4e-9669-fe81c8130de1`
 - current live macOS `1.5` app-store-version id: `63537360-b39f-4168-87ad-57816bc4e355`
+- iOS `1.6` app-store-version id: `d97e88da-7297-4f27-bd40-3f940b70f5a4`
+- iOS build `14` id: `a1960542-a804-4e88-833a-44d0477dc0f0`
+- iOS review submission id: `9dd98051-1eb2-4977-8418-ef85f689a73a`
+- macOS `1.6` app-store-version id: `ba4e74cd-ea0f-4c83-8837-d36670cc7a84`
+- macOS build `14` id: `fd1d73b0-1834-418e-9e23-1ce14f58b07e`
+- macOS review submission id: `27285c2f-855a-4501-a177-bfa726fc3be9`
 
 ## Plan of Work
 
@@ -106,6 +119,7 @@ calls.
 - macOS archive: `artifacts/archives/Quick Markdown Viewer-macos.xcarchive`
 - iOS export: `artifacts/exports/ios/Quick Markdown Viewer.ipa`
 - macOS export: `artifacts/exports/macos/Quick Markdown Viewer.pkg`
+- Final App Store Connect verification: iOS `1.6` and macOS `1.6` are `WAITING_FOR_REVIEW`, both attached build records are version `14` with `processingState` `VALID`, and both versions have `usesIdfa = false`.
 
 ## Interfaces and Dependencies
 
