@@ -8,7 +8,7 @@ Quick Markdown Viewer is a free, local-first Markdown viewer for macOS, iPhone, 
 
 No account, sign-in, in-app purchase, analytics SDK, tracking, web view, background network service, or external credential is required.
 
-Resolution for the previous macOS rejection: this replacement build removes the app-managed App Store update checker, automatic update prompts, skip-version state, and macOS Check for Updates menu item.
+Resolution for the previous macOS rejection: this build removes the app-managed App Store update checker, automatic update prompts, skip-version state, and macOS Check for Updates menu item.
 
 Primary review flow:
 
@@ -21,8 +21,9 @@ Primary review flow:
 7. Open a Markdown document containing a Mermaid fenced code block. The app renders it natively; on macOS the preview can be detached into a resizable window.
 8. Verify CSV/TSV files render as native tables; standalone delimited files use a lazy table surface for large files.
 9. Drag a supported local Markdown file onto the macOS app to open that file's parent folder in a new window with the dropped file selected.
-10. Use Print for the current document or Print All for the workspace. Print All prepares in the background, can be cancelled, and blocks completely empty output before opening the system print panel.
-11. Optionally use the eye button to inspect Ignore Patterns. These only filter the sidebar and never delete, move, upload, or modify files.
+10. In Finder on macOS, use Quick Look on a Markdown file. The bundled extension shows rendered Markdown by default, supports Source mode, renders inline Mermaid as a bounded native diagram preview, and shows local image attachments.
+11. Use Print for the current document or Print All for the workspace. Print All prepares in the background, can be cancelled, and blocks completely empty output before opening the system print panel.
+12. Optionally use the eye button to inspect Ignore Patterns. These only filter the sidebar and never delete, move, upload, or modify files.
 
 Network use: public GitHub snapshots explicitly opened by the user and direct media URLs authored inside Markdown. The app does not check for updates itself, prompt users about updates, or run a background network service.
 

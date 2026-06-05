@@ -17,15 +17,14 @@ Read local Markdown folders, search documents, jump with outlines, render Mermai
 
 Use this for the `What's New` field on the next App Store version:
 
-Quick Markdown Viewer now covers more of a complete documentation workflow:
+Quick Markdown Viewer 1.6 improves macOS Finder integration and review readiness:
 
-- Full-text search for the current document or every open document, with clickable results and in-document highlights
-- Faster file browsing for large folders, including collapsible folders and keyboard navigation
-- Native Mermaid diagram rendering with zoom, pan, and detachable macOS diagram windows
-- Background Print All preparation with cancellation and empty-output protection
-- Markdown Quick Look preview extension on macOS
-- Faster rendering for Markdown tables with long paragraph-style cells
-- Better macOS Finder file drops, including opening the dropped file's parent folder with the file selected
+- Finder Quick Look now renders Markdown with clear native hierarchy instead of raw source
+- Quick Look includes Rendered and Source modes for Markdown files
+- Inline Mermaid diagrams in Quick Look now show bounded native diagram previews instead of `flowchart` source text
+- Local Markdown image references now appear as scaled Quick Look image attachments
+- Dragging a Markdown file to the app icon now opens its folder with the dropped file selected
+- The app no longer performs app-managed update checks or shows update prompts
 
 ## Description
 

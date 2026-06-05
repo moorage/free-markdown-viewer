@@ -366,6 +366,7 @@
   - `testMarkdownRendererMatchesCommonMarkFixtureCorpusSemantics` now reads the checked-in corpus under `Fixtures/expected/spec-safari/commonmark` instead of the untracked local `tmp/spec-fixtures/commonmark` scratch path, so fresh CI checkouts exercise the same fixture set as local runs
   - Quick Look Mermaid rendered mode now produces a bounded native diagram image attachment instead of exposing raw `flowchart LR` source text, while Source mode still shows the original file
   - `docs/quicklook-feature-parity.md` now requires inline and standalone Mermaid Quick Look previews to include a native image attachment and omit raw Mermaid source from rendered mode
+  - App Store submission prep for `1.6 (14)` is tracked in `docs/exec-plans/active/2026-06-05-app-store-1-6-build-14-submission.md`, with release metadata updated for Quick Look rendering and self-update removal
   - the obsolete `codex_execplan_native_macos_gfm_viewer.md` brief is now removed, the universal brief now points to itself in the kickoff instructions, and the generated repo map has been refreshed to stop advertising the retired file
 - important discoveries:
   - preserving the text-only selectable surface while switching only media documents to block rendering is enough to add inline media without undoing the earlier cross-block selection work
@@ -390,6 +391,7 @@
   - `NSAttributedString` HTML import is not a safe semantic oracle for this renderer; for raw HTML blocks it can drop script contents and over-count comment-like text compared with the repository's CommonMark contract
   - the CommonMark corpus test had a CI-only path bug: it passed locally because `tmp/spec-fixtures/commonmark` existed in a developer scratch tree, but a fresh GitHub Actions checkout does not contain that untracked directory
   - a labeled Mermaid block is not enough for Quick Look parity; rendered mode must visually draw the diagram, and raw Mermaid text belongs only in Source mode
+  - `1.5` is already live and macOS build `13` was previously uploaded, so the Quick Look release needs a new `1.6 (14)` submission instead of reusing the old version/build line
 - open risks or blockers:
   - the targeted macOS UI slice for the new blank-launch state still hits the repo's existing runner bootstrap failure: `Free Markdown ViewerUITests-Runner` exits with `signal kill before establishing connection`, so local UI proof remains environment-blocked even though the focused unit slice passed
   - even after a separate `build-for-testing` run and direct `xattr -d com.apple.provenance` attempts, the local macOS UITest runner still surfaces the "damaged" dialog and blocks end-to-end UI confirmation
