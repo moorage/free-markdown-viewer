@@ -17,7 +17,6 @@ struct Quick_Markdown_ViewerApp: App {
     private let launchOptions: HarnessLaunchOptions
     private let githubWorkspaceLoader: GitHubWorkspaceService
     @StateObject private var sessionStore: WorkspaceWindowSessionStore
-    @StateObject private var updateChecker = AppUpdateChecker()
     #if os(macOS)
     @NSApplicationDelegateAdaptor(QuickMarkdownViewerAppDelegate.self) private var appDelegate
     #endif
@@ -44,8 +43,7 @@ struct Quick_Markdown_ViewerApp: App {
                 launchOptions: launchOptions,
                 sceneID: sceneID,
                 sessionStore: sessionStore,
-                githubWorkspaceLoader: githubWorkspaceLoader,
-                updateChecker: updateChecker
+                githubWorkspaceLoader: githubWorkspaceLoader
             )
         } defaultValue: {
             UUID().uuidString
@@ -53,8 +51,7 @@ struct Quick_Markdown_ViewerApp: App {
         #if os(macOS)
         .commands {
             WindowOpenFolderCommands(
-                commandLineToolManager: MacCommandLineToolManager.shared,
-                updateChecker: updateChecker
+                commandLineToolManager: MacCommandLineToolManager.shared
             )
         }
         #endif
@@ -108,6 +105,7 @@ final class ExternalWorkspaceOpenCoordinator: ObservableObject {
             return ExternalWorkspaceOpenRequest(
                 rootURL: resolvedURL,
                 selectedPath: nil,
+                explicitSelectedFileURL: nil,
                 presentation: presentation
             )
         }
@@ -116,6 +114,7 @@ final class ExternalWorkspaceOpenCoordinator: ObservableObject {
         return ExternalWorkspaceOpenRequest(
             rootURL: rootURL,
             selectedPath: WorkspacePath(rawValue: resolvedURL.lastPathComponent),
+            explicitSelectedFileURL: resolvedURL,
             presentation: presentation
         )
     }
@@ -158,15 +157,18 @@ final class ExternalWorkspaceOpenCoordinator: ObservableObject {
 nonisolated struct ExternalWorkspaceOpenRequest: Equatable {
     let rootURL: URL
     let selectedPath: WorkspacePath?
+    let explicitSelectedFileURL: URL?
     let presentation: ExternalWorkspaceOpenPresentation
 
     init(
         rootURL: URL,
         selectedPath: WorkspacePath?,
+        explicitSelectedFileURL: URL? = nil,
         presentation: ExternalWorkspaceOpenPresentation = .reuseEmptyWindow
     ) {
         self.rootURL = rootURL
         self.selectedPath = selectedPath
+        self.explicitSelectedFileURL = explicitSelectedFileURL
         self.presentation = presentation
     }
 }

@@ -29,6 +29,9 @@
 			<key>QLSupportedContentTypes</key>
 			<array>
 				<string>net.daringfireball.markdown</string>
+				<string>com.mermaidjs.mermaid</string>
+				<string>public.comma-separated-values-text</string>
+				<string>public.tab-separated-values-text</string>
 			</array>
 			<key>QLSupportsSearchableItems</key>
 			<false/>

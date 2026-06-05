@@ -15,6 +15,13 @@ The implementation should preserve existing app behavior and platform boundaries
 - [x] (2026-05-26 05:50Z) Added focused unit coverage for extension metadata, project embedding, macOS platform filtering, and no-WebKit/no-JavaScript rendering constraints.
 - [x] (2026-05-26 06:02Z) Verified the macOS app bundle embeds the Quick Look extension under `Contents/PlugIns` and the iOS simulator app does not embed the macOS extension.
 - [x] (2026-05-26 06:09Z) Updated architecture, README, and implementation notes for the new Quick Look subsystem.
+- [x] (2026-06-05 17:34Z) Investigated reported regressions where Quick Look previews read like raw Markdown and dragging/opening a Markdown file loads the containing folder without selecting or rendering that file.
+- [x] (2026-06-05 17:50Z) Replaced the Quick Look single-blob formatter with an extension-local native block formatter covering supported fixture Markdown, Mermaid, CSV, and TSV files.
+- [x] (2026-06-05 17:50Z) Hardened Launch Services file opens by carrying the explicit selected file URL into local workspace loading so the selected file appears even when parent-folder enumeration is limited.
+- [x] (2026-06-05 17:50Z) Verified focused unit tests, macOS build, built extension metadata, and Computer Use inspection of the built app opening `Fixtures/docs/basic_typography.md`.
+- [x] (2026-06-05 18:00Z) Added a compact Quick Look `Rendered` / `Source` segmented control and runtime coverage that switches between the rendered Markdown preview and raw source text.
+- [x] (2026-06-05 19:00Z) Added a Quick Look feature-parity spec plus runtime coverage for inline Mermaid fences and local image attachments.
+- [x] (2026-06-05 19:18Z) Fixed Quick Look Mermaid rendered mode so inline and standalone Mermaid previews draw a bounded native diagram image attachment instead of displaying raw `flowchart` source text.
 
 ## Surprises & Discoveries
 
@@ -24,6 +31,20 @@ The implementation should preserve existing app behavior and platform boundaries
 - Xcode platform filtering for the embedded extension must use the plural `platformFilters = (macos, );` key on both the embed build file and target dependency. A singular `platformFilter = macos;` entry still let the iOS build attempt to embed the macOS `.appex`.
 
 - The extension target has default MainActor isolation enabled, so the file-reading helper must be explicitly `nonisolated` before it is called from a detached task.
+
+- The current Quick Look formatter parses the whole document with Foundation `AttributedString(markdown:)` and then applies one broad body paragraph style. In practice this can flatten the visual hierarchy enough that Finder Quick Look does not look meaningfully Markdown-rendered.
+
+- Real Launch Services file opens can arrive before the SwiftUI window has finished bootstrapping. If the app consumes the request in the wrong window/timing, the containing folder may load while the requested file selection is lost, leaving no sidebar selection and no document pane.
+
+- Opening the installed `/Applications/Quick Markdown Viewer.app` through Launch Services reproduced the stale empty-folder symptom, while targeting the just-built app bundle by absolute path showed the fixed behavior. Evidence: Computer Use first saw the installed app at `/Applications/Quick Markdown Viewer.app` with an `app-store` empty workspace, then saw the built app at `artifacts/DerivedData/Build/Products/Debug/Quick Markdown Viewer.app` with `Fixtures/docs > basic_typography.md`, sidebar rows, and rendered main-pane text.
+
+- Quick Look can host controls inside the extension-provided view, but the surrounding Quick Look window chrome remains system-owned. The mode switch therefore belongs in the preview controller's content view.
+
+- `NSViewController.loadViewIfNeeded()` is only available on macOS 14+, while this target still builds for macOS 13. The extension test hook uses normal lazy `view` access instead.
+
+- The app parser already converts inline Mermaid fences to `mermaidDiagram` blocks and local image markdown to hydrated image blocks. Quick Look must mirror those recognizers, but with bounded preview behavior instead of the app's full interactive Mermaid graph/zoom and media surfaces.
+
+- The first Quick Look Mermaid parity pass was still too source-like: it labeled Mermaid content but displayed the raw `flowchart LR` body in rendered mode. The regression test now requires a native image attachment and rejects raw Mermaid source text in rendered mode.
 
 ## Decision Log
 
@@ -43,11 +64,35 @@ The implementation should preserve existing app behavior and platform boundaries
   Rationale: macOS owns Quick Look extension registration and user enable/disable state. The app should ship the extension and let System Settings/Finder control selection.
   Date/Author: 2026-05-26 / Codex
 
+- Decision: Improve Quick Look with an extension-local native block formatter instead of linking the full app renderer into the `.appex`.
+  Rationale: Finder preview needs clear Markdown hierarchy for headings, lists, quotes, code, tables, media references, and Mermaid files, but the extension should stay small and avoid workspace/media behavior.
+  Date/Author: 2026-06-05 / Codex
+
+- Decision: Put the `Rendered` / `Source` mode switch inside the Quick Look preview view.
+  Rationale: Quick Look lets preview extensions provide their own AppKit view hierarchy, but macOS owns the outer preview panel. A small segmented control gives the requested view switching without depending on private Quick Look chrome.
+  Date/Author: 2026-06-05 / Codex
+
+- Decision: Add a documented Quick Look feature-parity matrix with explicit performance limits.
+  Rationale: The app and Quick Look should agree on document feature recognition, while Quick Look deliberately avoids network fetches, animation/playback, full Mermaid graph layout, and other heavyweight preview work.
+  Date/Author: 2026-06-05 / Codex
+
+- Decision: Render Quick Look Mermaid as an extension-local AppKit raster diagram attachment.
+  Rationale: The app's full interactive Mermaid SwiftUI surface is not packaged as a reusable framework for the `.appex`, and Quick Look should stay bounded. A native AppKit raster preview gives Finder a real rendered diagram while leaving zoom, pan, detached windows, and heavier layout to the app.
+  Date/Author: 2026-06-05 / Codex
+
 ## Outcomes & Retrospective
 
-Implemented. The macOS app target now embeds `Quick Markdown Viewer QuickLook.appex`, whose processed Info.plist declares `com.apple.quicklook.preview` and supports `net.daringfireball.markdown`. The preview controller reads the requested file off the main actor, decodes common Markdown encodings, formats with native `AttributedString(markdown:)`, and displays the result in a read-only AppKit text view.
+Implemented. The macOS app target now embeds `Quick Markdown Viewer QuickLook.appex`, whose processed Info.plist declares `com.apple.quicklook.preview` and supports Markdown, Mermaid, CSV, and TSV content types. The preview controller reads the requested file off the main actor, decodes common Markdown encodings, formats with native text surfaces, and displays the result in a read-only AppKit text view.
 
 The target is macOS-only and platform-filtered so the universal app scheme continues to build for iOS without embedding the `.appex`. Focused tests cover the extension declarations, project wiring, and native-rendering constraints. The remaining operational caveat is normal macOS behavior: users can still choose a different Quick Look provider or disable extensions in System Settings.
+
+2026-06-05 follow-up: Quick Look now renders Markdown through an extension-local native block formatter rather than relying on a single document-wide attributed string. The formatter gives visible hierarchy to headings, paragraphs, lists, quotes, code fences, Markdown tables, image/video references, standalone Mermaid files, CSV, and TSV. The extension metadata now advertises Markdown, Mermaid, CSV, and TSV content types, and runtime unit coverage loads the built `.appex` formatter over every supported fixture document under `Fixtures/docs` and `Fixtures/app-store`.
+
+2026-06-05 mode-switch follow-up: Quick Look previews now include a native AppKit segmented control with `Rendered` and `Source` modes. The controller reads the file once, caches both attributed strings, defaults to the rendered view, and swaps the existing text view content when the user changes modes. Runtime extension coverage verifies the control labels, selected segment, raw `# Basic typography` source view, and return to rendered Markdown.
+
+2026-06-05 parity follow-up: `docs/quicklook-feature-parity.md` now defines the app-vs-Quick-Look feature matrix. Inline Mermaid fences in Markdown now render as bounded native diagram image attachments instead of generic code fences or raw Mermaid source, and local inline images now render as scaled native `NSTextAttachment` previews with captions. Remote/data images, videos, animation playback, Mermaid zoom/pan/detached windows, and linked-media navigation remain intentionally limited to keep Finder previews lightweight.
+
+The app file-open path now preserves the exact selected file URL in `ExternalWorkspaceOpenRequest`; `LocalWorkspaceProvider` exposes that file as an explicit workspace member and read target if parent-folder enumeration skips it. This fixes the user-visible app-icon/open-file case where the folder title could load without a sidebar item or main-pane document.
 
 ## Context and Orientation
 
@@ -58,6 +103,7 @@ Relevant files:
 - `Quick Markdown Viewer/QuickLookPreview-Info.plist`
 - `Quick Markdown Viewer/Info-macOS.plist`
 - `Quick Markdown Viewer/Quick Markdown ViewerTests/Quick_Markdown_ViewerTests.swift`
+- `docs/quicklook-feature-parity.md`
 
 Current behavior:
 
@@ -83,6 +129,10 @@ Current behavior:
 4. Add unit tests for extension Info.plist declarations and supported Markdown extensions/content types.
 5. Build the macOS target and inspect the built app bundle for the Quick Look extension.
 6. Update `.agents/DOCUMENTATION.md`, this ExecPlan, and run validation scripts.
+7. Replace the single-blob Quick Look preview formatter with a native block renderer and fixture-backed tests.
+8. Reproduce and harden file-open selection so dragging or Launch Services opening a Markdown file selects that file in the sidebar and renders it in the main pane.
+9. Add a Quick Look-local rendered/source mode switch and runtime test coverage for both modes.
+10. Add a Quick Look feature-parity spec and bounded-preview coverage for inline Mermaid and local images.
 
 ## Validation and Acceptance
 
@@ -94,6 +144,11 @@ Acceptance requires:
 - The extension is bundled/enabled by default; no separate installer action is required.
 - Focused metadata/rendering tests pass.
 - macOS debug build, `python3 scripts/check_execplan.py`, `python3 scripts/knowledge/check_docs.py`, and relevant `git diff --check` pass.
+- Every supported document in `Fixtures/docs`, including nested Mermaid fixtures, can be rendered through the Quick Look formatter without falling back to raw source-only output.
+- A macOS UI verification opens a Markdown file from `Fixtures/docs` through the app bundle path and confirms the containing folder, sidebar node, and main pane selection all show the requested file.
+- The Quick Look preview view can switch between rendered Markdown and raw source without rereading the file.
+- Inline Mermaid fences are recognized in Markdown Quick Look previews and do not show raw fence markers in rendered mode.
+- Local inline image Markdown produces a native image attachment in rendered Quick Look previews, while remote/heavy media behavior remains explicitly limited by spec.
 
 ## Idempotence and Recovery
 
@@ -113,6 +168,14 @@ Commands run from `/Users/matthewmoore/Projects/free-markdown-viewer`:
 - `python3 scripts/check_execplan.py`
 - `python3 scripts/knowledge/check_docs.py`
 - `git diff --check`
+- `xcodebuild -quiet -project 'Quick Markdown Viewer/Quick Markdown Viewer.xcodeproj' -scheme 'Quick Markdown Viewer' -configuration Debug -derivedDataPath /tmp/qmv-quicklook-open-fix-tests -destination 'platform=macOS,arch=arm64' CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= '-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testExternalWorkspaceOpenCoordinatorNormalizesMarkdownFileToWorkspaceAndSelection' '-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testExternalWorkspaceOpenCoordinatorCanForceNewWindowForDroppedMarkdownFile' '-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testExternalWorkspaceOpenCoordinatorNormalizesCSVFileToWorkspaceAndSelection' '-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testWorkspaceProviderIncludesExplicitOpenedFileEvenWhenEnumerationSkipsIt' '-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testAppModelOpenFolderSelectsExplicitOpenedFileWhenEnumerationSkipsIt' '-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testQuickLookPreviewExtensionDeclaresMarkdownSupport' '-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testQuickLookPreviewSourceUsesNativeMarkdownRendering' '-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testQuickLookPreviewExtensionRendersBasicMarkdownAsStyledPreview' '-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testQuickLookPreviewExtensionRendersEverySupportedFixtureDocument' test`
+- `./scripts/build --platform macos`
+- `plutil -p 'artifacts/DerivedData/Build/Products/Debug/Quick Markdown Viewer.app/Contents/PlugIns/Quick Markdown Viewer QuickLook.appex/Contents/Info.plist'`
+- `osascript -e 'tell application "/Users/matthewmoore/Projects/free-markdown-viewer/artifacts/DerivedData/Build/Products/Debug/Quick Markdown Viewer.app" to open POSIX file "/Users/matthewmoore/Projects/free-markdown-viewer/Fixtures/docs/basic_typography.md"'`
+- Computer Use `get_app_state` for `/Users/matthewmoore/Projects/free-markdown-viewer/artifacts/DerivedData/Build/Products/Debug/Quick Markdown Viewer.app` showed `Fixtures/docs > basic_typography.md`, sidebar row `basic_typography.md`, and rendered document text.
+- `xcodebuild -quiet -project 'Quick Markdown Viewer/Quick Markdown Viewer.xcodeproj' -scheme 'Quick Markdown Viewer' -configuration Debug -derivedDataPath /tmp/qmv-quicklook-switch-tests -destination 'platform=macOS,arch=arm64' CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= '-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testQuickLookPreviewSourceUsesNativeMarkdownRendering' '-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testQuickLookPreviewExtensionRendersBasicMarkdownAsStyledPreview' '-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testQuickLookPreviewExtensionCanSwitchBetweenRenderedAndSourceViews' '-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testQuickLookPreviewExtensionRendersEverySupportedFixtureDocument' test`
+- `qlmanage -r && qlmanage -p 'Fixtures/docs/basic_typography.md'`; Computer Use saw `qlmanage` running but `get_app_state` timed out, so live Quick Look panel introspection remains less reliable than the runtime `.appex` tests.
+- `xcodebuild -quiet -project 'Quick Markdown Viewer/Quick Markdown Viewer.xcodeproj' -scheme 'Quick Markdown Viewer' -configuration Debug -derivedDataPath /tmp/qmv-quicklook-parity-tests -destination 'platform=macOS,arch=arm64' CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= '-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testQuickLookFeatureParitySpecDocumentsBoundedPreviewContract' '-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testQuickLookPreviewExtensionRendersInlineMermaidFenceAsBoundedPreview' '-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testQuickLookPreviewExtensionRendersLocalImagesAsAttachments' '-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testQuickLookPreviewExtensionRendersEverySupportedFixtureDocument' '-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testQuickLookPreviewSourceUsesNativeMarkdownRendering' test`
 
 ## Interfaces and Dependencies
 

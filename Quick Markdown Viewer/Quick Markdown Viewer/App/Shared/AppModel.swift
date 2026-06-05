@@ -348,12 +348,17 @@ final class AppModel: ObservableObject {
         openFile(targetPath, recordHistory: selectedPath != nil)
     }
 
-    func openFolder(at rootURL: URL, selectedPathOverride: WorkspacePath? = nil) {
+    func openFolder(
+        at rootURL: URL,
+        selectedPathOverride: WorkspacePath? = nil,
+        explicitSelectedFileURL: URL? = nil
+    ) {
         cancelActiveDocumentLoad()
         cancelActiveWorkspaceLoad()
         loadWorkspace(
             selection: WorkspaceSecurityScope.selection(for: rootURL),
-            selectedPathOverride: selectedPathOverride
+            selectedPathOverride: selectedPathOverride,
+            explicitSelectedFileURL: explicitSelectedFileURL
         )
     }
 
@@ -608,27 +613,31 @@ final class AppModel: ObservableObject {
 
     private func loadWorkspace(
         selection: WorkspaceAccessSelection,
-        selectedPathOverride: WorkspacePath? = nil
+        selectedPathOverride: WorkspacePath? = nil,
+        explicitSelectedFileURL: URL? = nil
     ) {
         replaceActiveSecurityScopedWorkspace(with: selection.activeSecurityScopedURL)
         cancelActiveWorkspaceLoad()
         loadWorkspace(
             from: selection.rootURL,
             selectedPathOverride: selectedPathOverride,
-            rootBookmarkData: selection.bookmarkData
+            rootBookmarkData: selection.bookmarkData,
+            explicitSelectedFileURL: explicitSelectedFileURL
         )
     }
 
     private func loadWorkspace(
         from rootURL: URL?,
         selectedPathOverride: WorkspacePath? = nil,
-        rootBookmarkData: Data? = nil
+        rootBookmarkData: Data? = nil,
+        explicitSelectedFileURL: URL? = nil
     ) {
         cancelActiveDocumentLoad()
         githubURLLoadErrorMessage = nil
         hasResolvedWorkspaceSelection = true
         let provider = LocalWorkspaceProvider(
             rootURL: rootURL,
+            explicitFileURL: explicitSelectedFileURL,
             embeddedDocs: EmbeddedFixtures.docs,
             ignorePatterns: workspaceIgnorePatterns
         )

@@ -11,6 +11,8 @@ import XCTest
 
 #if os(macOS)
 import AppKit
+import Darwin
+import Quartz
 #elseif os(iOS)
 import UIKit
 #endif
@@ -41,22 +43,6 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
 
         func fileData(owner: String, repository: String, commitSHA: String, path: String) async throws -> Data {
             throw error
-        }
-    }
-
-    private struct StubAppStoreVersionFetcher: AppStoreVersionFetching {
-        let result: Result<AppStoreVersionInfo?, Error>
-
-        func latestVersion(configuration: AppStoreLookupConfiguration) async throws -> AppStoreVersionInfo? {
-            try result.get()
-        }
-    }
-
-    private enum TestUpdateError: LocalizedError {
-        case offline
-
-        var errorDescription: String? {
-            "offline"
         }
     }
 
@@ -545,6 +531,7 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
         let request = try XCTUnwrap(ExternalWorkspaceOpenCoordinator.normalizedRequest(for: markdownURL))
         XCTAssertEqual(request.rootURL.path, tempRoot.path)
         XCTAssertEqual(request.selectedPath?.rawValue, "notes.md")
+        XCTAssertEqual(request.explicitSelectedFileURL?.path, markdownURL.path)
         XCTAssertEqual(request.presentation, .reuseEmptyWindow)
     }
 
@@ -559,6 +546,7 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
         )
         XCTAssertEqual(request.rootURL.path, tempRoot.path)
         XCTAssertEqual(request.selectedPath?.rawValue, "notes.md")
+        XCTAssertEqual(request.explicitSelectedFileURL?.path, markdownURL.path)
         XCTAssertEqual(request.presentation, .newWindow)
     }
 
@@ -582,6 +570,7 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
         let request = try XCTUnwrap(ExternalWorkspaceOpenCoordinator.normalizedRequest(for: csvURL))
         XCTAssertEqual(request.rootURL.path, tempRoot.path)
         XCTAssertEqual(request.selectedPath?.rawValue, "table.csv")
+        XCTAssertEqual(request.explicitSelectedFileURL?.path, csvURL.path)
         XCTAssertEqual(request.presentation, .reuseEmptyWindow)
     }
 
@@ -680,6 +669,26 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
 
         XCTAssertEqual(workspace.rootIdentifier, tempRoot.lastPathComponent)
         XCTAssertTrue(workspace.files.isEmpty)
+    }
+
+    func testWorkspaceProviderIncludesExplicitOpenedFileEvenWhenEnumerationSkipsIt() throws {
+        let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        let hiddenMarkdownURL = tempRoot.appendingPathComponent(".launch-services-note.md")
+        try "# Dropped File\n\nOpened directly.".write(to: hiddenMarkdownURL, atomically: true, encoding: .utf8)
+
+        let provider = LocalWorkspaceProvider(
+            rootURL: tempRoot,
+            explicitFileURL: hiddenMarkdownURL,
+            embeddedDocs: [:]
+        )
+        let workspace = try provider.loadRoot()
+
+        XCTAssertEqual(workspace.files.map(\.path.rawValue), [".launch-services-note.md"])
+        XCTAssertEqual(
+            try provider.readFile(at: WorkspacePath(rawValue: ".launch-services-note.md")),
+            "# Dropped File\n\nOpened directly."
+        )
     }
 
     @MainActor
@@ -2171,6 +2180,45 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
     }
 
     @MainActor
+    func testAppModelOpenFolderSelectsExplicitOpenedFileWhenEnumerationSkipsIt() async throws {
+        let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        let hiddenMarkdownURL = tempRoot.appendingPathComponent(".launch-services-note.md")
+        try "# Dropped File\n\nOpened directly.".write(to: hiddenMarkdownURL, atomically: true, encoding: .utf8)
+
+        let model = AppModel(
+            launchOptions: HarnessLaunchOptions(
+                fixtureRoot: nil,
+                openFile: nil,
+                uiTestOpenFolderURL: nil,
+                theme: nil,
+                windowSize: nil,
+                disableFileWatch: true,
+                dumpVisibleStateURL: nil,
+                dumpPerfStateURL: nil,
+                screenshotPathURL: nil,
+                commandDirectoryURL: nil,
+                uiTestMode: true,
+                platformTarget: .macos,
+                deviceClass: .mac
+            )
+        )
+
+        model.openFolder(
+            at: tempRoot,
+            selectedPathOverride: WorkspacePath(rawValue: ".launch-services-note.md"),
+            explicitSelectedFileURL: hiddenMarkdownURL
+        )
+        try await Task.sleep(nanoseconds: 300_000_000)
+
+        let snapshot = model.stateSnapshot()
+        XCTAssertEqual(model.files.map(\.path.rawValue), [".launch-services-note.md"])
+        XCTAssertEqual(snapshot.selectedFile, ".launch-services-note.md")
+        XCTAssertEqual(snapshot.sidebar.selectedNode, ".launch-services-note.md")
+        XCTAssertTrue(model.documentText.contains("Opened directly."))
+    }
+
+    @MainActor
     func testAdjacentFilePathMovesSidebarSelection() {
         let files = [
             MarkdownFileNode(path: WorkspacePath(rawValue: "alpha.md"), name: "alpha.md", kind: .markdown),
@@ -3122,98 +3170,23 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
         XCTAssertNil(table?.rows.last?.last?.attributedText)
     }
 
-    func testAppStoreLookupConfigurationBuildsPlatformLookupURL() throws {
-        let configuration = AppStoreLookupConfiguration(
-            appID: "123",
-            bundleIdentifier: "com.example.App",
-            installedVersion: "1.0",
-            countryCode: "US",
-            entity: "software"
-        )
-        let components = try XCTUnwrap(URLComponents(url: configuration.lookupURL, resolvingAgainstBaseURL: false))
-        let queryItems = Dictionary(uniqueKeysWithValues: (components.queryItems ?? []).map { ($0.name, $0.value ?? "") })
+    func testAppSourcesDoNotDeclareSelfUpdateChecks() throws {
+        let appRootURL = repoRootURL.appendingPathComponent("Quick Markdown Viewer/Quick Markdown Viewer")
+        let removedUpdateCheckerURL = appRootURL.appendingPathComponent("App/Shared/AppUpdateChecker.swift")
 
-        XCTAssertEqual(components.scheme, "https")
-        XCTAssertEqual(components.host, "itunes.apple.com")
-        XCTAssertEqual(components.path, "/lookup")
-        XCTAssertEqual(queryItems["id"], "123")
-        XCTAssertEqual(queryItems["country"], "US")
-        XCTAssertEqual(queryItems["entity"], "software")
-    }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: removedUpdateCheckerURL.path))
 
-    func testAppUpdateVersionComparisonUsesNumericSegments() {
-        XCTAssertTrue(AppUpdateChecker.isVersion("1.10", newerThan: "1.9"))
-        XCTAssertTrue(AppUpdateChecker.isVersion("2.0", newerThan: "1.99"))
-        XCTAssertFalse(AppUpdateChecker.isVersion("1.3", newerThan: "1.3"))
-        XCTAssertFalse(AppUpdateChecker.isVersion("1.2.9", newerThan: "1.3"))
-    }
+        for relativePath in [
+            "Quick_Markdown_ViewerApp.swift",
+            "App/Shell/WindowSceneRootView.swift"
+        ] {
+            let sourceURL = appRootURL.appendingPathComponent(relativePath)
+            let source = try String(contentsOf: sourceURL, encoding: .utf8)
 
-    @MainActor
-    func testAppUpdateCheckerManualCheckPromptsWhenAppStoreVersionIsNewer() async throws {
-        let suiteName = "AppUpdateCheckerTests.\(UUID().uuidString)"
-        let userDefaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        defer { userDefaults.removePersistentDomain(forName: suiteName) }
-        let checker = AppUpdateChecker(
-            configuration: AppStoreLookupConfiguration(
-                appID: "123",
-                bundleIdentifier: "com.example.App",
-                installedVersion: "1.0",
-                countryCode: "US",
-                entity: "software"
-            ),
-            fetcher: StubAppStoreVersionFetcher(
-                result: .success(
-                    AppStoreVersionInfo(version: "1.1", storeURL: URL(string: "https://apps.apple.com/app/id123")!)
-                )
-            ),
-            userDefaults: userDefaults
-        )
-
-        checker.checkManually()
-        try await Task.sleep(nanoseconds: 150_000_000)
-
-        XCTAssertEqual(
-            checker.activeAlert,
-            AppUpdateChecker.AlertState(
-                kind: .updateAvailable(
-                    AppStoreVersionInfo(version: "1.1", storeURL: URL(string: "https://apps.apple.com/app/id123")!)
-                )
-            )
-        )
-    }
-
-    @MainActor
-    func testAppUpdateCheckerSkipsAutomaticPromptUntilNextVersion() async throws {
-        let suiteName = "AppUpdateCheckerTests.\(UUID().uuidString)"
-        let userDefaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        defer { userDefaults.removePersistentDomain(forName: suiteName) }
-        let versionInfo = AppStoreVersionInfo(version: "1.1", storeURL: URL(string: "https://apps.apple.com/app/id123")!)
-        let configuration = AppStoreLookupConfiguration(
-            appID: "123",
-            bundleIdentifier: "com.example.App",
-            installedVersion: "1.0",
-            countryCode: "US",
-            entity: "software"
-        )
-        let firstChecker = AppUpdateChecker(
-            configuration: configuration,
-            fetcher: StubAppStoreVersionFetcher(result: .success(versionInfo)),
-            userDefaults: userDefaults
-        )
-
-        firstChecker.checkManually()
-        try await Task.sleep(nanoseconds: 150_000_000)
-        firstChecker.skipActiveVersionUntilNextVersion()
-
-        let secondChecker = AppUpdateChecker(
-            configuration: configuration,
-            fetcher: StubAppStoreVersionFetcher(result: .success(versionInfo)),
-            userDefaults: userDefaults
-        )
-        secondChecker.checkAutomaticallyIfNeeded()
-        try await Task.sleep(nanoseconds: 150_000_000)
-
-        XCTAssertNil(secondChecker.activeAlert)
+            XCTAssertFalse(source.contains("AppUpdateChecker"), relativePath)
+            XCTAssertFalse(source.contains("Check for Updates"), relativePath)
+            XCTAssertFalse(source.contains("itunes.apple.com/lookup"), relativePath)
+        }
     }
 
     func testQuickLookPreviewExtensionDeclaresMarkdownSupport() throws {
@@ -3233,7 +3206,15 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
         )
         XCTAssertEqual(attributes["QLIsDataBasedPreview"] as? Bool, false)
         XCTAssertEqual(attributes["QLSupportsSearchableItems"] as? Bool, false)
-        XCTAssertEqual(attributes["QLSupportedContentTypes"] as? [String], ["net.daringfireball.markdown"])
+        XCTAssertEqual(
+            attributes["QLSupportedContentTypes"] as? [String],
+            [
+                "net.daringfireball.markdown",
+                "com.mermaidjs.mermaid",
+                "public.comma-separated-values-text",
+                "public.tab-separated-values-text",
+            ]
+        )
     }
 
     func testMacDocumentTypeDeclarationsIncludeHandlerRanks() throws {
@@ -3268,10 +3249,271 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
         let source = try String(contentsOf: sourceURL, encoding: .utf8)
 
         XCTAssertTrue(source.contains("QLPreviewingController"))
-        XCTAssertTrue(source.contains("AttributedString(markdown:"))
+        XCTAssertTrue(source.contains("AttributedString("))
+        XCTAssertTrue(source.contains("MarkdownParsingOptions"))
+        XCTAssertTrue(source.contains("tableBlock"))
+        XCTAssertTrue(source.contains("Mermaid Diagram"))
+        XCTAssertTrue(source.contains("NSSegmentedControl"))
+        XCTAssertTrue(source.contains("rawSourcePreview"))
         XCTAssertFalse(source.contains("WKWebView"))
         XCTAssertFalse(source.contains("JavaScript"))
     }
+
+    func testQuickLookFeatureParitySpecDocumentsBoundedPreviewContract() throws {
+        let specURL = repoRootURL.appendingPathComponent("docs/quicklook-feature-parity.md")
+        let spec = try String(contentsOf: specURL, encoding: .utf8)
+
+        XCTAssertTrue(spec.contains("Inline Mermaid fences"))
+        XCTAssertTrue(spec.contains("Local inline images"))
+        XCTAssertTrue(spec.contains("Remote or data images"))
+        XCTAssertTrue(spec.contains("native image attachment"))
+        XCTAssertTrue(spec.contains("Does not expose zoom, pan, detached preview UI"))
+        XCTAssertTrue(spec.contains("built `.appex` loaded from the current build products"))
+        XCTAssertTrue(spec.contains("WKWebView"))
+    }
+
+    #if os(macOS)
+    @MainActor
+    func testQuickLookPreviewExtensionRendersBasicMarkdownAsStyledPreview() throws {
+        let fixtureURL = repoRootURL.appendingPathComponent("Fixtures/docs/basic_typography.md")
+        let preview = try renderedQuickLookPreview(for: fixtureURL)
+        let text = preview.string
+
+        XCTAssertTrue(text.contains("Basic typography"))
+        XCTAssertTrue(text.contains("strong text"))
+        XCTAssertFalse(text.contains("# Basic typography"))
+
+        let headingRange = (text as NSString).range(of: "Basic typography")
+        let bodyRange = (text as NSString).range(of: "This is a small fixture")
+        let headingFont = try XCTUnwrap(preview.attribute(.font, at: headingRange.location, effectiveRange: nil) as? NSFont)
+        let bodyFont = try XCTUnwrap(preview.attribute(.font, at: bodyRange.location, effectiveRange: nil) as? NSFont)
+
+        XCTAssertGreaterThan(headingFont.pointSize, bodyFont.pointSize)
+    }
+
+    @MainActor
+    func testQuickLookPreviewExtensionCanSwitchBetweenRenderedAndSourceViews() throws {
+        let fixtureURL = repoRootURL.appendingPathComponent("Fixtures/docs/basic_typography.md")
+        let controller = try preparedQuickLookPreviewController(for: fixtureURL)
+        let modeControl = try XCTUnwrap(findSegmentedControl(in: controller.view))
+
+        XCTAssertEqual(modeControl.segmentCount, 2)
+        XCTAssertEqual(modeControl.label(forSegment: 0), "Rendered")
+        XCTAssertEqual(modeControl.label(forSegment: 1), "Source")
+        XCTAssertEqual(modeControl.selectedSegment, 0)
+
+        let renderedText = try currentQuickLookPreviewText(in: controller)
+        XCTAssertTrue(renderedText.contains("Basic typography"))
+        XCTAssertFalse(renderedText.contains("# Basic typography"))
+
+        let sourceSelector = NSSelectorFromString("selectSourcePreviewForTesting")
+        XCTAssertTrue(controller.responds(to: sourceSelector))
+        controller.perform(sourceSelector)
+
+        let sourceText = try currentQuickLookPreviewText(in: controller)
+        XCTAssertTrue(sourceText.contains("# Basic typography"))
+        XCTAssertEqual(modeControl.selectedSegment, 1)
+
+        let renderedSelector = NSSelectorFromString("selectRenderedPreviewForTesting")
+        XCTAssertTrue(controller.responds(to: renderedSelector))
+        controller.perform(renderedSelector)
+
+        let restoredText = try currentQuickLookPreviewText(in: controller)
+        XCTAssertTrue(restoredText.contains("Basic typography"))
+        XCTAssertFalse(restoredText.contains("# Basic typography"))
+        XCTAssertEqual(modeControl.selectedSegment, 0)
+    }
+
+    @MainActor
+    func testQuickLookPreviewExtensionRendersInlineMermaidFenceAsBoundedPreview() throws {
+        let fixtureURL = repoRootURL.appendingPathComponent("Fixtures/docs/mermaid_inline_showcase.md")
+        let preview = try renderedQuickLookPreview(for: fixtureURL)
+        let text = preview.string
+
+        XCTAssertTrue(text.contains("Mermaid Inline Showcase"))
+        XCTAssertTrue(text.contains("Mermaid Diagram"))
+        XCTAssertTrue(text.contains("Checkout Flow"))
+        XCTAssertTrue(text.contains("Flowchart"))
+        XCTAssertFalse(text.contains("```mermaid"))
+        XCTAssertFalse(text.contains("flowchart LR"))
+        XCTAssertTrue(preview.containsImageAttachment)
+    }
+
+    @MainActor
+    func testQuickLookPreviewExtensionRendersLocalImagesAsAttachments() throws {
+        let workspaceURL = try makeTemporaryWorkspace(named: "QuickLookImage", files: [
+            "docs/image.md": "# Image\n\n![Rick preview](../media/rickrolled.png \"Fixture image\")\n\nAfter image.",
+            "media/.keep": "",
+        ])
+        let sourceImageURL = repoRootURL.appendingPathComponent("Fixtures/media/rickrolled.png")
+        let targetImageURL = workspaceURL.appendingPathComponent("media/rickrolled.png")
+        try FileManager.default.copyItem(at: sourceImageURL, to: targetImageURL)
+
+        let preview = try renderedQuickLookPreview(for: workspaceURL.appendingPathComponent("docs/image.md"))
+        let text = preview.string
+
+        XCTAssertTrue(text.contains("Image"))
+        XCTAssertTrue(text.contains("Rick preview"))
+        XCTAssertTrue(text.contains("After image."))
+        XCTAssertTrue(preview.containsImageAttachment)
+    }
+
+    @MainActor
+    func testQuickLookPreviewExtensionRendersEverySupportedFixtureDocument() throws {
+        let fixtureURLs = try supportedQuickLookFixtureURLs()
+        XCTAssertFalse(fixtureURLs.isEmpty)
+
+        for fixtureURL in fixtureURLs {
+            let preview = try renderedQuickLookPreview(for: fixtureURL)
+            XCTAssertGreaterThan(preview.length, 0, fixtureURL.path)
+            if ["md", "markdown", "mdown", "mkd", "mkdn"].contains(fixtureURL.pathExtension.lowercased()) {
+                let source = try String(contentsOf: fixtureURL, encoding: .utf8)
+                if let firstHeading = source.components(separatedBy: "\n").first(where: { $0.hasPrefix("# ") }) {
+                    XCTAssertFalse(preview.string.contains(firstHeading), fixtureURL.path)
+                }
+            }
+        }
+    }
+    #endif
+
+    #if os(macOS)
+    @MainActor
+    private func renderedQuickLookPreview(for url: URL) throws -> NSAttributedString {
+        let controller = try quickLookPreviewController()
+        let selector = NSSelectorFromString("renderPreviewForTestingAtURL:")
+        XCTAssertTrue(controller.responds(to: selector))
+        let result = controller.perform(selector, with: url as NSURL)
+        return try XCTUnwrap(result?.takeUnretainedValue() as? NSAttributedString)
+    }
+
+    @MainActor
+    private func preparedQuickLookPreviewController(for url: URL) throws -> NSViewController {
+        let controller = try quickLookPreviewController()
+        _ = controller.view
+        let selector = NSSelectorFromString("preparePreviewForTestingAtURL:")
+        XCTAssertTrue(controller.responds(to: selector))
+        let result = controller.perform(selector, with: url as NSURL)
+        let prepared = try XCTUnwrap(result?.takeUnretainedValue() as? NSNumber)
+        XCTAssertTrue(prepared.boolValue)
+        return controller
+    }
+
+    @MainActor
+    private func currentQuickLookPreviewText(in controller: NSViewController) throws -> String {
+        let selector = NSSelectorFromString("currentPreviewTextForTesting")
+        XCTAssertTrue(controller.responds(to: selector))
+        let result = controller.perform(selector)
+        let text = try XCTUnwrap(result?.takeUnretainedValue() as? NSString)
+        return text as String
+    }
+
+    private func findSegmentedControl(in view: NSView) -> NSSegmentedControl? {
+        if let control = view as? NSSegmentedControl {
+            return control
+        }
+        for subview in view.subviews {
+            if let control = findSegmentedControl(in: subview) {
+                return control
+            }
+        }
+        return nil
+    }
+
+    @MainActor
+    private func quickLookPreviewController() throws -> NSViewController {
+        let extensionBundle = try quickLookExtensionBundle()
+        try loadQuickLookExtensionCode(from: extensionBundle)
+
+        let extensionDictionary = try XCTUnwrap(extensionBundle.infoDictionary?["NSExtension"] as? [String: Any])
+        let className = try XCTUnwrap(extensionDictionary["NSExtensionPrincipalClass"] as? String)
+        let resolvedClassName = className.contains("$")
+            ? "Quick_Markdown_Viewer_QuickLook.PreviewViewController"
+            : className
+        let candidateClassNames = [
+            resolvedClassName,
+            "_TtC31Quick_Markdown_Viewer_QuickLook21PreviewViewController",
+        ]
+        let viewControllerType = try XCTUnwrap(
+            candidateClassNames.compactMap { NSClassFromString($0) as? NSViewController.Type }.first
+        )
+        let controller = viewControllerType.init(nibName: nil, bundle: extensionBundle)
+        return controller
+    }
+
+    private func loadQuickLookExtensionCode(from extensionBundle: Bundle) throws {
+        if extensionBundle.load() {
+            return
+        }
+
+        let executableName = try XCTUnwrap(extensionBundle.infoDictionary?["CFBundleExecutable"] as? String)
+        let debugDylibURL = extensionBundle.bundleURL
+            .appendingPathComponent("Contents/MacOS/\(executableName).debug.dylib")
+        guard FileManager.default.fileExists(atPath: debugDylibURL.path) else {
+            return
+        }
+        guard dlopen(debugDylibURL.path, RTLD_NOW | RTLD_GLOBAL) != nil else {
+            let message = dlerror().map { String(cString: $0) } ?? "unknown dlopen failure"
+            throw NSError(
+                domain: "QuickLookPreviewTest",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey: message]
+            )
+        }
+    }
+
+    private func quickLookExtensionBundle() throws -> Bundle {
+        let bundleName = "Quick Markdown Viewer QuickLook.appex"
+        let candidates = [
+            Bundle.main.bundleURL.appendingPathComponent("Contents/PlugIns/\(bundleName)", isDirectory: true),
+            Bundle(for: Self.self).bundleURL
+                .deletingLastPathComponent()
+                .appendingPathComponent(bundleName, isDirectory: true),
+        ]
+
+        for candidate in candidates {
+            if let bundle = Bundle(url: candidate) {
+                return bundle
+            }
+        }
+
+        return try XCTUnwrap(nil, "Expected embedded Quick Look extension bundle")
+    }
+
+    private func supportedQuickLookFixtureURLs() throws -> [URL] {
+        let supportedExtensions: Set<String> = [
+            "md",
+            "markdown",
+            "mdown",
+            "mkd",
+            "mkdn",
+            "mermaid",
+            "mmd",
+            "csv",
+            "tsv",
+        ]
+        let roots = [
+            repoRootURL.appendingPathComponent("Fixtures/docs", isDirectory: true),
+            repoRootURL.appendingPathComponent("Fixtures/app-store", isDirectory: true),
+        ]
+
+        var urls: [URL] = []
+        for root in roots {
+            let enumerator = FileManager.default.enumerator(
+                at: root,
+                includingPropertiesForKeys: [.isRegularFileKey],
+                options: [.skipsHiddenFiles]
+            )
+            while let url = enumerator?.nextObject() as? URL {
+                guard supportedExtensions.contains(url.pathExtension.lowercased()) else { continue }
+                let values = try url.resourceValues(forKeys: [.isRegularFileKey])
+                guard values.isRegularFile == true else { continue }
+                urls.append(url)
+            }
+        }
+
+        return urls.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
+    }
+    #endif
 
     private func makeTemporaryWorkspace(named folderName: String, files: [String: String]) throws -> URL {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -3405,3 +3647,19 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
+
+#if os(macOS)
+private extension NSAttributedString {
+    var containsImageAttachment: Bool {
+        var found = false
+        enumerateAttribute(.attachment, in: NSRange(location: 0, length: length)) { value, _, stop in
+            guard let attachment = value as? NSTextAttachment else { return }
+            if attachment.image != nil {
+                found = true
+                stop.pointee = true
+            }
+        }
+        return found
+    }
+}
+#endif

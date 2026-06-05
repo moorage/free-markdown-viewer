@@ -132,15 +132,18 @@ enum SupportedDocumentExtensions {
 
 struct LocalWorkspaceProvider: WorkspaceProvider, Sendable {
     let rootURL: URL?
+    let explicitFileURL: URL?
     let embeddedDocs: [String: String]
     let ignorePatterns: WorkspaceIgnorePatterns
 
     init(
         rootURL: URL?,
+        explicitFileURL: URL? = nil,
         embeddedDocs: [String: String],
         ignorePatterns: WorkspaceIgnorePatterns = .default
     ) {
         self.rootURL = rootURL
+        self.explicitFileURL = explicitFileURL?.resolvingSymlinksInPath().standardizedFileURL
         self.embeddedDocs = embeddedDocs
         self.ignorePatterns = ignorePatterns
     }
@@ -154,9 +157,25 @@ struct LocalWorkspaceProvider: WorkspaceProvider, Sendable {
 
     nonisolated func loadRoot() throws -> Workspace {
         if let rootURL {
+            let rootIdentifier = normalizedDisplayRoot(for: rootURL)
+            let discoveredFiles: [MarkdownFileNode]
+            do {
+                discoveredFiles = try markdownFiles(in: rootURL)
+            } catch {
+                if let explicitFile = explicitFileNode(rootURL: rootURL) {
+                    return Workspace(rootIdentifier: rootIdentifier, files: [explicitFile])
+                }
+                throw error
+            }
+            guard let explicitFile = explicitFileNode(rootURL: rootURL),
+                  discoveredFiles.contains(where: { $0.path == explicitFile.path }) == false else {
+                return Workspace(rootIdentifier: rootIdentifier, files: discoveredFiles)
+            }
+            let files = (discoveredFiles + [explicitFile])
+                .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
             return Workspace(
-                rootIdentifier: normalizedDisplayRoot(for: rootURL),
-                files: try markdownFiles(in: rootURL)
+                rootIdentifier: rootIdentifier,
+                files: files
             )
         }
 
@@ -171,12 +190,13 @@ struct LocalWorkspaceProvider: WorkspaceProvider, Sendable {
     }
 
     nonisolated func readFile(at path: WorkspacePath) throws -> String {
+        if let explicitFileURL,
+           explicitFileNode(rootURL: rootURL)?.path == path {
+            return try readTextFile(at: explicitFileURL, path: path)
+        }
         if let rootURL {
             let url = rootURL.appendingPathComponent(path.rawValue)
-            if let text = try? String(contentsOf: url, encoding: .utf8) {
-                return text
-            }
-            throw WorkspaceProviderError.fileNotFound(path)
+            return try readTextFile(at: url, path: path)
         }
         if let text = embeddedDocs[path.rawValue] {
             return text
@@ -244,6 +264,36 @@ struct LocalWorkspaceProvider: WorkspaceProvider, Sendable {
             result.append(MarkdownFileNode(path: WorkspacePath(rawValue: relative), name: relative, kind: kind))
         }
         return result.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    private nonisolated func explicitFileNode(rootURL: URL?) -> MarkdownFileNode? {
+        guard let rootURL, let explicitFileURL else { return nil }
+        guard let kind = WorkspaceDocumentKind.forPath(explicitFileURL.path) else { return nil }
+        let canonicalRootPath = canonicalPath(for: rootURL)
+        let canonicalFilePath = canonicalPath(for: explicitFileURL)
+        guard canonicalFilePath.hasPrefix(canonicalRootPath + "/") else { return nil }
+        let relative = String(canonicalFilePath.dropFirst(canonicalRootPath.count + 1))
+        guard ignorePatterns.shouldIgnore(relativePath: relative) == false else { return nil }
+        return MarkdownFileNode(path: WorkspacePath(rawValue: relative), name: relative, kind: kind)
+    }
+
+    private nonisolated func readTextFile(at url: URL, path: WorkspacePath) throws -> String {
+        let data: Data
+        do {
+            data = try Data(contentsOf: url)
+        } catch {
+            throw WorkspaceProviderError.fileNotFound(path)
+        }
+        if let text = String(data: data, encoding: .utf8) {
+            return text
+        }
+        if let text = String(data: data, encoding: .utf16) {
+            return text
+        }
+        if let text = String(data: data, encoding: .isoLatin1) {
+            return text
+        }
+        return String(decoding: data, as: UTF8.self)
     }
 
     private nonisolated func canonicalPath(for url: URL) -> String {
