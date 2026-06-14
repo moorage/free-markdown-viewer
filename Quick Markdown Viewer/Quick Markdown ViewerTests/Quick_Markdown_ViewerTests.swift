@@ -2670,6 +2670,65 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
         XCTAssertTrue(rows.contains { $0.lineNumber == 3 && $0.displayValue == "record" })
     }
 
+    func testNDJSONViewerRowsUseUniqueRecordScopedIDsAndPhysicalLineNumbers() throws {
+        let document = JSONDocumentModel.parse(
+            source: """
+            {"event":"one","ok":true}
+
+            {"event":"two","ok":true}
+            {"event":"three","ok":false}
+            """,
+            kind: .ndjson
+        )
+
+        let expandedRows = JSONPresentationBuilder.rows(for: document, collapsedNodeIDs: [])
+        let rowIDs = expandedRows.map(\.id)
+
+        XCTAssertEqual(Set(rowIDs).count, rowIDs.count)
+        XCTAssertTrue(expandedRows.contains { $0.id == "record.0.root.event" && $0.lineNumber == 1 })
+        XCTAssertTrue(expandedRows.contains { $0.id == "record.1.root.event" && $0.lineNumber == 3 })
+        XCTAssertTrue(expandedRows.contains { $0.id == "record.2.root.event" && $0.lineNumber == 4 })
+    }
+
+    func testNDJSONViewerCanCollapseAndExpandLastRecord() throws {
+        let document = JSONDocumentModel.parse(
+            source: """
+            {"event":"one","ok":true}
+            {"event":"two","ok":true}
+            {"event":"three","ok":false}
+            """,
+            kind: .ndjson
+        )
+        let lastRecordID = try XCTUnwrap(document.roots.last?.id)
+
+        let collapsedRows = JSONPresentationBuilder.rows(for: document, collapsedNodeIDs: [lastRecordID])
+        XCTAssertTrue(try XCTUnwrap(collapsedRows.first { $0.id == lastRecordID }).isCollapsed)
+        XCTAssertFalse(collapsedRows.contains { $0.id == "\(lastRecordID).root.event" })
+        XCTAssertEqual(try XCTUnwrap(collapsedRows.first { $0.id == lastRecordID }).lineNumber, 3)
+
+        let expandedRows = JSONPresentationBuilder.rows(for: document, collapsedNodeIDs: [])
+        XCTAssertTrue(expandedRows.contains { $0.id == "\(lastRecordID).root.event" && $0.lineNumber == 3 })
+        XCTAssertTrue(expandedRows.contains { $0.id == "\(lastRecordID).root.ok" && $0.lineNumber == 3 })
+    }
+
+    func testJSONLAliasViewerCanCollapseAndExpandLastRecord() throws {
+        let document = JSONDocumentModel.parse(
+            source: """
+            {"line":1,"message":"jsonl alias"}
+            {"line":2,"message":"same parser as ndjson"}
+            """,
+            kind: .ndjson
+        )
+        let lastRecordID = try XCTUnwrap(document.roots.last?.id)
+
+        let collapsedRows = JSONPresentationBuilder.rows(for: document, collapsedNodeIDs: [lastRecordID])
+        XCTAssertTrue(try XCTUnwrap(collapsedRows.first { $0.id == lastRecordID }).isCollapsed)
+        XCTAssertFalse(collapsedRows.contains { $0.id == "\(lastRecordID).root.message" })
+
+        let expandedRows = JSONPresentationBuilder.rows(for: document, collapsedNodeIDs: [])
+        XCTAssertTrue(expandedRows.contains { $0.id == "\(lastRecordID).root.message" && $0.lineNumber == 2 })
+    }
+
     func testMarkdownRendererFallsBackForUnknownFenceLanguage() throws {
         let markdown = """
         ```brainheck

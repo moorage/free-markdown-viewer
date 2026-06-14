@@ -17,6 +17,7 @@ struct JSONDocumentView: View {
                     Text("Source").tag(JSONPresentationMode.source)
                 }
                 .pickerStyle(.segmented)
+                .labelsHidden()
                 .frame(width: 180)
                 .padding([.top, .horizontal], 12)
                 .padding(.bottom, 8)
@@ -52,7 +53,7 @@ struct JSONDocumentView: View {
                 }
                 .padding(12)
             } else {
-                ScrollView([.horizontal, .vertical], showsIndicators: true) {
+                ScrollView(.vertical, showsIndicators: true) {
                     LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
                         Section {
                             ForEach(rows) { row in
@@ -62,6 +63,7 @@ struct JSONDocumentView: View {
                             stickyHeader()
                         }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(12)
                 }
                 .coordinateSpace(name: JSONAncestorPreference.coordinateSpaceName)
@@ -75,27 +77,26 @@ struct JSONDocumentView: View {
 
     private var sourceRows: some View {
         let lines = jsonDocument.document.sourceLines
-        return ScrollView([.horizontal, .vertical], showsIndicators: true) {
+        return ScrollView(.vertical, showsIndicators: true) {
             LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
                 Section {
                     ForEach(Array(lines.enumerated()), id: \.offset) { offset, line in
                         HStack(alignment: .firstTextBaseline, spacing: 12) {
                             gutter(jsonDocument.document.sourceLineOffset + offset + 1)
-                            HStack(alignment: .firstTextBaseline, spacing: 0) {
-                                ForEach(sourceFragments(lineNumber: jsonDocument.document.sourceLineOffset + offset + 1, text: line)) { fragment in
-                                    Text(verbatim: fragment.text)
-                                        .font(monospacedFont)
-                                        .foregroundStyle(color(for: fragment.kind))
-                                }
-                            }
+                            sourceLineText(lineNumber: jsonDocument.document.sourceLineOffset + offset + 1, text: line)
+                                .font(monospacedFont)
                             .lineLimit(nil)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.vertical, 2)
                     }
                 } header: {
                     stickyTitle("Source")
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(12)
         }
         .frame(minHeight: 220, maxHeight: 620)
@@ -135,8 +136,7 @@ struct JSONDocumentView: View {
                 .opacity(row.hasChildren ? 1 : 0.18)
                 .accessibilityIdentifier("json.disclosure.\(row.nodeID)")
 
-                Text(String(repeating: "  ", count: row.depth))
-                    .font(monospacedFont)
+                indentation(row.depth)
 
                 if let key = row.key {
                     Text(verbatim: "\"\(key)\"")
@@ -150,9 +150,11 @@ struct JSONDocumentView: View {
                 Text(verbatim: row.displayValue)
                     .font(monospacedFont)
                     .foregroundStyle(color(for: row.kind))
-
-                Spacer(minLength: 0)
+                    .lineLimit(nil)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .layoutPriority(1)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 3)
 
             if let tableProjection = row.tableProjection {
@@ -181,8 +183,7 @@ struct JSONDocumentView: View {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 gutter(table.rows.first?.lineNumber ?? 1)
                     .opacity(0)
-                Text(String(repeating: "  ", count: table.depth))
-                    .font(monospacedFont)
+                indentation(table.depth)
                 ForEach(table.columns, id: \.self) { column in
                     Text(verbatim: column)
                         .font(.system(size: 12 * fontScale, weight: .semibold, design: .monospaced))
@@ -195,8 +196,7 @@ struct JSONDocumentView: View {
             ForEach(table.rows) { projectedRow in
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     gutter(projectedRow.lineNumber)
-                    Text(String(repeating: "  ", count: table.depth))
-                        .font(monospacedFont)
+                    indentation(table.depth)
                     ForEach(projectedRow.cells) { cell in
                         Text(verbatim: cell.displayValue)
                             .font(monospacedFont)
@@ -220,6 +220,11 @@ struct JSONDocumentView: View {
             .monospacedDigit()
             .frame(width: 44, alignment: .trailing)
             .accessibilityIdentifier("json.gutter.\(lineNumber)")
+    }
+
+    private func indentation(_ depth: Int) -> some View {
+        Color.clear
+            .frame(width: CGFloat(depth) * 18 * fontScale, height: 1)
     }
 
     private var monospacedFont: Font {
@@ -280,6 +285,12 @@ struct JSONDocumentView: View {
             fragments.append(fragment(text: text, kind: nil))
         }
         return fragments
+    }
+
+    private func sourceLineText(lineNumber: Int, text: String) -> Text {
+        sourceFragments(lineNumber: lineNumber, text: text).reduce(Text("")) { partial, fragment in
+            partial + Text(verbatim: fragment.text).foregroundColor(color(for: fragment.kind))
+        }
     }
 
     private func fragment(text: String, kind: JSONSyntaxTokenKind?) -> JSONSourceLineFragment {

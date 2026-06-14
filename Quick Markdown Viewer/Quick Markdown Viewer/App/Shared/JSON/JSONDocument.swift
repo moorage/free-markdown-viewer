@@ -383,9 +383,10 @@ private nonisolated final class JSONFamilyParser {
             allSyntaxTokens.append(contentsOf: parsed.syntaxTokens)
             let lineNumber = sourceLineOffset + lineOffset + 1
             if let parsedRoot = parsed.roots.first, parsed.diagnostics.isEmpty {
+                let recordID = "record.\(roots.count)"
                 roots.append(
                     JSONValueNode(
-                        id: "record.\(roots.count)",
+                        id: recordID,
                         key: nil,
                         kind: .record,
                         displayValue: "record \(roots.count + 1)",
@@ -393,7 +394,7 @@ private nonisolated final class JSONFamilyParser {
                             start: JSONSourceLocation(line: lineNumber, column: 1),
                             end: JSONSourceLocation(line: lineNumber, column: max(rawLine.count, 1))
                         ),
-                        children: [parsedRoot]
+                        children: [namespacedNode(parsedRoot, prefix: recordID)]
                     )
                 )
             } else {
@@ -420,6 +421,17 @@ private nonisolated final class JSONFamilyParser {
             diagnostics: allDiagnostics,
             sourceLineOffset: sourceLineOffset,
             syntaxTokens: allSyntaxTokens
+        )
+    }
+
+    private func namespacedNode(_ node: JSONValueNode, prefix: String) -> JSONValueNode {
+        JSONValueNode(
+            id: "\(prefix).\(node.id)",
+            key: node.key,
+            kind: node.kind,
+            displayValue: node.displayValue,
+            sourceRange: node.sourceRange,
+            children: node.children.map { namespacedNode($0, prefix: prefix) }
         )
     }
 
