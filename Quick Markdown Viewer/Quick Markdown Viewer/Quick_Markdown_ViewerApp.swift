@@ -85,6 +85,10 @@ final class ExternalWorkspaceOpenCoordinator: ObservableObject {
     @Published private(set) var latestRequestID: UUID?
     private var pendingRequests: [UUID: ExternalWorkspaceOpenRequest] = [:]
 
+    var hasPendingRequests: Bool {
+        !pendingRequests.isEmpty
+    }
+
     func enqueue(_ request: ExternalWorkspaceOpenRequest) {
         let requestID = UUID()
         pendingRequests[requestID] = request

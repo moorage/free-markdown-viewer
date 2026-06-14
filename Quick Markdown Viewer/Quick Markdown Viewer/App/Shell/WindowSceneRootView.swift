@@ -45,6 +45,8 @@ struct WindowSceneRootView: View {
     @ObservedObject private var externalWorkspaceOpenCoordinator = ExternalWorkspaceOpenCoordinator.shared
     @ObservedObject private var commandLineToolManager = MacCommandLineToolManager.shared
     @State private var hasAttemptedInitialFolderPrompt = false
+    @State private var initialFolderPromptTask: Task<Void, Never>?
+    @State private var additionalWindowScheduleTask: Task<Void, Never>?
     @State private var postInstallGuide: CommandLineToolPostInstallGuide?
     @Environment(\.openWindow) private var openWindow
     #else
@@ -92,13 +94,17 @@ struct WindowSceneRootView: View {
                 openDroppedWorkspaces(from: providers)
             }
             .onAppear {
-                sessionStore.scheduleAdditionalWindows(openWindow: openWindow)
                 commandLineToolManager.setInstallCommandLineToolPresenter(installCommandLineTool)
                 commandLineToolManager.refreshInstallState()
                 handleExternalWorkspaceOpen(requestID: externalWorkspaceOpenCoordinator.latestRequestID)
+                scheduleAdditionalWindowsIfNeeded()
                 requestInitialFolderPromptIfNeeded()
             }
             .onDisappear {
+                initialFolderPromptTask?.cancel()
+                initialFolderPromptTask = nil
+                additionalWindowScheduleTask?.cancel()
+                additionalWindowScheduleTask = nil
                 commandLineToolManager.setInstallCommandLineToolPresenter(nil)
                 sessionStore.removeActiveSession(for: sceneID)
             }
@@ -249,6 +255,16 @@ struct WindowSceneRootView: View {
         return PrintAllDocumentsAction(handler: printAllDocuments)
     }
 
+    private func scheduleAdditionalWindowsIfNeeded() {
+        guard additionalWindowScheduleTask == nil else { return }
+        additionalWindowScheduleTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            guard !Task.isCancelled else { return }
+            guard !externalWorkspaceOpenCoordinator.hasPendingRequests else { return }
+            sessionStore.scheduleAdditionalWindows(openWindow: openWindow)
+        }
+    }
+
     private func requestInitialFolderPromptIfNeeded() {
         guard !hasAttemptedInitialFolderPrompt else { return }
         hasAttemptedInitialFolderPrompt = true
@@ -258,7 +274,10 @@ struct WindowSceneRootView: View {
         }
         guard model.shouldAutoPromptForFolderOnLaunch else { return }
 
-        DispatchQueue.main.async {
+        initialFolderPromptTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            guard !Task.isCancelled else { return }
+            guard !externalWorkspaceOpenCoordinator.hasPendingRequests else { return }
             guard !sessionStore.shouldSuppressAutomaticFolderPrompt(for: sceneID) else { return }
             guard model.shouldAutoPromptForFolderOnLaunch else { return }
             openFolder()
@@ -411,6 +430,7 @@ struct WindowSceneRootView: View {
         sessionStore.suppressAutomaticFolderPrompt(for: sceneID)
 
         if request.presentation == .reuseEmptyWindow && shouldReuseCurrentWindowForExternalOpen {
+            sessionStore.discardPendingAdditionalWindows()
             model.openFolder(
                 at: request.rootURL,
                 selectedPathOverride: request.selectedPath,
@@ -429,7 +449,10 @@ struct WindowSceneRootView: View {
     }
 
     private var shouldReuseCurrentWindowForExternalOpen: Bool {
-        model.currentWorkspaceRootURL == nil && model.selectedPath == nil
+        if model.currentWorkspaceRootURL == nil && model.selectedPath == nil {
+            return true
+        }
+        return sessionStore.canReplaceClaimedLaunchSession(for: sceneID)
     }
 
     private func revealInFinder() {

@@ -617,6 +617,23 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
     }
 
     @MainActor
+    func testExternalWorkspaceOpenCoordinatorTracksPendingRequestsUntilClaimed() throws {
+        let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        let markdownURL = tempRoot.appendingPathComponent("notes.md")
+        try "# Notes".write(to: markdownURL, atomically: true, encoding: .utf8)
+
+        let coordinator = ExternalWorkspaceOpenCoordinator()
+        let request = try XCTUnwrap(ExternalWorkspaceOpenCoordinator.normalizedRequest(for: markdownURL))
+        coordinator.enqueue(request)
+
+        XCTAssertTrue(coordinator.hasPendingRequests)
+        let requestID = try XCTUnwrap(coordinator.latestRequestID)
+        XCTAssertNotNil(coordinator.claimRequest(id: requestID))
+        XCTAssertFalse(coordinator.hasPendingRequests)
+    }
+
+    @MainActor
     func testAppDelegateOpenURLsEnqueuesDirectoryWorkspace() throws {
         let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
@@ -956,6 +973,47 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
         policy.suppressAutomaticFolderPrompt(for: "drop-source-window")
 
         XCTAssertTrue(policy.shouldSuppressAutomaticFolderPrompt(for: "drop-source-window", hasRestoredSession: false))
+    }
+
+    @MainActor
+    func testSessionStoreAllowsLaunchExternalOpenToReplaceRestoredSessionUntilActive() throws {
+        let suiteName = "qmv-session-store-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let session = WorkspaceWindowSession(
+            rootPath: "/tmp/restored",
+            selectedFile: "old.md",
+            securityScopedBookmarkData: nil
+        )
+        let encodedSessions = try JSONEncoder().encode([session])
+        defaults.set(encodedSessions, forKey: "workspaceWindowSessions")
+
+        let store = WorkspaceWindowSessionStore(
+            launchOptions: HarnessLaunchOptions(
+                fixtureRoot: nil,
+                openFile: nil,
+                uiTestOpenFolderURL: nil,
+                theme: nil,
+                windowSize: nil,
+                disableFileWatch: true,
+                dumpVisibleStateURL: nil,
+                dumpPerfStateURL: nil,
+                screenshotPathURL: nil,
+                commandDirectoryURL: nil,
+                uiTestMode: false,
+                platformTarget: .macos,
+                deviceClass: .mac
+            ),
+            userDefaults: defaults,
+            observeTermination: false
+        )
+
+        XCTAssertNotNil(store.claimLaunchSession(for: "launch-scene"))
+        XCTAssertTrue(store.canReplaceClaimedLaunchSession(for: "launch-scene"))
+
+        store.updateActiveSession(session, for: "launch-scene")
+
+        XCTAssertFalse(store.canReplaceClaimedLaunchSession(for: "launch-scene"))
     }
 
     @MainActor
@@ -3719,6 +3777,20 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
         for documentType in documentTypes {
             XCTAssertEqual(documentType["LSHandlerRank"] as? String, "Alternate")
         }
+
+        let contentTypes = Set(documentTypes.flatMap { documentType in
+            documentType["LSItemContentTypes"] as? [String] ?? []
+        })
+        XCTAssertTrue(contentTypes.isSuperset(of: [
+            "net.daringfireball.markdown",
+            "com.mermaidjs.mermaid",
+            "public.comma-separated-values-text",
+            "public.tab-separated-values-text",
+            "public.json",
+            "com.souschefstudio.jsonc",
+            "com.souschefstudio.ndjson",
+            "public.folder",
+        ]))
     }
 
     func testQuickLookPreviewExtensionTargetIsEmbeddedForMacOS() throws {

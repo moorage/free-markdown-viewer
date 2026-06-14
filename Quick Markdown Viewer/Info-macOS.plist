@@ -48,6 +48,19 @@
 		</dict>
 		<dict>
 			<key>CFBundleTypeName</key>
+			<string>Delimited Text Document</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.comma-separated-values-text</string>
+				<string>public.tab-separated-values-text</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
 			<string>Folder</string>
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>

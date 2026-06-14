@@ -21,6 +21,7 @@ Add a macOS command-line entry point so `qmv ..` opens Quick Markdown Viewer to 
 - [x] (2026-04-16T21:30Z) Fixed the final sandbox write failure by switching the macOS app entitlement from user-selected read-only to user-selected read-write while keeping the `qmv` write scope limited to explicit user-approved install flow.
 - [x] (2026-04-16T21:42Z) Added a macOS-specific `Info.plist` with `CFBundleDocumentTypes` for `public.folder`, so Launch Services now delivers folder arguments from `qmv .` into the app instead of launching an empty window.
 - [x] (2026-05-01T22:54Z) Extended CLI-open handling so `qmv /path/to/file.md` now routes the app to the file’s containing folder and preserves `file.md` as the initial sidebar selection instead of dropping to the folder’s default first document.
+- [x] (2026-06-14T18:33Z) Fixed cold-start file opens so `qmv docs/exec-plans/active/2026-06-14-structured-json-viewer.md` opens one viewer window at `docs/exec-plans/active`, selects the requested file, and does not show an Open Folder panel.
 
 ## Surprises & Discoveries
 
@@ -56,6 +57,12 @@ Add a macOS command-line entry point so `qmv ..` opens Quick Markdown Viewer to 
 
 - Observation: the original external-open coordinator intentionally collapsed supported files down to just their containing folder, which made `qmv /path/to/file.md` lose the caller’s intended initial selection.
   Evidence: `ExternalWorkspaceOpenCoordinator.normalizedWorkspaceURL(for:)` previously returned only the parent directory for supported files, and `WindowSceneRootView.handleExternalWorkspaceOpen` always scheduled `selectedFile: nil` for new externally opened windows.
+
+- Observation: a stale installed `~/.local/bin/qmv` can still collapse file arguments to their parent folder even after the app code knows how to preserve file selections.
+  Evidence: the local installed launcher still printed `usage: qmv [directory-or-markdown-file]` and set `resolved_target=$(cd "$(dirname "$target")" && pwd -P)` for files; refreshing it to the generated `directory-or-supported-file` script made the exact `qmv docs/exec-plans/active/2026-06-14-structured-json-viewer.md` command select the requested file.
+
+- Observation: cold-start Launch Services opens can race with session restoration and startup prompting.
+  Evidence: runtime validation before the fix could leave an extra `Quick Markdown Viewer` or restored-session window; after delaying startup prompt/restore scheduling and letting pending external opens replace the launch-restored scene, System Events reported one window named `active > 2026-06-14-structured-json-viewer.md` with `sheetCount:0`.
 
 ## Decision Log
 
@@ -100,6 +107,8 @@ Add a macOS command-line entry point so `qmv ..` opens Quick Markdown Viewer to 
 The macOS app now supports the end-to-end Terminal flow requested in this workstream. Users can install `qmv` from `File > Install Command Line Tool…` or from the empty-window screen, and the installer now always targets `~/.local/bin/qmv`. When the sandbox does not yet have write access, the app explains why, prompts the user to approve access to the home folder once, persists that approval as a security-scoped bookmark, then creates `~/.local/bin` if needed and writes the launcher there. After install, the app now shows a short `/bin/sh ...` command that points to a bundled `qmv-finish-terminal-setup.sh` resource inside the app instead of dumping the entire PATH-fix script inline. The installed launcher resolves directory arguments locally and still uses Launch Services for the app handoff, while supported file arguments such as `qmv /path/to/file.md` now preserve the requested file path so the app can open that file’s containing folder with `file.md` selected in the sidebar.
 
 The app also now accepts Launch Services folder-open events directly. If the app is launched into an empty window, the incoming CLI-opened folder is consumed by that window; if the app already has an active workspace, the folder is opened into a fresh window-scoped session instead of clobbering an unrelated window. That preserves the repo’s existing multiwindow behavior while making the CLI useful on a running app.
+
+Cold-start file opens now take priority over startup prompt and restore-window scheduling. The app delays automatic Open Folder prompting and additional restored windows briefly, cancels them when an external file/folder request is pending, and allows the launch-restored scene to be replaced before it becomes an active user session. The macOS bundle also advertises CSV/TSV document types so Launch Services can deliver every supported `qmv` file argument family.
 
 The main design correction from planning held: there is still no silent App Store auto-install. Instead, the shipped implementation uses an explicit user-selected install flow plus `com.apple.security.files.user-selected.executable`, which matches the sandbox guidance and gives App Review a clear story for why the entitlement exists.
 
@@ -186,6 +195,10 @@ Validation commands run:
 - `./scripts/test-ui-macos --smoke`
 - `python3 scripts/check_execplan.py docs/exec-plans/active/2026-04-16-macos-cli-open-folder-launcher.md`
 - `python3 scripts/knowledge/check_docs.py`
+- `xcodebuild -quiet -project 'Quick Markdown Viewer/Quick Markdown Viewer.xcodeproj' -scheme 'Quick Markdown Viewer' -configuration Debug -derivedDataPath /tmp/qmv-cli-cold-open-tests2 -destination 'platform=macOS,arch=arm64' CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= '-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testCommandLineToolLauncherScriptUsesBundleIdentifierAndDefaultTarget' '-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testExternalWorkspaceOpenCoordinatorNormalizesMarkdownFileToWorkspaceAndSelection' '-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testExternalWorkspaceOpenCoordinatorNormalizesCSVFileToWorkspaceAndSelection' '-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testExternalWorkspaceOpenCoordinatorNormalizesJSONFileToWorkspaceAndSelection' '-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testExternalWorkspaceOpenCoordinatorTracksPendingRequestsUntilClaimed' '-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testAppDelegateOpenFilesEnqueuesMarkdownWorkspace' '-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testAppModelOpenFolderSelectsRequestedFileOverride' '-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testMacDocumentTypeDeclarationsIncludeHandlerRanks' '-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testSessionStoreAllowsLaunchExternalOpenToReplaceRestoredSessionUntilActive' test`
+- `xcodebuild -quiet -project 'Quick Markdown Viewer/Quick Markdown Viewer.xcodeproj' -scheme 'Quick Markdown Viewer' -configuration Debug -derivedDataPath /tmp/qmv-cli-cold-open-runtime2 -destination 'platform=macOS,arch=arm64' CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= build`
+- `/usr/bin/open -n -b 'com.souschefstudio.Free-Markdown-Viewer' "$PWD/docs/exec-plans/active/2026-06-14-structured-json-viewer.md"` followed by System Events window inspection (one `active > 2026-06-14-structured-json-viewer.md` window, `sheetCount:0`)
+- `qmv docs/exec-plans/active/2026-06-14-structured-json-viewer.md` after refreshing the local stale launcher (one `active > 2026-06-14-structured-json-viewer.md` window, `sheetCount:0`)
 
 External references used during planning:
 

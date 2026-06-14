@@ -208,10 +208,19 @@ final class WorkspaceWindowSessionStore: ObservableObject {
         pendingAdditionalSessions.removeAll()
     }
 
+    func discardPendingAdditionalWindows() {
+        didScheduleAdditionalWindows = true
+        pendingAdditionalSessions.removeAll()
+    }
+
     func scheduleExternalWorkspaceWindow(for session: WorkspaceWindowSession, openWindow: OpenWindowAction) {
         let sceneID = UUID().uuidString
         scheduledSessions[sceneID] = session
         openWindow(value: sceneID)
+    }
+
+    func canReplaceClaimedLaunchSession(for sceneID: String) -> Bool {
+        claimedSessions[sceneID] != nil && activeSessions.isEmpty
     }
 
     func shouldSuppressAutomaticFolderPrompt(for sceneID: String) -> Bool {
