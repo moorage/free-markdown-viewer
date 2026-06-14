@@ -101,6 +101,7 @@ struct JSONDocumentView: View {
                     activeAncestorTitles = activeAncestors(from: preferences)
                 }
                 .frame(minHeight: 220, maxHeight: 620)
+                .accessibilityIdentifier("json.viewerScrollView")
             }
         }
     }
@@ -133,6 +134,7 @@ struct JSONDocumentView: View {
             .padding(12)
         }
         .frame(minHeight: 220, maxHeight: 620)
+        .accessibilityIdentifier("json.sourceScrollView")
     }
 
     @ViewBuilder
@@ -150,6 +152,8 @@ struct JSONDocumentView: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
             .background(.regularMaterial)
+            .accessibilityIdentifier("json.stickyHeader")
+            .accessibilityLabel(Text(title))
     }
 
     private func viewerRow(_ displayedRow: JSONDisplayedViewerRow) -> some View {

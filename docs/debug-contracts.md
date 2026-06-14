@@ -54,6 +54,9 @@ Stable identifiers include:
 - `document.outline.list`
 - `document.outline.item.<id>`
 - `json.mode`
+- `json.viewerScrollView`
+- `json.sourceScrollView`
+- `json.stickyHeader`
 - `json.row.<id>`
 - `json.gutter.<line>`
 - `json.disclosure.<id>`

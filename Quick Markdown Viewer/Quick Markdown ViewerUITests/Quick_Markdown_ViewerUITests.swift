@@ -327,6 +327,39 @@ final class Quick_Markdown_ViewerUITests: XCTestCase {
         XCTAssertTrue(waitForElement(app.descendants(matching: .any)["print.request.scope"], label: "allFiles", timeout: 5))
         XCTAssertTrue(waitForElement(app.descendants(matching: .any)["print.request.status"], label: "presented", timeout: 5))
     }
+
+    @MainActor
+    func testJSONViewerShowsStickyAncestorHeaderAfterScrollingDeepNestedRows() throws {
+        let app = XCUIApplication()
+        let fixtureRoot = repoRootURL().appendingPathComponent("Fixtures/docs", isDirectory: true).path
+
+        app.launchArguments = [
+            "--fixture-root", fixtureRoot,
+            "--open-file", "json_sticky_headers_showcase.json",
+            "--ui-test-mode", "1",
+        ]
+        app.launch()
+        app.activate()
+
+        XCTAssertTrue(waitForWindowTitle(app, label: "Fixtures/docs > json_sticky_headers_showcase.json", timeout: 5))
+        XCTAssertTrue(app.scrollViews["document.scrollView"].waitForExistence(timeout: 5))
+
+        let jsonScrollView = app.scrollViews["json.viewerScrollView"]
+        XCTAssertTrue(jsonScrollView.waitForExistence(timeout: 5))
+        let stickyHeader = app.staticTexts["json.stickyHeader"].firstMatch
+        let expectedHeader = "workspace > release > streams > [1] > records > [11] > checks"
+        for _ in 0..<18 where stickyHeader.label != expectedHeader {
+            jsonScrollView.swipeUp()
+        }
+
+        XCTAssertTrue(
+            waitForElement(
+                stickyHeader,
+                label: expectedHeader,
+                timeout: 5
+            )
+        )
+    }
     #endif
 
     @MainActor
