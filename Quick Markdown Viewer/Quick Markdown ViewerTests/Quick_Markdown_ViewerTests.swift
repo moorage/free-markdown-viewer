@@ -2671,7 +2671,7 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
         XCTAssertTrue(document.syntaxTokens.contains { $0.kind == .bool && $0.range.start.line == 3 })
     }
 
-    func testMarkdownJSONFenceUsesMarkdownSourceLineNumbers() throws {
+    func testMarkdownJSONFenceUsesBlockLocalLineNumbers() throws {
         let markdown = """
         # Payload
 
@@ -2686,7 +2686,32 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
         let rows = JSONPresentationBuilder.rows(for: jsonDocument, collapsedNodeIDs: [])
 
         XCTAssertEqual(jsonBlock.codeBlock?.contentStartLine, 4)
-        XCTAssertEqual(rows.map(\.lineNumber), [4, 4, 4])
+        XCTAssertEqual(jsonDocument.sourceLineOffset, 0)
+        XCTAssertEqual(rows.map(\.lineNumber), [1, 1, 1])
+    }
+
+    func testMarkdownJSONShowcaseFixtureUsesBlockLocalLineNumbersPerBox() throws {
+        let fixture = repoRootURL.appendingPathComponent("Fixtures/docs/markdown_json_showcase.md")
+        let blocks = MarkdownRenderer.blocks(from: try String(contentsOf: fixture, encoding: .utf8))
+        let jsonBlocks = blocks.filter { $0.kind == .jsonDocument }
+
+        XCTAssertEqual(jsonBlocks.compactMap(\.jsonDocument?.kind), [.json, .jsonc, .ndjson])
+
+        let jsonDocuments = try jsonBlocks.map { block in
+            try XCTUnwrap(block.jsonDocument?.document)
+        }
+        XCTAssertEqual(jsonDocuments.map(\.sourceLineOffset), [0, 0, 0])
+
+        let rowLineNumbers = jsonDocuments.map { document in
+            JSONPresentationBuilder.rows(for: document, collapsedNodeIDs: []).map(\.lineNumber)
+        }
+        XCTAssertEqual(rowLineNumbers[0], [1, 1, 1, 1])
+        XCTAssertEqual(rowLineNumbers[1], [1, 2, 3])
+        XCTAssertTrue(rowLineNumbers[2].contains(1))
+        XCTAssertTrue(rowLineNumbers[2].contains(2))
+        XCTAssertTrue(rowLineNumbers[2].contains(3))
+        XCTAssertFalse(rowLineNumbers[1].contains(12))
+        XCTAssertFalse(rowLineNumbers[2].contains(21))
     }
 
     func testNDJSONParserRecoversAfterMalformedRecord() throws {

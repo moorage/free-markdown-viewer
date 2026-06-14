@@ -179,8 +179,7 @@ enum MarkdownCodeBlockCatalog {
         if let jsonKind = JSONFamilyDocumentKind.forFenceInfo(codeBlock.infoString) {
             let jsonDocument = JSONDocumentModel.parse(
                 source: codeBlock.code,
-                kind: jsonKind,
-                sourceLineOffset: max((codeBlock.contentStartLine ?? 1) - 1, 0)
+                kind: jsonKind
             )
             return block.replacing(
                 kind: .jsonDocument,
