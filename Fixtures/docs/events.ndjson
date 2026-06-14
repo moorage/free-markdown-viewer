@@ -1,0 +1,4 @@
+{"event":"open","path":"json_showcase.json","ok":true}
+{"event":"collapse","path":"features","ok":true}
+{malformed}
+{"event":"recover","path":"events.ndjson","ok":true}

@@ -4,7 +4,7 @@ This document is the top-level codemap for the live repository. It names the maj
 
 ## System overview
 
-This repository is building a universal Apple-platform Markdown viewer with seven major subsystems:
+This repository is building a universal Apple-platform Markdown viewer with eight major subsystems:
 
 1. workspace browsing
 2. navigation and history
@@ -12,7 +12,8 @@ This repository is building a universal Apple-platform Markdown viewer with seve
 4. native Mermaid diagram parsing/rendering
 5. media classification and playback hosts
 6. macOS Quick Look preview extension
-7. platform shells and harness tooling
+7. native JSON-family parsing/rendering
+8. platform shells and harness tooling
 
 The live codebase is still early. The Xcode template exists, but most durable structure is being added by the harness bootstrap plan.
 
@@ -68,6 +69,28 @@ Stable concepts:
 - `MarkdownMermaidDiagram`
 - `MermaidScene`
 - `MermaidDiagramBlockView`
+
+### Structured JSON documents
+
+Purpose:
+
+- detect standalone `.json`, `.jsonc`, `.ndjson`, and `.jsonl` files
+- detect Markdown fenced `json`, `jsonc`, `ndjson`, and `jsonl` blocks
+- parse JSON-family source into native source-mapped rows with diagnostics
+- render viewer/source modes with line gutters, token highlighting, collapsible sections, sticky ancestor context, and compact table projections for homogeneous object arrays
+
+Primary code areas:
+
+- `Quick Markdown Viewer/Quick Markdown Viewer/App/Shared/JSON/`
+- `Quick Markdown Viewer/Quick Markdown Viewer/App/Shell/JSONDocumentView.swift`
+
+Stable concepts:
+
+- `JSONFamilyDocumentKind`
+- `JSONDocumentModel`
+- `JSONValueNode`
+- `JSONPresentationBuilder`
+- `MarkdownJSONDocument`
 
 ### macOS Quick Look extension
 

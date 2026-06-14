@@ -32,7 +32,7 @@ struct DocumentPrintSection: Equatable, Sendable {
 
     var plainText: String {
         switch kind {
-        case .markdown, .mermaid:
+        case .markdown, .mermaid, .json, .jsonc, .ndjson:
             return DocumentPlainTextRenderer.render(blocks: blocks)
         case .csv, .tsv:
             guard let table = blocks.first?.table else { return "" }
@@ -121,6 +121,9 @@ enum DocumentPlainTextRenderer {
         case .table:
             guard let table = block.table else { return block.plainText }
             return renderTable(table)
+        case .jsonDocument:
+            guard let jsonDocument = block.jsonDocument?.document else { return block.sourceText }
+            return renderJSONDocument(jsonDocument)
         case .image, .animatedImage:
             guard let image = block.image else { return block.plainText }
             return ["Image", image.altText, image.sourceURL]
@@ -141,6 +144,29 @@ enum DocumentPlainTextRenderer {
 
     private nonisolated static func renderRow(_ row: [MarkdownTableCell]) -> String {
         row.map(\.plainText).joined(separator: " | ")
+    }
+
+    private nonisolated static func renderJSONDocument(_ document: JSONDocumentModel) -> String {
+        let rows = JSONPresentationBuilder.rows(for: document, collapsedNodeIDs: [])
+        return rows.flatMap { row in
+            let key = row.key.map { "\($0): " } ?? ""
+            let indent = String(repeating: "  ", count: row.depth)
+            var renderedRows = ["L\(row.lineNumber) \(indent)\(key)\(row.displayValue)"]
+            if let table = row.tableProjection {
+                renderedRows.append(contentsOf: renderJSONTable(table))
+            }
+            return renderedRows
+        }.joined(separator: "\n")
+    }
+
+    private nonisolated static func renderJSONTable(_ table: JSONTableProjection) -> [String] {
+        let indent = String(repeating: "  ", count: table.depth)
+        let header = "L\(table.rows.first?.lineNumber ?? 1) \(indent)" + table.columns.joined(separator: " | ")
+        let separator = "L\(table.rows.first?.lineNumber ?? 1) \(indent)" + String(repeating: "-", count: max(table.columns.count * 4, 4))
+        let rows = table.rows.map { row in
+            "L\(row.lineNumber) \(indent)" + row.cells.map(\.displayValue).joined(separator: " | ")
+        }
+        return [header, separator] + rows
     }
 
     private nonisolated static func listPrefix(for block: MarkdownBlock) -> String {

@@ -12,6 +12,7 @@ or memory-heavy.
 | --- | --- | --- |
 | Markdown headings, paragraphs, emphasis, links, lists, quotes, rules | Rendered as native attributed text | Extension-local block formatting only |
 | Markdown tables, CSV, TSV | Rendered as monospaced native tables | No interactive resizing, sorting, or lazy viewport controls |
+| JSON, JSONC, NDJSON, JSONL | Rendered as native line-numbered code with an expand/collapse control; JSON and JSONC pretty-print when possible, while NDJSON collapses each parseable record line | Does not expose the full app tree/table controls |
 | Inline Mermaid fences | Rendered as a bounded native diagram image attachment with title and diagram kind | Does not expose zoom, pan, detached preview UI, or Mermaid.js-only styling |
 | Standalone `.mermaid` / `.mmd` files | Rendered as a bounded native diagram image attachment with title and diagram kind | Same limited preview as inline Mermaid |
 | Local inline images | Rendered as scaled native image attachments with captions | No animation playback; large or unreadable images fall back to labeled source text |
@@ -31,7 +32,9 @@ strings alone. Fixture coverage should include:
   raw `flowchart LR` source text.
 - A local image fixture or temporary workspace image for native image attachment
   previews.
-- Every supported Markdown, Mermaid, CSV, and TSV fixture under `Fixtures/docs`
+- JSON-family fixtures such as `Fixtures/docs/json_showcase.json` and
+  `Fixtures/docs/events.ndjson` for line-numbered rendered previews.
+- Every supported Markdown, Mermaid, CSV, TSV, and JSON-family fixture under `Fixtures/docs`
   and `Fixtures/app-store` for non-empty bounded previews.
 
 Finder/`qlmanage` checks are useful smoke tests, but they are not the authority:

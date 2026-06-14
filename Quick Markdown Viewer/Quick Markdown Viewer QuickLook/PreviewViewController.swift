@@ -14,9 +14,17 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
         target: nil,
         action: nil
     )
+    private let jsonCollapseControl = NSSegmentedControl(
+        labels: ["Expand", "Collapse"],
+        trackingMode: .selectOne,
+        target: nil,
+        action: nil
+    )
     private var renderedPreview = NSAttributedString()
     private var sourcePreview = NSAttributedString()
     private var selectedMode: PreviewMode = .rendered
+    private var loadedURL: URL?
+    private var loadedSource = ""
 
     override func loadView() {
         let rootView = NSView(frame: .zero)
@@ -39,6 +47,14 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
         modeControl.controlSize = .small
         modeControl.translatesAutoresizingMaskIntoConstraints = false
         toolbarView.addSubview(modeControl)
+
+        jsonCollapseControl.target = self
+        jsonCollapseControl.action = #selector(jsonCollapseControlChanged(_:))
+        jsonCollapseControl.selectedSegment = 0
+        jsonCollapseControl.controlSize = .small
+        jsonCollapseControl.isHidden = true
+        jsonCollapseControl.translatesAutoresizingMaskIntoConstraints = false
+        toolbarView.addSubview(jsonCollapseControl)
 
         let scrollView = NSScrollView(frame: .zero)
         scrollView.borderType = .noBorder
@@ -78,6 +94,8 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
             toolbarView.heightAnchor.constraint(equalToConstant: 44),
             modeControl.leadingAnchor.constraint(equalTo: toolbarView.leadingAnchor, constant: 16),
             modeControl.centerYAnchor.constraint(equalTo: toolbarView.centerYAnchor),
+            jsonCollapseControl.leadingAnchor.constraint(equalTo: modeControl.trailingAnchor, constant: 12),
+            jsonCollapseControl.centerYAnchor.constraint(equalTo: toolbarView.centerYAnchor),
 
             scrollView.widthAnchor.constraint(equalTo: stackView.widthAnchor),
         ])
@@ -127,8 +145,18 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
         textView.string as NSString
     }
 
+    @objc(collapseJSONPreviewForTesting)
+    func collapseJSONPreviewForTesting() {
+        jsonCollapseControl.selectedSegment = 1
+        jsonCollapseControlChanged(jsonCollapseControl)
+    }
+
     private func loadPreview(for url: URL, source: String) {
         title = url.lastPathComponent
+        loadedURL = url
+        loadedSource = source
+        jsonCollapseControl.selectedSegment = 0
+        jsonCollapseControl.isHidden = !MarkdownQuickLookPreviewFormatter.supportsJSONCollapse(for: url)
         renderedPreview = MarkdownQuickLookPreviewFormatter.attributedPreview(for: url, source: source)
         sourcePreview = MarkdownQuickLookPreviewFormatter.rawSourcePreview(from: source)
         selectPreviewMode(.rendered)
@@ -137,6 +165,17 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
     @objc
     private func modeControlChanged(_ sender: NSSegmentedControl) {
         selectPreviewMode(sender.selectedSegment == 1 ? .source : .rendered)
+    }
+
+    @objc
+    private func jsonCollapseControlChanged(_ sender: NSSegmentedControl) {
+        guard let loadedURL else { return }
+        renderedPreview = MarkdownQuickLookPreviewFormatter.attributedPreview(
+            for: loadedURL,
+            source: loadedSource,
+            collapseJSONContainers: sender.selectedSegment == 1
+        )
+        selectPreviewMode(.rendered)
     }
 
     private func selectPreviewMode(_ mode: PreviewMode) {
@@ -152,10 +191,13 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
 }
 
 private enum MarkdownQuickLookPreviewFormatter {
-    private enum DocumentKind {
+    private enum DocumentKind: Equatable {
         case markdown
         case mermaid
         case delimited(separator: Character)
+        case json
+        case jsonc
+        case ndjson
         case plainText
     }
 
@@ -239,7 +281,11 @@ private enum MarkdownQuickLookPreviewFormatter {
         return String(decoding: data, as: UTF8.self)
     }
 
-    static func attributedPreview(for url: URL, source: String) -> NSAttributedString {
+    static func attributedPreview(
+        for url: URL,
+        source: String,
+        collapseJSONContainers: Bool = false
+    ) -> NSAttributedString {
         switch documentKind(for: url) {
         case .markdown:
             return markdownPreview(from: source, documentURL: url)
@@ -247,8 +293,23 @@ private enum MarkdownQuickLookPreviewFormatter {
             return mermaidPreview(from: source)
         case let .delimited(separator):
             return delimitedPreview(from: source, separator: separator)
+        case .json:
+            return jsonPreview(from: source, collapseContainers: collapseJSONContainers)
+        case .jsonc:
+            return jsoncPreview(from: source, collapseContainers: collapseJSONContainers)
+        case .ndjson:
+            return ndjsonPreview(from: source, collapseContainers: collapseJSONContainers)
         case .plainText:
             return codeBlock(source)
+        }
+    }
+
+    static func supportsJSONCollapse(for url: URL) -> Bool {
+        switch documentKind(for: url) {
+        case .json, .jsonc, .ndjson:
+            return true
+        case .markdown, .mermaid, .delimited, .plainText:
+            return false
         }
     }
 
@@ -266,6 +327,12 @@ private enum MarkdownQuickLookPreviewFormatter {
             return .delimited(separator: ",")
         case "tsv":
             return .delimited(separator: "\t")
+        case "json":
+            return .json
+        case "jsonc":
+            return .jsonc
+        case "ndjson", "jsonl":
+            return .ndjson
         default:
             return .plainText
         }
@@ -810,6 +877,255 @@ private enum MarkdownQuickLookPreviewFormatter {
         return tableBlock(header: header, rows: Array(rows.dropFirst()))
     }
 
+    private static func jsonPreview(from source: String, collapseContainers: Bool) -> NSAttributedString {
+        let data = Data(source.utf8)
+        guard let object = try? JSONSerialization.jsonObject(with: data),
+              JSONSerialization.isValidJSONObject(object),
+              let prettyData = try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys]),
+              let prettySource = String(data: prettyData, encoding: .utf8) else {
+            return lineNumberedCodeBlock(source)
+        }
+        if collapseContainers {
+            return lineNumberedCodeBlock(collapsedJSONPreview(from: object))
+        }
+        return lineNumberedCodeBlock(prettySource)
+    }
+
+    private static func jsoncPreview(from source: String, collapseContainers: Bool) -> NSAttributedString {
+        let sanitizedSource = sanitizedJSONCSource(source)
+        let data = Data(sanitizedSource.utf8)
+        guard let object = try? JSONSerialization.jsonObject(with: data),
+              JSONSerialization.isValidJSONObject(object),
+              let prettyData = try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys]),
+              let prettySource = String(data: prettyData, encoding: .utf8) else {
+            return lineNumberedCodeBlock(source)
+        }
+        if collapseContainers {
+            return lineNumberedCodeBlock(collapsedJSONPreview(from: object))
+        }
+        return lineNumberedCodeBlock(prettySource)
+    }
+
+    private static func ndjsonPreview(from source: String, collapseContainers: Bool) -> NSAttributedString {
+        guard collapseContainers else {
+            return lineNumberedCodeBlock(source)
+        }
+        let lines = normalizedLines(from: source)
+        var renderedLines: [(lineNumber: Int, text: String)] = []
+        var recordNumber = 1
+        for (index, line) in lines.enumerated() {
+            guard !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+            guard let object = try? JSONSerialization.jsonObject(with: Data(line.utf8)) else {
+                return lineNumberedCodeBlock(source)
+            }
+            renderedLines.append((index + 1, "record \(recordNumber): \(collapsedJSONInline(object))"))
+            recordNumber += 1
+        }
+        return lineNumberedLines(renderedLines)
+    }
+
+    private static func collapsedJSONPreview(from object: Any) -> String {
+        var lines: [String] = []
+        appendCollapsedJSON(object, key: nil, depth: 0, isLast: true, to: &lines)
+        return lines.joined(separator: "\n")
+    }
+
+    private static func collapsedJSONInline(_ value: Any) -> String {
+        if value is [String: Any] {
+            return "{...}"
+        }
+        if value is [Any] {
+            return "[...]"
+        }
+        return jsonScalarText(value)
+    }
+
+    private static func appendCollapsedJSON(
+        _ value: Any,
+        key: String?,
+        depth: Int,
+        isLast: Bool,
+        to lines: inout [String]
+    ) {
+        let indent = String(repeating: "  ", count: depth)
+        let prefix = key.map { "\(indent)\"\($0)\": " } ?? indent
+        let suffix = isLast ? "" : ","
+
+        if let object = value as? [String: Any] {
+            if key == nil {
+                lines.append("\(indent){")
+                let keys = object.keys.sorted()
+                for (index, key) in keys.enumerated() {
+                    guard let value = object[key] else { continue }
+                    appendCollapsedJSON(value, key: key, depth: depth + 1, isLast: index == keys.count - 1, to: &lines)
+                }
+                lines.append("\(indent)}\(suffix)")
+            } else {
+                lines.append("\(prefix){...}\(suffix)")
+            }
+            return
+        }
+
+        if let array = value as? [Any] {
+            if key == nil {
+                lines.append("\(indent)[")
+                for (index, item) in array.enumerated() {
+                    appendCollapsedJSON(item, key: nil, depth: depth + 1, isLast: index == array.count - 1, to: &lines)
+                }
+                lines.append("\(indent)]\(suffix)")
+            } else {
+                lines.append("\(prefix)[...]\(suffix)")
+            }
+            return
+        }
+
+        lines.append("\(prefix)\(jsonScalarText(value))\(suffix)")
+    }
+
+    private static func jsonScalarText(_ value: Any) -> String {
+        if value is NSNull {
+            return "null"
+        }
+        if let string = value as? String {
+            return "\"\(string.replacingOccurrences(of: "\"", with: "\\\""))\""
+        }
+        if let number = value as? NSNumber {
+            if CFGetTypeID(number as CFTypeRef) == CFBooleanGetTypeID() {
+                return number.boolValue ? "true" : "false"
+            }
+            return number.stringValue
+        }
+        return String(describing: value)
+    }
+
+    private static func sanitizedJSONCSource(_ source: String) -> String {
+        removeTrailingJSONCommas(from: removeJSONComments(from: source))
+    }
+
+    private static func removeJSONComments(from source: String) -> String {
+        let characters = Array(source)
+        var result = ""
+        var index = 0
+        var inString = false
+        var escaped = false
+
+        while index < characters.count {
+            let character = characters[index]
+            if inString {
+                result.append(character)
+                if escaped {
+                    escaped = false
+                } else if character == "\\" {
+                    escaped = true
+                } else if character == "\"" {
+                    inString = false
+                }
+                index += 1
+                continue
+            }
+
+            if character == "\"" {
+                inString = true
+                result.append(character)
+                index += 1
+                continue
+            }
+
+            if character == "/", index + 1 < characters.count {
+                let next = characters[index + 1]
+                if next == "/" {
+                    index += 2
+                    while index < characters.count, characters[index] != "\n" {
+                        index += 1
+                    }
+                    continue
+                }
+                if next == "*" {
+                    index += 2
+                    while index < characters.count {
+                        if characters[index] == "\n" {
+                            result.append("\n")
+                        }
+                        if characters[index] == "*", index + 1 < characters.count, characters[index + 1] == "/" {
+                            index += 2
+                            break
+                        }
+                        index += 1
+                    }
+                    continue
+                }
+            }
+
+            result.append(character)
+            index += 1
+        }
+
+        return result
+    }
+
+    private static func removeTrailingJSONCommas(from source: String) -> String {
+        let characters = Array(source)
+        var result = ""
+        var index = 0
+        var inString = false
+        var escaped = false
+
+        while index < characters.count {
+            let character = characters[index]
+            if inString {
+                result.append(character)
+                if escaped {
+                    escaped = false
+                } else if character == "\\" {
+                    escaped = true
+                } else if character == "\"" {
+                    inString = false
+                }
+                index += 1
+                continue
+            }
+
+            if character == "\"" {
+                inString = true
+                result.append(character)
+                index += 1
+                continue
+            }
+
+            if character == "," {
+                var lookahead = index + 1
+                while lookahead < characters.count, characters[lookahead].isWhitespace {
+                    lookahead += 1
+                }
+                if lookahead < characters.count,
+                   characters[lookahead] == "}" || characters[lookahead] == "]" {
+                    index += 1
+                    continue
+                }
+            }
+
+            result.append(character)
+            index += 1
+        }
+
+        return result
+    }
+
+    private static func lineNumberedCodeBlock(_ source: String) -> NSAttributedString {
+        let lines = normalizedLines(from: source)
+        return lineNumberedLines(lines.enumerated().map { ($0.offset + 1, $0.element) })
+    }
+
+    private static func lineNumberedLines(_ lines: [(lineNumber: Int, text: String)]) -> NSAttributedString {
+        let gutterWidth = max(lines.map { String($0.lineNumber).count }.max() ?? 1, 1)
+        let rendered = lines.map { line in
+            let lineNumber = String(line.lineNumber)
+            let paddedLineNumber = String(repeating: " ", count: max(gutterWidth - lineNumber.count, 0)) + lineNumber
+            return "\(paddedLineNumber)  \(line.text)"
+        }.joined(separator: "\n")
+        return codeBlock(rendered)
+    }
+
     private static func append(_ block: NSAttributedString, to rendered: NSMutableAttributedString) {
         if rendered.length > 0 {
             rendered.append(NSAttributedString(string: "\n\n"))
@@ -833,11 +1149,13 @@ private enum MarkdownQuickLookPreviewFormatter {
     }
 
     private static func tableBlock(header: [String], rows: [[String]]) -> NSAttributedString {
-        let columnCount = max(header.count, rows.map(\.count).max() ?? 0)
+        let renderedHeader = header.map(normalizedInlineText)
+        let renderedRows = rows.map { row in row.map(normalizedInlineText) }
+        let columnCount = max(renderedHeader.count, renderedRows.map(\.count).max() ?? 0)
         guard columnCount > 0 else { return NSAttributedString(string: "", attributes: bodyAttributes()) }
 
         var widths = Array(repeating: 0, count: columnCount)
-        for row in [header] + rows {
+        for row in [renderedHeader] + renderedRows {
             for index in 0..<columnCount {
                 widths[index] = max(widths[index], index < row.count ? row[index].count : 0)
             }
@@ -853,7 +1171,7 @@ private enum MarkdownQuickLookPreviewFormatter {
         }
 
         let divider = widths.map { String(repeating: "-", count: max($0, 3)) }.joined(separator: "  ")
-        let lines = [padded(header), divider] + rows.map(padded)
+        let lines = [padded(renderedHeader), divider] + renderedRows.map(padded)
         return NSAttributedString(string: lines.joined(separator: "\n"), attributes: codeAttributes())
     }
 
@@ -1067,7 +1385,7 @@ private enum MarkdownQuickLookPreviewFormatter {
         imageReferenceDefinition(in: line) != nil
     }
 
-    private static func normalizedInlineText(_ source: String) -> String {
+    private nonisolated static func normalizedInlineText(_ source: String) -> String {
         if let attributed = try? AttributedString(
             markdown: source,
             options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
@@ -1107,8 +1425,21 @@ private enum MarkdownQuickLookPreviewFormatter {
         if trimmed.hasSuffix("|") {
             trimmed.removeLast()
         }
-        return trimmed.split(separator: "|", omittingEmptySubsequences: false)
-            .map { $0.trimmingCharacters(in: .whitespaces) }
+
+        var cells: [String] = []
+        var currentCell = ""
+        var previousWasEscape = false
+        for character in trimmed {
+            if character == "|" && !previousWasEscape {
+                cells.append(currentCell.trimmingCharacters(in: .whitespaces))
+                currentCell = ""
+            } else {
+                currentCell.append(character)
+            }
+            previousWasEscape = character == "\\" && !previousWasEscape
+        }
+        cells.append(currentCell.trimmingCharacters(in: .whitespaces))
+        return cells
     }
 
     private static func splitDelimitedRow(_ line: String, separator: Character) -> [String] {

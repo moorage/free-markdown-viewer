@@ -53,6 +53,12 @@ Stable identifiers include:
 - `document.outline.panel`
 - `document.outline.list`
 - `document.outline.item.<id>`
+- `json.mode`
+- `json.row.<id>`
+- `json.gutter.<line>`
+- `json.disclosure.<id>`
+- `json.table.<id>`
+- `json.table.cell.<id>`
 - `block.placeholder.0`
 - `block.image.<id>`
 - `block.video.<id>`
@@ -80,7 +86,7 @@ The app must be able to emit JSON with:
 - `history.forwardCount`
 - `viewport`
 - `visibleBlocks`
-- `visibleBlocks[*].kind` values that distinguish rich blocks such as `animatedImage`, `video`, and `mermaidDiagram`
+- `visibleBlocks[*].kind` values that distinguish rich blocks such as `animatedImage`, `video`, `mermaidDiagram`, and `jsonDocument`
 - `sidebar.selectedNode`
 
 ## Perf snapshot

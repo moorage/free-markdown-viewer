@@ -1,0 +1,21 @@
+{
+  "project": "Quick Markdown Viewer",
+  "features": {
+    "viewer": true,
+    "sourceToggle": true,
+    "lineNumbers": true
+  },
+  "events": [
+    {
+      "id": 1,
+      "kind": "open",
+      "path": "Fixtures/docs/json_showcase.json"
+    },
+    {
+      "id": 2,
+      "kind": "collapse",
+      "path": "features"
+    }
+  ],
+  "minified": {"one":1,"two":{"nested":true}}
+}

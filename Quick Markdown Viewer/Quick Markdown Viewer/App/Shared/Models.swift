@@ -11,13 +11,29 @@ nonisolated enum WorkspaceDocumentKind: String, Hashable, Codable, Sendable {
     case mermaid
     case csv
     case tsv
+    case json
+    case jsonc
+    case ndjson
 
     nonisolated var isDelimitedText: Bool {
         switch self {
         case .csv, .tsv:
             return true
-        case .markdown, .mermaid:
+        case .markdown, .mermaid, .json, .jsonc, .ndjson:
             return false
+        }
+    }
+
+    nonisolated var jsonFamilyKind: JSONFamilyDocumentKind? {
+        switch self {
+        case .json:
+            return .json
+        case .jsonc:
+            return .jsonc
+        case .ndjson:
+            return .ndjson
+        case .markdown, .mermaid, .csv, .tsv:
+            return nil
         }
     }
 
@@ -29,6 +45,8 @@ nonisolated enum WorkspaceDocumentKind: String, Hashable, Codable, Sendable {
             return "point.3.connected.trianglepath.dotted"
         case .csv, .tsv:
             return "tablecells"
+        case .json, .jsonc, .ndjson:
+            return "curlybraces"
         }
     }
 
@@ -43,6 +61,12 @@ nonisolated enum WorkspaceDocumentKind: String, Hashable, Codable, Sendable {
             return .csv
         case "tsv":
             return .tsv
+        case "json":
+            return .json
+        case "jsonc":
+            return .jsonc
+        case "ndjson", "jsonl":
+            return .ndjson
         default:
             return nil
         }
@@ -89,6 +113,7 @@ enum MarkdownBlockKind: String, Hashable, Sendable {
     case blockquote
     case codeBlock
     case table
+    case jsonDocument
     case image
     case animatedImage
     case video
@@ -179,6 +204,12 @@ struct MarkdownCodeBlock: Hashable, Sendable {
     let rawLanguage: String?
     let language: SyntaxHighlightLanguage?
     let isFenced: Bool
+    let contentStartLine: Int?
+}
+
+struct MarkdownJSONDocument: Hashable, Sendable {
+    let kind: JSONFamilyDocumentKind
+    let document: JSONDocumentModel
 }
 
 struct MarkdownBlock: Identifiable, Hashable, Sendable {
@@ -198,6 +229,7 @@ struct MarkdownBlock: Identifiable, Hashable, Sendable {
     let attributedText: AttributedString?
     let children: [MarkdownBlock]
     let codeBlock: MarkdownCodeBlock?
+    let jsonDocument: MarkdownJSONDocument?
 
     nonisolated init(
         id: String,
@@ -215,7 +247,8 @@ struct MarkdownBlock: Identifiable, Hashable, Sendable {
         mermaidDiagram: MarkdownMermaidDiagram? = nil,
         attributedText: AttributedString?,
         children: [MarkdownBlock],
-        codeBlock: MarkdownCodeBlock? = nil
+        codeBlock: MarkdownCodeBlock? = nil,
+        jsonDocument: MarkdownJSONDocument? = nil
     ) {
         self.id = id
         self.kind = kind
@@ -233,6 +266,7 @@ struct MarkdownBlock: Identifiable, Hashable, Sendable {
         self.attributedText = attributedText
         self.children = children
         self.codeBlock = codeBlock
+        self.jsonDocument = jsonDocument
     }
 }
 
@@ -243,7 +277,8 @@ extension MarkdownBlock {
         video: MarkdownVideo? = nil,
         mermaidDiagram: MarkdownMermaidDiagram? = nil,
         children: [MarkdownBlock]? = nil,
-        codeBlock: MarkdownCodeBlock? = nil
+        codeBlock: MarkdownCodeBlock? = nil,
+        jsonDocument: MarkdownJSONDocument? = nil
     ) -> MarkdownBlock {
         MarkdownBlock(
             id: id,
@@ -261,7 +296,8 @@ extension MarkdownBlock {
             mermaidDiagram: mermaidDiagram ?? self.mermaidDiagram,
             attributedText: attributedText,
             children: children ?? self.children,
-            codeBlock: codeBlock ?? self.codeBlock
+            codeBlock: codeBlock ?? self.codeBlock,
+            jsonDocument: jsonDocument ?? self.jsonDocument
         )
     }
 }

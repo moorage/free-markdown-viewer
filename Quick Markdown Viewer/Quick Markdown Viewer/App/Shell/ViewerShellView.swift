@@ -2363,6 +2363,14 @@ struct MarkdownBlockView: View {
                         .stroke(Color.secondary.opacity(0.15), lineWidth: 1)
                 )
             }
+        case .jsonDocument:
+            if let jsonDocument = block.jsonDocument {
+                JSONDocumentView(
+                    jsonDocument: jsonDocument,
+                    fontScale: fontScale,
+                    isPrinting: isPrinting
+                )
+            }
         case .image, .animatedImage:
             if let image = block.image {
                 ImageBlockView(

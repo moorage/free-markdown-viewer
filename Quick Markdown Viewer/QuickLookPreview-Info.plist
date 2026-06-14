@@ -32,6 +32,9 @@
 				<string>com.mermaidjs.mermaid</string>
 				<string>public.comma-separated-values-text</string>
 				<string>public.tab-separated-values-text</string>
+				<string>public.json</string>
+				<string>com.souschefstudio.jsonc</string>
+				<string>com.souschefstudio.ndjson</string>
 			</array>
 			<key>QLSupportsSearchableItems</key>
 			<false/>

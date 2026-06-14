@@ -252,7 +252,7 @@ enum SelectableDocumentFormatter {
             let rendered = NSMutableAttributedString(string: "> ", attributes: attributes)
             rendered.append(styledInlineText(MarkdownRenderer.attributedText(for: block), attributes: attributes))
             return rendered
-        case .codeBlock, .rawHTML:
+        case .codeBlock, .jsonDocument, .rawHTML:
             return NSMutableAttributedString(string: block.sourceText, attributes: attributes)
         case .mermaidDiagram:
             guard let diagram = block.mermaidDiagram else {
@@ -342,7 +342,7 @@ enum SelectableDocumentFormatter {
             paragraphStyle.headIndent = indentWidth + 12
             attributes[.font] = italicBodyFont(fontScale: fontScale)
             attributes[.foregroundColor] = secondaryTextColor
-        case .codeBlock:
+        case .codeBlock, .jsonDocument:
             attributes[.font] = monospacedBodyFont(fontScale: fontScale)
             attributes[.backgroundColor] = codeBlockBackgroundColor
         case .table:

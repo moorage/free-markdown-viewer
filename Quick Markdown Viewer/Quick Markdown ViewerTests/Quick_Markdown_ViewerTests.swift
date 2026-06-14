@@ -574,6 +574,19 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
         XCTAssertEqual(request.presentation, .reuseEmptyWindow)
     }
 
+    func testExternalWorkspaceOpenCoordinatorNormalizesJSONFileToWorkspaceAndSelection() throws {
+        let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        let jsonURL = tempRoot.appendingPathComponent("events.jsonl")
+        try #"{"event":"launch"}"#.write(to: jsonURL, atomically: true, encoding: .utf8)
+
+        let request = try XCTUnwrap(ExternalWorkspaceOpenCoordinator.normalizedRequest(for: jsonURL))
+        XCTAssertEqual(request.rootURL.path, tempRoot.path)
+        XCTAssertEqual(request.selectedPath?.rawValue, "events.jsonl")
+        XCTAssertEqual(request.explicitSelectedFileURL?.path, jsonURL.path)
+        XCTAssertEqual(request.presentation, .reuseEmptyWindow)
+    }
+
     func testExternalWorkspaceOpenCoordinatorRejectsUnsupportedFiles() throws {
         let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
@@ -2539,6 +2552,124 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
         ))
     }
 
+    func testWorkspaceDocumentKindMappingIncludesJSONFamilyExtensions() {
+        XCTAssertEqual(WorkspaceDocumentKind.forPath("payload.json"), .json)
+        XCTAssertEqual(WorkspaceDocumentKind.forPath("payload.jsonc"), .jsonc)
+        XCTAssertEqual(WorkspaceDocumentKind.forPath("events.ndjson"), .ndjson)
+        XCTAssertEqual(WorkspaceDocumentKind.forPath("events.jsonl"), .ndjson)
+        XCTAssertTrue(SupportedDocumentExtensions.contains("json"))
+        XCTAssertTrue(SupportedDocumentExtensions.contains("jsonc"))
+        XCTAssertTrue(SupportedDocumentExtensions.contains("ndjson"))
+        XCTAssertTrue(SupportedDocumentExtensions.contains("jsonl"))
+    }
+
+    func testJSONViewerRowsPreserveOriginalLineNumbersAfterPrettyPrinting() throws {
+        let document = JSONDocumentModel.parse(
+            source: #"{"name":"Quick Markdown Viewer","count":2}"#,
+            kind: .json
+        )
+
+        let rows = JSONPresentationBuilder.rows(for: document, collapsedNodeIDs: [])
+
+        XCTAssertEqual(rows.map(\.lineNumber), [1, 1, 1])
+        XCTAssertEqual(rows.map(\.key), [nil, "name", "count"])
+    }
+
+    func testJSONViewerRowsPreserveLineNumbersAfterCollapse() throws {
+        let document = JSONDocumentModel.parse(
+            source: """
+            {
+              "outer": {
+                "inner": true
+              }
+            }
+            """,
+            kind: .json
+        )
+        let outerID = try XCTUnwrap(document.roots.first?.children.first?.id)
+
+        let rows = JSONPresentationBuilder.rows(for: document, collapsedNodeIDs: [outerID])
+
+        XCTAssertEqual(rows.map(\.key), [nil, "outer"])
+        XCTAssertEqual(rows.map(\.lineNumber), [1, 2])
+        XCTAssertTrue(try XCTUnwrap(rows.last).isCollapsed)
+    }
+
+    func testJSONViewerRowsProjectHomogeneousObjectArraysAsTables() throws {
+        let document = JSONDocumentModel.parse(
+            source: """
+            {
+              "events": [
+                {"id": 1, "name": "launch"},
+                {"id": 2, "name": "quit"}
+              ]
+            }
+            """,
+            kind: .json
+        )
+
+        let rows = JSONPresentationBuilder.rows(for: document, collapsedNodeIDs: [])
+        let eventsRow = try XCTUnwrap(rows.first { $0.key == "events" })
+        let table = try XCTUnwrap(eventsRow.tableProjection)
+
+        XCTAssertEqual(table.columns, ["id", "name"])
+        XCTAssertEqual(table.rows.map(\.lineNumber), [3, 4])
+        XCTAssertEqual(table.rows.first?.cells.map(\.displayValue), ["1", #""launch""#])
+        XCTAssertFalse(rows.contains { $0.key == "id" })
+    }
+
+    func testJSONParserPublishesSourceTokensForHighlighting() throws {
+        let document = JSONDocumentModel.parse(
+            source: """
+            {
+              // accepted in jsonc
+              "enabled": true
+            }
+            """,
+            kind: .jsonc
+        )
+
+        XCTAssertTrue(document.syntaxTokens.contains { $0.kind == .comment && $0.range.start.line == 2 })
+        XCTAssertTrue(document.syntaxTokens.contains { $0.kind == .string && $0.range.start.line == 3 })
+        XCTAssertTrue(document.syntaxTokens.contains { $0.kind == .bool && $0.range.start.line == 3 })
+    }
+
+    func testMarkdownJSONFenceUsesMarkdownSourceLineNumbers() throws {
+        let markdown = """
+        # Payload
+
+        ```json
+        {"outer":{"inner":true}}
+        ```
+        """
+
+        let blocks = MarkdownRenderer.blocks(from: markdown)
+        let jsonBlock = try XCTUnwrap(blocks.first(where: { $0.kind == .jsonDocument }))
+        let jsonDocument = try XCTUnwrap(jsonBlock.jsonDocument?.document)
+        let rows = JSONPresentationBuilder.rows(for: jsonDocument, collapsedNodeIDs: [])
+
+        XCTAssertEqual(jsonBlock.codeBlock?.contentStartLine, 4)
+        XCTAssertEqual(rows.map(\.lineNumber), [4, 4, 4])
+    }
+
+    func testNDJSONParserRecoversAfterMalformedRecord() throws {
+        let document = JSONDocumentModel.parse(
+            source: """
+            {"event":"one"}
+            {bad}
+            {"event":"two"}
+            """,
+            kind: .ndjson
+        )
+
+        let rows = JSONPresentationBuilder.rows(for: document, collapsedNodeIDs: [])
+
+        XCTAssertEqual(document.roots.count, 3)
+        XCTAssertEqual(document.roots.map(\.lineNumber), [1, 2, 3])
+        XCTAssertEqual(document.roots[1].kind, .error)
+        XCTAssertTrue(rows.contains { $0.lineNumber == 3 && $0.displayValue == "record" })
+    }
+
     func testMarkdownRendererFallsBackForUnknownFenceLanguage() throws {
         let markdown = """
         ```brainheck
@@ -2569,21 +2700,24 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
             infoString: "bash",
             rawLanguage: "bash",
             language: .bash,
-            isFenced: true
+            isFenced: true,
+            contentStartLine: 1
         )
         let bashVariant = MarkdownCodeBlock(
             code: "echo goodbye",
             infoString: "bash",
             rawLanguage: "bash",
             language: .bash,
-            isFenced: true
+            isFenced: true,
+            contentStartLine: 1
         )
         let jsonBlock = MarkdownCodeBlock(
             code: "{\"message\": \"hello\"}",
             infoString: "json",
             rawLanguage: "json",
             language: .json,
-            isFenced: true
+            isFenced: true,
+            contentStartLine: 1
         )
 
         _ = CodeBlockSyntaxHighlighter.highlightedAttributedText(for: bashBlock, theme: lightTheme, fontScale: 1)
@@ -3213,6 +3347,9 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
                 "com.mermaidjs.mermaid",
                 "public.comma-separated-values-text",
                 "public.tab-separated-values-text",
+                "public.json",
+                "com.souschefstudio.jsonc",
+                "com.souschefstudio.ndjson",
             ]
         )
     }
@@ -3356,6 +3493,102 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
         XCTAssertTrue(text.contains("Rick preview"))
         XCTAssertTrue(text.contains("After image."))
         XCTAssertTrue(preview.containsImageAttachment)
+    }
+
+    @MainActor
+    func testQuickLookPreviewExtensionRendersMarkdownTablesInRenderedMode() throws {
+        let workspaceURL = try makeTemporaryWorkspace(named: "QuickLookTable", files: [
+            "table.md": """
+            # Inline Table
+
+            This table is embedded in a Markdown document.
+
+            | Package | Status | Notes |
+            | --- | --- | --- |
+            | `QuickLook` | **Rendered** | Escaped \\| pipe stays in the cell |
+
+            Tail paragraph.
+            """,
+        ])
+
+        let preview = try renderedQuickLookPreview(for: workspaceURL.appendingPathComponent("table.md"))
+        let text = preview.string
+
+        XCTAssertTrue(text.contains("Inline Table"))
+        XCTAssertTrue(text.contains("Package"))
+        XCTAssertTrue(text.contains("QuickLook"))
+        XCTAssertTrue(text.contains("Rendered"))
+        XCTAssertTrue(text.contains("Escaped | pipe stays in the cell"))
+        XCTAssertTrue(text.contains("Tail paragraph."))
+        XCTAssertFalse(text.contains("| --- |"))
+        XCTAssertFalse(text.contains("`QuickLook`"))
+        XCTAssertFalse(text.contains("**Rendered**"))
+    }
+
+    @MainActor
+    func testQuickLookPreviewExtensionRendersJSONWithLineNumbers() throws {
+        let workspaceURL = try makeTemporaryWorkspace(named: "QuickLookJSON", files: [
+            "payload.json": #"{"z":2,"a":{"enabled":true}}"#,
+        ])
+
+        let preview = try renderedQuickLookPreview(for: workspaceURL.appendingPathComponent("payload.json"))
+        let text = preview.string
+
+        XCTAssertTrue(text.contains("1  {"))
+        XCTAssertTrue(text.contains(#""a""#))
+        XCTAssertTrue(text.contains(#""enabled""#))
+        XCTAssertTrue(text.contains(#""z""#))
+    }
+
+    @MainActor
+    func testQuickLookPreviewExtensionCollapsesJSONContainers() throws {
+        let workspaceURL = try makeTemporaryWorkspace(named: "QuickLookJSONCollapse", files: [
+            "payload.json": #"{"z":2,"a":{"enabled":true},"items":[{"id":1},{"id":2}]}"#,
+        ])
+        let controller = try preparedQuickLookPreviewController(for: workspaceURL.appendingPathComponent("payload.json"))
+        let selector = NSSelectorFromString("collapseJSONPreviewForTesting")
+        XCTAssertTrue(controller.responds(to: selector))
+
+        _ = controller.perform(selector)
+        let text = try currentQuickLookPreviewText(in: controller)
+
+        XCTAssertTrue(text.contains(#""a": {...}"#))
+        XCTAssertTrue(text.contains(#""items": [...]"#))
+        XCTAssertTrue(text.contains(#""z": 2"#))
+        XCTAssertFalse(text.contains(#""enabled": true"#))
+    }
+
+    @MainActor
+    func testQuickLookPreviewExtensionCollapsesJSONCAndNDJSON() throws {
+        let workspaceURL = try makeTemporaryWorkspace(named: "QuickLookJSONFamilyCollapse", files: [
+            "settings.jsonc": """
+            {
+              // comment
+              "feature": {
+                "enabled": true,
+              },
+            }
+            """,
+            "events.ndjson": """
+            {"event":"open","metadata":{"path":"README.md"}}
+            {"event":"close","metadata":{"path":"README.md"}}
+            """,
+        ])
+
+        let jsoncController = try preparedQuickLookPreviewController(for: workspaceURL.appendingPathComponent("settings.jsonc"))
+        let collapseSelector = NSSelectorFromString("collapseJSONPreviewForTesting")
+        XCTAssertTrue(jsoncController.responds(to: collapseSelector))
+        _ = jsoncController.perform(collapseSelector)
+        let jsoncText = try currentQuickLookPreviewText(in: jsoncController)
+        XCTAssertTrue(jsoncText.contains(#""feature": {...}"#))
+        XCTAssertFalse(jsoncText.contains("comment"))
+
+        let ndjsonController = try preparedQuickLookPreviewController(for: workspaceURL.appendingPathComponent("events.ndjson"))
+        XCTAssertTrue(ndjsonController.responds(to: collapseSelector))
+        _ = ndjsonController.perform(collapseSelector)
+        let ndjsonText = try currentQuickLookPreviewText(in: ndjsonController)
+        XCTAssertTrue(ndjsonText.contains("1  record 1: {...}"))
+        XCTAssertTrue(ndjsonText.contains("2  record 2: {...}"))
     }
 
     @MainActor

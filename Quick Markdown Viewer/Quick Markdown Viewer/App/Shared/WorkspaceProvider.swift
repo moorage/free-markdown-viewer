@@ -123,6 +123,10 @@ enum SupportedDocumentExtensions {
         "mmd",
         "csv",
         "tsv",
+        "json",
+        "jsonc",
+        "ndjson",
+        "jsonl",
     ]
 
     nonisolated static func contains(_ fileExtension: String) -> Bool {

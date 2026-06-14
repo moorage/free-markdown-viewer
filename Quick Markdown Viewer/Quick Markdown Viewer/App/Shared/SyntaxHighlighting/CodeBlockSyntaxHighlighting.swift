@@ -171,7 +171,22 @@ enum MarkdownCodeBlockCatalog {
                 infoString: nil,
                 rawLanguage: nil,
                 language: nil,
-                isFenced: false
+                isFenced: false,
+                contentStartLine: nil
+            )
+        }
+
+        if let jsonKind = JSONFamilyDocumentKind.forFenceInfo(codeBlock.infoString) {
+            let jsonDocument = JSONDocumentModel.parse(
+                source: codeBlock.code,
+                kind: jsonKind,
+                sourceLineOffset: max((codeBlock.contentStartLine ?? 1) - 1, 0)
+            )
+            return block.replacing(
+                kind: .jsonDocument,
+                children: annotatedChildren,
+                codeBlock: codeBlock,
+                jsonDocument: MarkdownJSONDocument(kind: jsonKind, document: jsonDocument)
             )
         }
 
@@ -243,7 +258,8 @@ enum MarkdownCodeBlockCatalog {
             infoString: infoString,
             rawLanguage: rawLanguage,
             language: SyntaxHighlightLanguage.normalizedFenceLanguage(from: infoString),
-            isFenced: true
+            isFenced: true,
+            contentStartLine: startIndex + 2
         )
 
         return (block, min(index + 1, lines.count))

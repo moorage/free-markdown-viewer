@@ -8,8 +8,8 @@ final class AppModel: ObservableObject {
     static let minimumFontScale: CGFloat = 0.8
     static let maximumFontScale: CGFloat = 1.8
     private static let fontScaleStep: CGFloat = 0.1
-    static let noWorkspacePromptMessage = "Open a folder of Markdown, CSV, or TSV files to get started."
-    static let emptyWorkspaceMessage = "No Markdown, CSV, or TSV files found."
+    static let noWorkspacePromptMessage = "Open a folder of Markdown, JSON, CSV, or TSV files to get started."
+    static let emptyWorkspaceMessage = "No Markdown, JSON, CSV, or TSV files found."
 
     @Published var githubURLInput = ""
     @Published private(set) var files: [MarkdownFileNode] = []
@@ -878,7 +878,7 @@ final class AppModel: ObservableObject {
     nonisolated static func shouldRenderStructuredContent(for blocks: [MarkdownBlock]) -> Bool {
         blocks.contains { block in
             switch block.kind {
-            case .codeBlock, .table, .image, .animatedImage, .video, .mermaidDiagram:
+            case .codeBlock, .table, .jsonDocument, .image, .animatedImage, .video, .mermaidDiagram:
                 return true
             case .unorderedListItem, .orderedListItem:
                 return block.isTaskItem || shouldRenderStructuredContent(for: block.children)
@@ -1367,6 +1367,28 @@ extension AppModel {
                     video: nil,
                     attributedText: nil,
                     children: []
+                )
+            ]
+        case .json, .jsonc, .ndjson:
+            let jsonKind = kind.jsonFamilyKind ?? .json
+            let jsonDocument = JSONDocumentModel.parse(source: text, kind: jsonKind)
+            return [
+                MarkdownBlock(
+                    id: "json.document",
+                    kind: .jsonDocument,
+                    plainText: text,
+                    sourceText: text,
+                    level: nil,
+                    listItemIndex: nil,
+                    indentLevel: 0,
+                    isTaskItem: false,
+                    isTaskCompleted: nil,
+                    table: nil,
+                    image: nil,
+                    video: nil,
+                    attributedText: nil,
+                    children: [],
+                    jsonDocument: MarkdownJSONDocument(kind: jsonKind, document: jsonDocument)
                 )
             ]
         }

@@ -1,0 +1,8 @@
+{
+  // JSONC comments should stay visible in viewer mode.
+  "project": "Quick Markdown Viewer",
+  "trailingComma": true,
+  "nested": {
+    "enabled": true,
+  },
+}
