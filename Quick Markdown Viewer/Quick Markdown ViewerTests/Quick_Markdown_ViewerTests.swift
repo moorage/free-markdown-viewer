@@ -2701,6 +2701,23 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
             try XCTUnwrap(block.jsonDocument?.document)
         }
         XCTAssertEqual(jsonDocuments.map(\.sourceLineOffset), [0, 0, 0])
+        XCTAssertEqual(
+            jsonDocuments.map(\.source),
+            [
+                #"{"project":"Quick Markdown Viewer","nested":{"lineNumbers":true}}"#,
+                """
+                {
+                  // Comments are allowed in JSONC.
+                  "trailingComma": true,
+                }
+                """,
+                """
+                {"event":"one"}
+                {bad}
+                {"event":"two"}
+                """,
+            ]
+        )
 
         let rowLineNumbers = jsonDocuments.map { document in
             JSONPresentationBuilder.rows(for: document, collapsedNodeIDs: []).map(\.lineNumber)

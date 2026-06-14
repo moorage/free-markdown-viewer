@@ -1,4 +1,9 @@
 import SwiftUI
+#if canImport(AppKit)
+import AppKit
+#elseif canImport(UIKit)
+import UIKit
+#endif
 
 struct JSONDocumentView: View {
     let jsonDocument: MarkdownJSONDocument
@@ -8,6 +13,7 @@ struct JSONDocumentView: View {
     @State private var mode: JSONPresentationMode = .viewer
     @State private var collapsedNodeIDs: Set<String> = []
     @State private var activeAncestorTitles: [String] = []
+    @State private var didCopySource = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -26,7 +32,23 @@ struct JSONDocumentView: View {
                         .font(.system(size: 12 * fontScale, weight: .semibold, design: .monospaced))
                         .foregroundStyle(.secondary)
                         .accessibilityIdentifier("json.kind")
+
+                    Spacer(minLength: 12)
+
+                    Button {
+                        copySourceToClipboard()
+                    } label: {
+                        Image(systemName: didCopySource ? "checkmark" : "doc.on.doc")
+                            .font(.system(size: 13 * fontScale, weight: .semibold))
+                            .frame(width: 22, height: 22)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .help("Copy source")
+                    .accessibilityLabel("Copy JSON source")
+                    .accessibilityIdentifier("json.copySource")
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding([.top, .horizontal], 12)
                 .padding(.bottom, 8)
             }
@@ -263,6 +285,14 @@ struct JSONDocumentView: View {
         }
     }
 
+    private func copySourceToClipboard() {
+        JSONClipboard.write(jsonDocument.document.source)
+        didCopySource = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            didCopySource = false
+        }
+    }
+
     private func disclosureIcon(for row: JSONViewerRow) -> String {
         row.isCollapsed ? "chevron.right" : "chevron.down"
     }
@@ -371,6 +401,18 @@ private struct JSONSourceLineFragment: Identifiable, Hashable {
     let id: UUID
     let text: String
     let kind: JSONSyntaxTokenKind?
+}
+
+private enum JSONClipboard {
+    static func write(_ text: String) {
+        #if canImport(AppKit)
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+        #elseif canImport(UIKit)
+        UIPasteboard.general.string = text
+        #endif
+    }
 }
 
 private struct JSONAncestorPreference: Equatable {
