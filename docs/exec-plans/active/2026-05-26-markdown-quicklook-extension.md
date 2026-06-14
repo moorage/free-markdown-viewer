@@ -22,6 +22,7 @@ The implementation should preserve existing app behavior and platform boundaries
 - [x] (2026-06-05 18:00Z) Added a compact Quick Look `Rendered` / `Source` segmented control and runtime coverage that switches between the rendered Markdown preview and raw source text.
 - [x] (2026-06-05 19:00Z) Added a Quick Look feature-parity spec plus runtime coverage for inline Mermaid fences and local image attachments.
 - [x] (2026-06-05 19:18Z) Fixed Quick Look Mermaid rendered mode so inline and standalone Mermaid previews draw a bounded native diagram image attachment instead of displaying raw `flowchart` source text.
+- [x] (2026-06-14 00:00Z) Fixed Quick Look rendered mode for embedded Markdown pipe tables with inline formatting and escaped pipe characters.
 
 ## Surprises & Discoveries
 
@@ -45,6 +46,8 @@ The implementation should preserve existing app behavior and platform boundaries
 - The app parser already converts inline Mermaid fences to `mermaidDiagram` blocks and local image markdown to hydrated image blocks. Quick Look must mirror those recognizers, but with bounded preview behavior instead of the app's full interactive Mermaid graph/zoom and media surfaces.
 
 - The first Quick Look Mermaid parity pass was still too source-like: it labeled Mermaid content but displayed the raw `flowchart LR` body in rendered mode. The regression test now requires a native image attachment and rejects raw Mermaid source text in rendered mode.
+
+- Quick Look table coverage previously only required supported fixtures to produce non-empty output, so rendered mode could regress by showing raw inline Markdown syntax inside table cells. A focused runtime test now loads the built `.appex` and rejects raw pipe-divider, code-span, and strong-emphasis syntax in rendered table output.
 
 ## Decision Log
 
@@ -80,6 +83,10 @@ The implementation should preserve existing app behavior and platform boundaries
   Rationale: The app's full interactive Mermaid SwiftUI surface is not packaged as a reusable framework for the `.appex`, and Quick Look should stay bounded. A native AppKit raster preview gives Finder a real rendered diagram while leaving zoom, pan, detached windows, and heavier layout to the app.
   Date/Author: 2026-06-05 / Codex
 
+- Decision: Keep Quick Look Markdown table rendering extension-local, but normalize inline Markdown cell text and split escaped pipe characters correctly.
+  Rationale: Finder previews need rendered-mode table readability without linking the full app renderer into the `.appex`. Normalizing cells in the existing monospaced native table path fixes the reported embedded-table issue with a small, bounded change.
+  Date/Author: 2026-06-14 / Codex
+
 ## Outcomes & Retrospective
 
 Implemented. The macOS app target now embeds `Quick Markdown Viewer QuickLook.appex`, whose processed Info.plist declares `com.apple.quicklook.preview` and supports Markdown, Mermaid, CSV, and TSV content types. The preview controller reads the requested file off the main actor, decodes common Markdown encodings, formats with native text surfaces, and displays the result in a read-only AppKit text view.
@@ -91,6 +98,8 @@ The target is macOS-only and platform-filtered so the universal app scheme conti
 2026-06-05 mode-switch follow-up: Quick Look previews now include a native AppKit segmented control with `Rendered` and `Source` modes. The controller reads the file once, caches both attributed strings, defaults to the rendered view, and swaps the existing text view content when the user changes modes. Runtime extension coverage verifies the control labels, selected segment, raw `# Basic typography` source view, and return to rendered Markdown.
 
 2026-06-05 parity follow-up: `docs/quicklook-feature-parity.md` now defines the app-vs-Quick-Look feature matrix. Inline Mermaid fences in Markdown now render as bounded native diagram image attachments instead of generic code fences or raw Mermaid source, and local inline images now render as scaled native `NSTextAttachment` previews with captions. Remote/data images, videos, animation playback, Mermaid zoom/pan/detached windows, and linked-media navigation remain intentionally limited to keep Finder previews lightweight.
+
+2026-06-14 table follow-up: Quick Look rendered mode now handles embedded Markdown pipe tables with inline code, strong text, and escaped pipe characters. The extension-local table formatter strips rendered inline Markdown syntax from cells before calculating monospaced column widths, so rendered previews no longer show raw table dividers or raw code/emphasis markers for this path.
 
 The app file-open path now preserves the exact selected file URL in `ExternalWorkspaceOpenRequest`; `LocalWorkspaceProvider` exposes that file as an explicit workspace member and read target if parent-folder enumeration skips it. This fixes the user-visible app-icon/open-file case where the folder title could load without a sidebar item or main-pane document.
 
@@ -149,6 +158,7 @@ Acceptance requires:
 - The Quick Look preview view can switch between rendered Markdown and raw source without rereading the file.
 - Inline Mermaid fences are recognized in Markdown Quick Look previews and do not show raw fence markers in rendered mode.
 - Local inline image Markdown produces a native image attachment in rendered Quick Look previews, while remote/heavy media behavior remains explicitly limited by spec.
+- Embedded Markdown pipe tables in Quick Look rendered mode show native monospaced table text with inline cell syntax resolved and escaped pipe characters kept inside cells.
 
 ## Idempotence and Recovery
 
@@ -176,6 +186,11 @@ Commands run from `/Users/matthewmoore/Projects/free-markdown-viewer`:
 - `xcodebuild -quiet -project 'Quick Markdown Viewer/Quick Markdown Viewer.xcodeproj' -scheme 'Quick Markdown Viewer' -configuration Debug -derivedDataPath /tmp/qmv-quicklook-switch-tests -destination 'platform=macOS,arch=arm64' CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= '-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testQuickLookPreviewSourceUsesNativeMarkdownRendering' '-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testQuickLookPreviewExtensionRendersBasicMarkdownAsStyledPreview' '-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testQuickLookPreviewExtensionCanSwitchBetweenRenderedAndSourceViews' '-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testQuickLookPreviewExtensionRendersEverySupportedFixtureDocument' test`
 - `qlmanage -r && qlmanage -p 'Fixtures/docs/basic_typography.md'`; Computer Use saw `qlmanage` running but `get_app_state` timed out, so live Quick Look panel introspection remains less reliable than the runtime `.appex` tests.
 - `xcodebuild -quiet -project 'Quick Markdown Viewer/Quick Markdown Viewer.xcodeproj' -scheme 'Quick Markdown Viewer' -configuration Debug -derivedDataPath /tmp/qmv-quicklook-parity-tests -destination 'platform=macOS,arch=arm64' CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= '-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testQuickLookFeatureParitySpecDocumentsBoundedPreviewContract' '-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testQuickLookPreviewExtensionRendersInlineMermaidFenceAsBoundedPreview' '-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testQuickLookPreviewExtensionRendersLocalImagesAsAttachments' '-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testQuickLookPreviewExtensionRendersEverySupportedFixtureDocument' '-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testQuickLookPreviewSourceUsesNativeMarkdownRendering' test`
+- `xcodebuild -quiet -project 'Quick Markdown Viewer/Quick Markdown Viewer.xcodeproj' -scheme 'Quick Markdown Viewer' -configuration Debug -derivedDataPath /tmp/qmv-quicklook-table-tests -destination 'platform=macOS,arch=arm64' CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= '-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testQuickLookPreviewExtensionRendersMarkdownTablesInRenderedMode' '-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testQuickLookPreviewExtensionRendersBasicMarkdownAsStyledPreview' '-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testQuickLookPreviewExtensionRendersEverySupportedFixtureDocument' test`
+- `python3 scripts/check_execplan.py`
+- `python3 scripts/knowledge/check_docs.py`
+- `git diff --check`
+- `./scripts/test-unit`
 
 ## Interfaces and Dependencies
 
