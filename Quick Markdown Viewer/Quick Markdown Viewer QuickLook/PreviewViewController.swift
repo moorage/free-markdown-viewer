@@ -205,12 +205,28 @@ private enum MarkdownQuickLookPreviewFormatter {
         let marker: String
         let infoString: String
 
-        var isMermaid: Bool {
-            let language = infoString
+        var language: String? {
+            infoString
                 .split(whereSeparator: { $0.isWhitespace })
                 .first?
                 .lowercased()
+        }
+
+        var isMermaid: Bool {
             return language == "mermaid" || language == "mmd"
+        }
+
+        var jsonDocumentKind: DocumentKind? {
+            switch language {
+            case "json":
+                return .json
+            case "jsonc":
+                return .jsonc
+            case "ndjson", "jsonl":
+                return .ndjson
+            default:
+                return nil
+            }
         }
     }
 
@@ -365,7 +381,7 @@ private enum MarkdownQuickLookPreviewFormatter {
                     index += 1
                 }
                 let code = codeLines.joined(separator: "\n")
-                append(fence.isMermaid ? mermaidPreview(from: code) : codeBlock(code), to: rendered)
+                append(codeFencePreview(for: fence, source: code), to: rendered)
                 continue
             }
 
@@ -425,6 +441,16 @@ private enum MarkdownQuickLookPreviewFormatter {
         }
 
         return rendered
+    }
+
+    private static func codeFencePreview(for fence: CodeFence, source: String) -> NSAttributedString {
+        if fence.isMermaid {
+            return mermaidPreview(from: source)
+        }
+        if let kind = fence.jsonDocumentKind {
+            return jsonFamilyPreview(from: source, kind: kind, collapseContainers: false)
+        }
+        return codeBlock(source)
     }
 
     private static func mermaidPreview(from source: String) -> NSAttributedString {
@@ -875,6 +901,23 @@ private enum MarkdownQuickLookPreviewFormatter {
             .map { splitDelimitedRow($0, separator: separator) }
         guard let header = rows.first else { return codeBlock(source) }
         return tableBlock(header: header, rows: Array(rows.dropFirst()))
+    }
+
+    private static func jsonFamilyPreview(
+        from source: String,
+        kind: DocumentKind,
+        collapseContainers: Bool
+    ) -> NSAttributedString {
+        switch kind {
+        case .json:
+            return jsonPreview(from: source, collapseContainers: collapseContainers)
+        case .jsonc:
+            return jsoncPreview(from: source, collapseContainers: collapseContainers)
+        case .ndjson:
+            return ndjsonPreview(from: source, collapseContainers: collapseContainers)
+        case .markdown, .mermaid, .delimited, .plainText:
+            return lineNumberedCodeBlock(source)
+        }
     }
 
     private static func jsonPreview(from source: String, collapseContainers: Bool) -> NSAttributedString {

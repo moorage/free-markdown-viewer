@@ -3895,6 +3895,52 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
     }
 
     @MainActor
+    func testQuickLookPreviewExtensionRendersEmbeddedMarkdownJSONFamilyFences() throws {
+        let workspaceURL = try makeTemporaryWorkspace(named: "QuickLookEmbeddedJSON", files: [
+            "payloads.md": """
+            # Payloads
+
+            ```json
+            {"z":2,"a":{"enabled":true}}
+            ```
+
+            ```jsonc
+            {
+              // comment
+              "feature": {
+                "enabled": true,
+              },
+            }
+            ```
+
+            ```ndjson
+            {"event":"open","metadata":{"path":"README.md"}}
+            {"event":"close","metadata":{"path":"README.md"}}
+            ```
+
+            ```jsonl
+            {"line":1,"message":"jsonl alias"}
+            {"line":2,"message":"same parser as ndjson"}
+            ```
+            """,
+        ])
+
+        let preview = try renderedQuickLookPreview(for: workspaceURL.appendingPathComponent("payloads.md"))
+        let text = preview.string
+
+        XCTAssertFalse(text.contains("```json"))
+        XCTAssertFalse(text.contains("```jsonc"))
+        XCTAssertFalse(text.contains("```ndjson"))
+        XCTAssertFalse(text.contains("```jsonl"))
+        XCTAssertTrue(text.contains("1  {"))
+        XCTAssertTrue(text.contains(#""enabled""#))
+        XCTAssertTrue(text.contains(#""feature""#))
+        XCTAssertTrue(text.contains(#"1  {"event":"open","metadata":{"path":"README.md"}}"#))
+        XCTAssertTrue(text.contains(#"1  {"line":1,"message":"jsonl alias"}"#))
+        XCTAssertTrue(text.contains(#"2  {"line":2,"message":"same parser as ndjson"}"#))
+    }
+
+    @MainActor
     func testQuickLookPreviewExtensionCollapsesJSONContainers() throws {
         let workspaceURL = try makeTemporaryWorkspace(named: "QuickLookJSONCollapse", files: [
             "payload.json": #"{"z":2,"a":{"enabled":true},"items":[{"id":1},{"id":2}]}"#,
@@ -3927,6 +3973,10 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
             {"event":"open","metadata":{"path":"README.md"}}
             {"event":"close","metadata":{"path":"README.md"}}
             """,
+            "events.jsonl": """
+            {"line":1,"message":"jsonl alias"}
+            {"line":2,"message":"same parser as ndjson"}
+            """,
         ])
 
         let jsoncController = try preparedQuickLookPreviewController(for: workspaceURL.appendingPathComponent("settings.jsonc"))
@@ -3943,6 +3993,13 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
         let ndjsonText = try currentQuickLookPreviewText(in: ndjsonController)
         XCTAssertTrue(ndjsonText.contains("1  record 1: {...}"))
         XCTAssertTrue(ndjsonText.contains("2  record 2: {...}"))
+
+        let jsonlController = try preparedQuickLookPreviewController(for: workspaceURL.appendingPathComponent("events.jsonl"))
+        XCTAssertTrue(jsonlController.responds(to: collapseSelector))
+        _ = jsonlController.perform(collapseSelector)
+        let jsonlText = try currentQuickLookPreviewText(in: jsonlController)
+        XCTAssertTrue(jsonlText.contains("1  record 1: {...}"))
+        XCTAssertTrue(jsonlText.contains("2  record 2: {...}"))
     }
 
     @MainActor
@@ -4076,6 +4133,10 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
             "mermaid",
             "mmd",
             "csv",
+            "json",
+            "jsonc",
+            "jsonl",
+            "ndjson",
             "tsv",
         ]
         let roots = [
