@@ -12,16 +12,23 @@ struct JSONDocumentView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if !isPrinting {
-                Picker("JSON Mode", selection: $mode) {
-                    Text("Viewer").tag(JSONPresentationMode.viewer)
-                    Text("Source").tag(JSONPresentationMode.source)
+                HStack(spacing: 10) {
+                    Picker("JSON Mode", selection: $mode) {
+                        Text("Viewer").tag(JSONPresentationMode.viewer)
+                        Text("Source").tag(JSONPresentationMode.source)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .frame(width: 180)
+                    .accessibilityIdentifier("json.mode")
+
+                    Text(jsonDocument.kind.rawValue.uppercased())
+                        .font(.system(size: 12 * fontScale, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("json.kind")
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(width: 180)
                 .padding([.top, .horizontal], 12)
                 .padding(.bottom, 8)
-                .accessibilityIdentifier("json.mode")
             }
 
             if mode == .source && !isPrinting {
@@ -106,11 +113,11 @@ struct JSONDocumentView: View {
         .frame(minHeight: 220, maxHeight: 620)
     }
 
+    @ViewBuilder
     private func stickyHeader() -> some View {
-        let title = activeAncestorTitles.isEmpty
-            ? jsonDocument.kind.rawValue.uppercased()
-            : activeAncestorTitles.joined(separator: " > ")
-        return stickyTitle(title)
+        if !activeAncestorTitles.isEmpty {
+            stickyTitle(activeAncestorTitles.joined(separator: " > "))
+        }
     }
 
     private func stickyTitle(_ title: String) -> some View {
@@ -231,7 +238,7 @@ struct JSONDocumentView: View {
     private func gutter(_ lineNumber: Int, visibleLineNumber: Int?) -> some View {
         Text(verbatim: visibleLineNumber.map(String.init) ?? "")
             .font(.system(size: 11 * fontScale, weight: .regular, design: .monospaced))
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Color.secondary.opacity(0.55))
             .monospacedDigit()
             .frame(width: 44, alignment: .trailing)
             .accessibilityIdentifier(visibleLineNumber == nil ? "json.gutter.\(lineNumber).repeat" : "json.gutter.\(lineNumber)")
