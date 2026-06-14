@@ -2746,7 +2746,7 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
         XCTAssertEqual(document.roots.count, 3)
         XCTAssertEqual(document.roots.map(\.lineNumber), [1, 2, 3])
         XCTAssertEqual(document.roots[1].kind, .error)
-        XCTAssertTrue(rows.contains { $0.lineNumber == 3 && $0.displayValue == "record" })
+        XCTAssertTrue(rows.contains { $0.lineNumber == 3 && $0.displayValue == "record { 1 }" })
     }
 
     func testNDJSONViewerRowsUseUniqueRecordScopedIDsAndPhysicalLineNumbers() throws {
@@ -2764,6 +2764,8 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
         let rowIDs = expandedRows.map(\.id)
 
         XCTAssertEqual(Set(rowIDs).count, rowIDs.count)
+        XCTAssertTrue(expandedRows.contains { $0.id == "record.0" && $0.displayValue == "record { 2 }" })
+        XCTAssertFalse(expandedRows.contains { $0.id == "record.0.root" })
         XCTAssertTrue(expandedRows.contains { $0.id == "record.0.root.event" && $0.lineNumber == 1 })
         XCTAssertTrue(expandedRows.contains { $0.id == "record.1.root.event" && $0.lineNumber == 3 })
         XCTAssertTrue(expandedRows.contains { $0.id == "record.2.root.event" && $0.lineNumber == 4 })

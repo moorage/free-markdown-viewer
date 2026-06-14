@@ -233,8 +233,12 @@ nonisolated enum JSONPresentationBuilder {
         rows: inout [JSONViewerRow]
     ) {
         let isCollapsed = collapsedNodeIDs.contains(node.id)
-        let title = rowTitle(for: node)
-        let tableProjection = isCollapsed ? nil : tableProjection(for: node, depth: depth + 1)
+        let flattenedRecordChild = flattenedRecordChild(for: node)
+        let displayValue = flattenedRecordChild.map { "\(node.summary) \($0.summary)" } ?? node.summary
+        let renderedChildren = flattenedRecordChild?.children ?? node.children
+        let title = rowTitle(for: node, displayValue: displayValue)
+        let projectedNode = flattenedRecordChild ?? node
+        let tableProjection = isCollapsed ? nil : tableProjection(for: projectedNode, depth: depth + 1)
         rows.append(
             JSONViewerRow(
                 id: node.id,
@@ -243,8 +247,8 @@ nonisolated enum JSONPresentationBuilder {
                 depth: depth,
                 key: node.key,
                 kind: node.kind,
-                displayValue: node.summary,
-                hasChildren: !node.children.isEmpty,
+                displayValue: displayValue,
+                hasChildren: !renderedChildren.isEmpty,
                 isCollapsed: isCollapsed,
                 ancestorTitles: ancestors,
                 tableProjection: tableProjection
@@ -253,7 +257,7 @@ nonisolated enum JSONPresentationBuilder {
         guard !isCollapsed else { return }
         if tableProjection != nil { return }
         let nextAncestors = node.isContainer ? ancestors + [title] : ancestors
-        for child in node.children {
+        for child in renderedChildren {
             append(
                 child,
                 depth: depth + 1,
@@ -264,11 +268,18 @@ nonisolated enum JSONPresentationBuilder {
         }
     }
 
-    private nonisolated static func rowTitle(for node: JSONValueNode) -> String {
+    private nonisolated static func rowTitle(for node: JSONValueNode, displayValue: String) -> String {
         if let key = node.key {
             return key
         }
-        return node.summary
+        return displayValue
+    }
+
+    private nonisolated static func flattenedRecordChild(for node: JSONValueNode) -> JSONValueNode? {
+        guard node.kind == .record, node.children.count == 1 else { return nil }
+        let child = node.children[0]
+        guard child.kind == .object || child.kind == .array else { return nil }
+        return child
     }
 
     private nonisolated static func tableProjection(for node: JSONValueNode, depth: Int) -> JSONTableProjection? {
