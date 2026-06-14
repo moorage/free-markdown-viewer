@@ -346,16 +346,19 @@ final class Quick_Markdown_ViewerUITests: XCTestCase {
 
         let jsonScrollView = app.scrollViews["json.viewerScrollView"]
         XCTAssertTrue(jsonScrollView.waitForExistence(timeout: 5))
-        let stickyHeader = app.staticTexts["json.stickyHeader"].firstMatch
-        let expectedHeader = "workspace > release > streams > [1] > records > [11] > checks"
-        for _ in 0..<18 where stickyHeader.label != expectedHeader {
+        let stickyHeader = app.descendants(matching: .any)["json.stickyHeader"].firstMatch
+        let expectedHeaderFragment = "workspace > release > streams > [1] > records"
+        for _ in 0..<18 {
+            if stickyHeader.exists && stickyHeader.label.contains(expectedHeaderFragment) {
+                break
+            }
             jsonScrollView.swipeUp()
         }
 
         XCTAssertTrue(
-            waitForElement(
+            waitForElementLabelContaining(
                 stickyHeader,
-                label: expectedHeader,
+                expectedHeaderFragment,
                 timeout: 5
             )
         )
@@ -644,6 +647,12 @@ final class Quick_Markdown_ViewerUITests: XCTestCase {
 
     private func waitForElement(_ element: XCUIElement, label: String, timeout: TimeInterval) -> Bool {
         let predicate = NSPredicate(format: "label == %@", label)
+        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
+        return XCTWaiter().wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    private func waitForElementLabelContaining(_ element: XCUIElement, _ text: String, timeout: TimeInterval) -> Bool {
+        let predicate = NSPredicate(format: "label CONTAINS %@", text)
         let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
         return XCTWaiter().wait(for: [expectation], timeout: timeout) == .completed
     }

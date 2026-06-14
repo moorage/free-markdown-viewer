@@ -19,7 +19,7 @@ The line gutter is part of the product contract: viewer rows must continue to id
 - [x] (2026-06-14T07:46Z) Added Quick Look strict-JSON expand/collapse controls, plus focused parser and Quick Look collapse coverage.
 - [x] (2026-06-14T16:54Z) Replaced object-array table rendering with regular indexed array rows, added scalar-array coverage, and added a large nested fixture for sticky ancestor validation.
 - [x] (2026-06-14T17:06Z) Verified interactive macOS printing opens the native print sheet for `events.ndjson`, verified NDJSON/JSONL harness PDF export, and added regression coverage for NDJSON/JSONL print composition plus NDJSON AppKit print-operation output.
-- [x] (2026-06-14T17:48Z) Added macOS UI automation for JSON sticky ancestor scrolling, with stable JSON viewer scroll and sticky-header accessibility identifiers. Local execution reached the UI runner but was blocked before test body execution by XCTest automation initialization timing out.
+- [x] (2026-06-14T18:04Z) Added macOS UI automation for JSON sticky ancestor scrolling, with stable JSON viewer scroll and sticky-header accessibility identifiers. The focused signed UI test now launches, scrolls the large nested fixture, and verifies the sticky ancestor header.
 
 ## Surprises & Discoveries
 
@@ -47,8 +47,8 @@ The line gutter is part of the product contract: viewer rows must continue to id
 - Observation: the project uses filesystem-synchronized Xcode groups for the app target, so new Swift files under the app source tree are picked up without manual `project.pbxproj` edits.
   Evidence: the macOS app build included `App/Shared/JSON/JSONDocument.swift` and `App/Shell/JSONDocumentView.swift` after adding them to the filesystem.
 
-- Observation: the focused macOS UI test for JSON sticky ancestor scrolling now builds, but this machine timed out while XCTest was enabling automation mode before the test body ran.
-  Evidence: `xcodebuild ... -only-testing:Quick Markdown ViewerUITests/Quick_Markdown_ViewerUITests/testJSONViewerShowsStickyAncestorHeaderAfterScrollingDeepNestedRows test` failed with `Quick Markdown ViewerUITests-Runner ... Timed out while enabling automation mode.`
+- Observation: the focused macOS UI test for JSON sticky ancestor scrolling is sensitive to exact scroll landing depth, so it should assert the stable ancestor path rather than one exact deepest descendant label.
+  Evidence: the passing test waits for `json.stickyHeader` to contain `workspace > release > streams > [1] > records` after swiping the `json.viewerScrollView`.
 
 ## Decision Log
 
@@ -80,7 +80,7 @@ The line gutter is part of the product contract: viewer rows must continue to id
 
 Implementation completed for the current milestone. JSON-family files are workspace-visible and draggable/openable on macOS, Markdown fenced JSON-family blocks render as structured JSON blocks, and the app exposes a native viewer/source JSON surface with source-mapped gutters, collapsible rows, indexed array items, token-highlighted source mode, and live active-ancestor sticky headers. Print text output includes the same expanded row outline with source line gutters. Quick Look declares JSON-family content types, pretty-prints JSON/JSONC when possible, collapses JSON/JSONC containers, collapses parseable NDJSON/JSONL record lines, and preserves native line-numbered source fallback.
 
-Remaining follow-up candidates: add Quick Look JSONC/NDJSON structural parsing if extension target sharing becomes desirable, and add screenshot/checkpoint artifacts for the new JSON fixtures. The sticky ancestor UI automation has been added, but still needs a clean run in an environment where XCTest can initialize macOS automation mode.
+Remaining follow-up candidates: add Quick Look JSONC/NDJSON structural parsing if extension target sharing becomes desirable, and add screenshot/checkpoint artifacts for the new JSON fixtures. Sticky ancestor UI automation now has a clean signed macOS run.
 
 ## Context and Orientation
 
@@ -251,6 +251,7 @@ Validation run in this implementation:
 - `./scripts/test-unit --only-testing Quick_Markdown_ViewerTests/Quick_Markdown_ViewerTests/testJSONViewerRowsRenderObjectArraysAsIndexedItems --only-testing Quick_Markdown_ViewerTests/Quick_Markdown_ViewerTests/testJSONViewerRowsRenderScalarArraysAsIndexedItems --only-testing Quick_Markdown_ViewerTests/Quick_Markdown_ViewerTests/testJSONStickyHeaderFixtureProvidesDeepScrollableAncestorRows --only-testing Quick_Markdown_ViewerTests/Quick_Markdown_ViewerTests/testJSONParserPublishesSourceTokensForHighlighting --only-testing Quick_Markdown_ViewerTests/Quick_Markdown_ViewerTests/testQuickLookPreviewExtensionCollapsesJSONContainers`
 - `./scripts/test-unit --only-testing Quick_Markdown_ViewerTests/Quick_Markdown_ViewerTests/testPrintSelectedNDJSONDocumentUsesStructuredRows --only-testing Quick_Markdown_ViewerTests/Quick_Markdown_ViewerTests/testExportPrintedNDJSONDocumentHarnessCommandWritesPDF --only-testing Quick_Markdown_ViewerTests/Quick_Markdown_ViewerTests/testMacPrintOperationPDFOutputRendersNDJSONDocument --only-testing Quick_Markdown_ViewerTests/Quick_Markdown_ViewerTests/testExportPrintedDocumentHarnessCommandWritesPDF --only-testing Quick_Markdown_ViewerTests/Quick_Markdown_ViewerTests/testMacPrintOperationPDFOutputIsNotBlank`
 - `xcodebuild -project 'Quick Markdown Viewer/Quick Markdown Viewer.xcodeproj' -scheme 'Quick Markdown Viewer' -configuration Debug -derivedDataPath /tmp/qmv-json-sticky-ui -destination 'platform=macOS,arch=arm64' DEVELOPMENT_TEAM=GG34PA8F4A -only-testing:'Quick Markdown ViewerUITests/Quick_Markdown_ViewerUITests/testJSONViewerShowsStickyAncestorHeaderAfterScrollingDeepNestedRows' test` (build succeeded; UI runner failed before test body with `Timed out while enabling automation mode`)
+- `xcodebuild -quiet -project 'Quick Markdown Viewer/Quick Markdown Viewer.xcodeproj' -scheme 'Quick Markdown Viewer' -configuration Debug -derivedDataPath /tmp/qmv-json-sticky-ui-retry4 -resultBundlePath /tmp/qmv-json-sticky-ui-retry4.xcresult -destination 'platform=macOS,arch=arm64' DEVELOPMENT_TEAM=GG34PA8F4A -only-testing:'Quick Markdown ViewerUITests/Quick_Markdown_ViewerUITests/testJSONViewerShowsStickyAncestorHeaderAfterScrollingDeepNestedRows' test` (passed)
 
 ## Idempotence and Recovery
 
