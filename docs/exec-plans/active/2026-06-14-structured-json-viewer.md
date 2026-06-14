@@ -18,6 +18,7 @@ The line gutter is part of the product contract: viewer rows must continue to id
 - [x] (2026-06-14T07:46Z) Added shared syntax tokens, token-highlighted source mode, live active-ancestor sticky headers, readable array rendering, and print text output for JSON viewer rows.
 - [x] (2026-06-14T07:46Z) Added Quick Look strict-JSON expand/collapse controls, plus focused parser and Quick Look collapse coverage.
 - [x] (2026-06-14T16:54Z) Replaced object-array table rendering with regular indexed array rows, added scalar-array coverage, and added a large nested fixture for sticky ancestor validation.
+- [x] (2026-06-14T17:06Z) Verified interactive macOS printing opens the native print sheet for `events.ndjson`, verified NDJSON/JSONL harness PDF export, and added regression coverage for NDJSON/JSONL print composition plus NDJSON AppKit print-operation output.
 
 ## Surprises & Discoveries
 
@@ -244,6 +245,7 @@ Validation run in this implementation:
 - `./scripts/test-unit`
 - `./scripts/build --platform all`
 - `./scripts/test-unit --only-testing Quick_Markdown_ViewerTests/Quick_Markdown_ViewerTests/testJSONViewerRowsRenderObjectArraysAsIndexedItems --only-testing Quick_Markdown_ViewerTests/Quick_Markdown_ViewerTests/testJSONViewerRowsRenderScalarArraysAsIndexedItems --only-testing Quick_Markdown_ViewerTests/Quick_Markdown_ViewerTests/testJSONStickyHeaderFixtureProvidesDeepScrollableAncestorRows --only-testing Quick_Markdown_ViewerTests/Quick_Markdown_ViewerTests/testJSONParserPublishesSourceTokensForHighlighting --only-testing Quick_Markdown_ViewerTests/Quick_Markdown_ViewerTests/testQuickLookPreviewExtensionCollapsesJSONContainers`
+- `./scripts/test-unit --only-testing Quick_Markdown_ViewerTests/Quick_Markdown_ViewerTests/testPrintSelectedNDJSONDocumentUsesStructuredRows --only-testing Quick_Markdown_ViewerTests/Quick_Markdown_ViewerTests/testExportPrintedNDJSONDocumentHarnessCommandWritesPDF --only-testing Quick_Markdown_ViewerTests/Quick_Markdown_ViewerTests/testMacPrintOperationPDFOutputRendersNDJSONDocument --only-testing Quick_Markdown_ViewerTests/Quick_Markdown_ViewerTests/testExportPrintedDocumentHarnessCommandWritesPDF --only-testing Quick_Markdown_ViewerTests/Quick_Markdown_ViewerTests/testMacPrintOperationPDFOutputIsNotBlank`
 
 ## Idempotence and Recovery
 

@@ -1582,6 +1582,57 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
         XCTAssertTrue(composition.plainText.contains("Alpha | 1"))
     }
 
+    @MainActor
+    func testPrintSelectedNDJSONDocumentUsesStructuredRows() async throws {
+        let workspace = try makeTemporaryWorkspace(named: "NDJSON Print Workspace", files: [
+            "events.ndjson": """
+            {"event":"one","ok":true}
+            {bad}
+            {"event":"two","ok":false}
+            """,
+            "events.jsonl": """
+            {"line":1,"message":"jsonl alias"}
+            {"line":2,"message":"same parser"}
+            """
+        ])
+        let model = AppModel(
+            launchOptions: HarnessLaunchOptions(
+                fixtureRoot: workspace,
+                openFile: "events.ndjson",
+                uiTestOpenFolderURL: nil,
+                theme: nil,
+                windowSize: nil,
+                disableFileWatch: true,
+                dumpVisibleStateURL: nil,
+                dumpPerfStateURL: nil,
+                screenshotPathURL: nil,
+                commandDirectoryURL: nil,
+                uiTestMode: true,
+                platformTarget: .macos,
+                deviceClass: .mac
+            )
+        )
+
+        model.bootstrap()
+        try await Task.sleep(nanoseconds: 300_000_000)
+        let ndjsonComposition = try await model.makePrintComposition(scope: .selectedFile)
+
+        XCTAssertEqual(ndjsonComposition.sections.map(\.title), ["events.ndjson"])
+        XCTAssertEqual(ndjsonComposition.sections.map(\.kind), [.ndjson])
+        XCTAssertTrue(ndjsonComposition.plainText.contains("L1 record { 2 }"))
+        XCTAssertTrue(ndjsonComposition.plainText.contains("L2 Expected object key."))
+        XCTAssertTrue(ndjsonComposition.plainText.contains("L3 record { 2 }"))
+
+        model.openFile(WorkspacePath(rawValue: "events.jsonl"))
+        let jsonlComposition = try await model.makePrintComposition(scope: .selectedFile)
+
+        XCTAssertEqual(jsonlComposition.sections.map(\.title), ["events.jsonl"])
+        XCTAssertEqual(jsonlComposition.sections.map(\.kind), [.ndjson])
+        XCTAssertTrue(jsonlComposition.plainText.contains("L1 record { 2 }"))
+        XCTAssertTrue(jsonlComposition.plainText.contains("message: \"jsonl alias\""))
+        XCTAssertTrue(jsonlComposition.plainText.contains("L2 record { 2 }"))
+    }
+
     func testMacPrintPresenterRetainsModalPrintOperationUntilCallback() throws {
         let sourceURL = repoRootURL.appendingPathComponent(
             "Quick Markdown Viewer/Quick Markdown Viewer/App/Platform/PlatformPrintPresenter.swift"
@@ -1849,7 +1900,126 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
         XCTAssertGreaterThan(stats.uniqueCount, 1)
     }
 
+    @MainActor
+    func testExportPrintedNDJSONDocumentHarnessCommandWritesPDF() async throws {
+        let workspace = try makeTemporaryWorkspace(named: "NDJSON Print PDF Workspace", files: [
+            "events.ndjson": """
+            {"event":"one","ok":true}
+            {bad}
+            {"event":"two","ok":false}
+            """
+        ])
+        let outputURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("ndjson-printed.pdf")
+
+        let model = AppModel(
+            launchOptions: HarnessLaunchOptions(
+                fixtureRoot: workspace,
+                openFile: "events.ndjson",
+                uiTestOpenFolderURL: nil,
+                theme: nil,
+                windowSize: nil,
+                disableFileWatch: true,
+                dumpVisibleStateURL: nil,
+                dumpPerfStateURL: nil,
+                screenshotPathURL: nil,
+                commandDirectoryURL: nil,
+                uiTestMode: true,
+                platformTarget: .macos,
+                deviceClass: .mac
+            )
+        )
+
+        model.bootstrap()
+        try await Task.sleep(nanoseconds: 300_000_000)
+
+        let response = await model.handleCommand(
+            HarnessCommandRequest(
+                id: UUID().uuidString,
+                command: "exportPrintedDocument",
+                arguments: ["path": outputURL.path]
+            )
+        )
+
+        XCTAssertEqual(response.status, "ok")
+        let data = try Data(contentsOf: outputURL)
+        XCTAssertTrue(data.starts(with: Data("%PDF".utf8)))
+        XCTAssertGreaterThan(data.count, 500)
+        let document = try XCTUnwrap(PDFDocument(url: outputURL))
+        XCTAssertGreaterThanOrEqual(document.pageCount, 1)
+        let pageImage = try firstPDFPageCGImage(from: outputURL, size: DocumentPrintPageLayout.letter.paperSize)
+        let stats = try quantizedColorStats(
+            for: pageImage,
+            cropRect: CGRect(origin: .zero, size: DocumentPrintPageLayout.letter.paperSize),
+            quantizationStep: 24
+        )
+        XCTAssertGreaterThan(stats.uniqueCount, 1)
+    }
+
     #if os(macOS)
+    @MainActor
+    func testMacPrintOperationPDFOutputRendersNDJSONDocument() throws {
+        let source = """
+        {"event":"one","ok":true}
+        {bad}
+        {"event":"two","ok":false}
+        """
+        let jsonDocument = JSONDocumentModel.parse(source: source, kind: .ndjson)
+        let blocks = [
+            MarkdownBlock(
+                id: "json.document",
+                kind: .jsonDocument,
+                plainText: source,
+                sourceText: source,
+                level: nil,
+                listItemIndex: nil,
+                indentLevel: 0,
+                isTaskItem: false,
+                isTaskCompleted: nil,
+                table: nil,
+                image: nil,
+                video: nil,
+                attributedText: nil,
+                children: [],
+                jsonDocument: MarkdownJSONDocument(kind: .ndjson, document: jsonDocument)
+            )
+        ]
+        let composition = DocumentPrintComposition(
+            scope: .selectedFile,
+            workspaceTitle: "NDJSON Print Workspace",
+            fontScale: 1,
+            launchTheme: nil,
+            tabularPresentation: TabularDocumentPresentation(),
+            sections: [
+                DocumentPrintSection(
+                    path: WorkspacePath(rawValue: "events.ndjson"),
+                    title: "events.ndjson",
+                    kind: .ndjson,
+                    blocks: blocks
+                )
+            ]
+        )
+        let outputURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("native-ndjson-print-operation.pdf")
+
+        try PlatformPrintPresenter.exportPrintOperationPDF(composition, to: outputURL)
+
+        let data = try Data(contentsOf: outputURL)
+        XCTAssertTrue(data.starts(with: Data("%PDF".utf8)))
+        XCTAssertGreaterThan(data.count, 500)
+        let document = try XCTUnwrap(PDFDocument(url: outputURL))
+        XCTAssertGreaterThanOrEqual(document.pageCount, 1)
+        let pageImage = try firstPDFPageCGImage(from: outputURL, size: DocumentPrintPageLayout.letter.paperSize)
+        let stats = try quantizedColorStats(
+            for: pageImage,
+            cropRect: CGRect(origin: .zero, size: DocumentPrintPageLayout.letter.paperSize),
+            quantizationStep: 24
+        )
+        XCTAssertGreaterThan(stats.uniqueCount, 1)
+    }
+
     @MainActor
     func testMacPrintOperationPDFOutputIsNotBlank() throws {
         let blocks = MarkdownRenderer.blocks(from: """
