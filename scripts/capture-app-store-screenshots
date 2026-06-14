@@ -44,9 +44,11 @@ typeset -a SHOTS=(
   "Outline Navigation.md|outline-navigation|outline"
   "Full Text Search.md|full-text-search|search"
   "Mermaid Workflow.md|mermaid-workflow|plain"
+  "Structured JSON.json|structured-json|plain"
   "Metrics.csv|tables-csv|plain"
   "Media Preview.md|media-preview|plain"
   "Code and Printing.md|code-print-quicklook|plain"
+  "Command Line Launcher.md|command-line-launcher|plain"
 )
 
 run_simctl() {
@@ -229,7 +231,7 @@ capture_macos_platform() {
         presentation_args=(--ui-test-show-outline)
         ;;
       search)
-        presentation_args=(--ui-test-show-sidebar --ui-test-search-query "lifecycle" --ui-test-search-scope "allDocuments")
+        presentation_args=(--ui-test-show-sidebar)
         ;;
     esac
     local checkpoint="app-store-macos-${slug}"

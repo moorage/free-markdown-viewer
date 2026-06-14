@@ -11,20 +11,20 @@ Use this file as the source for App Store Connect listing text and screenshot pl
 
 ## Promotional text
 
-Read local Markdown folders, search documents, jump with outlines, render Mermaid diagrams, preview media, inspect CSV/TSV tables, and print without leaving your files.
+Read local Markdown folders, inspect JSON/JSONC/NDJSON, search docs, jump with outlines, render Mermaid, preview media, inspect CSV/TSV, and print.
 
 ## What's New
 
 Use this for the `What's New` field on the next App Store version:
 
-Quick Markdown Viewer 1.6 improves macOS Finder integration and review readiness:
+Quick Markdown Viewer 1.7 adds structured JSON-family reading and improves macOS file-opening workflows:
 
-- Finder Quick Look now renders Markdown with clear native hierarchy instead of raw source
-- Quick Look includes Rendered and Source modes for Markdown files
-- Inline Mermaid diagrams in Quick Look now show bounded native diagram previews instead of `flowchart` source text
-- Local Markdown image references now appear as scaled Quick Look image attachments
-- Dragging a Markdown file to the app icon now opens its folder with the dropped file selected
-- The app no longer performs app-managed update checks or shows update prompts
+- Open JSON, JSONC, NDJSON, and JSONL files in a collapsible structured viewer
+- View JSON-family fenced blocks inside Markdown with source/viewer controls
+- Keep original source line numbers visible while expanding, collapsing, and reading pretty JSON rows
+- Quick Look previews now support JSON-family files with bounded native previews
+- `qmv /path/to/file` on macOS now cold-starts directly to the file's parent folder with that file selected
+- App-level file opens now cover Markdown, Mermaid, JSON-family files, CSV/TSV tables, and folders
 
 ## Description
 
@@ -35,6 +35,8 @@ Open a folder of files you already have, or open a public GitHub repository URL 
 Features:
 
 - Open local folders and browse Markdown, CSV, and TSV files in a file sidebar
+- Open JSON, JSONC, NDJSON, and JSONL files with collapsible structured rows
+- Read JSON-family fenced code blocks inside Markdown without switching apps
 - Expand and collapse folders, filter large file trees, and use keyboard navigation on macOS
 - Search the current document with Command-F or all open documents with Command-Shift-F
 - Click search results in the sidebar to jump to matches highlighted in the document
@@ -46,7 +48,7 @@ Features:
 - Preview linked media without converting your Markdown files
 - Print the current document or assemble a cancellable background Print All packet
 - Preview Markdown from Finder with the macOS Quick Look extension
-- Install the optional `qmv` command-line launcher on macOS
+- Install the optional `qmv` command-line launcher on macOS and open supported files directly from Terminal
 - Open public GitHub repository and repository tree URLs, including branch and tag paths
 - Hide dependency and vendor folders with editable ignore patterns per window
 - Navigate between files with back and forward history
@@ -64,7 +66,7 @@ Quick Markdown Viewer is designed to stay lightweight and direct:
 
 Use this final keyword set:
 
-`markdown,viewer,mermaid,docs,readme,notes,csv,table,quicklook,search`
+`markdown,viewer,json,mermaid,docs,readme,csv,quicklook,search,qmv`
 
 ## Support and policy URLs
 
@@ -83,7 +85,7 @@ Primary draft source:
 
 ## Screenshot Shot List
 
-Capture the same seven feature shots on each platform so the listing feels consistent.
+Capture the same nine feature shots on each platform so the listing feels consistent.
 
 Repository-owned capture set:
 
@@ -91,9 +93,11 @@ Repository-owned capture set:
 2. `Fixtures/app-store/Outline Navigation.md` -> `outline-navigation`
 3. `Fixtures/app-store/Full Text Search.md` -> `full-text-search`
 4. `Fixtures/app-store/Mermaid Workflow.md` -> `mermaid-workflow`
-5. `Fixtures/app-store/Metrics.csv` -> `tables-csv`
-6. `Fixtures/app-store/Media Preview.md` -> `media-preview`
-7. `Fixtures/app-store/Code and Printing.md` -> `code-print-quicklook`
+5. `Fixtures/app-store/Structured JSON.json` -> `structured-json`
+6. `Fixtures/app-store/Metrics.csv` -> `tables-csv`
+7. `Fixtures/app-store/Media Preview.md` -> `media-preview`
+8. `Fixtures/app-store/Code and Printing.md` -> `code-print-quicklook`
+9. `Fixtures/app-store/Command Line Launcher.md` -> `command-line-launcher`
 
 Repeatable capture command:
 
@@ -113,6 +117,8 @@ Suggested sequence for every platform:
 2. `Jump through long docs with outlines`
 3. `Search one file or every open document`
 4. `Render Mermaid diagrams natively`
-5. `Inspect CSV and TSV tables`
-6. `Preview linked images, GIFs, and video`
-7. `Read code, Quick Look, and print`
+5. `Inspect JSON, JSONC, and JSONL`
+6. `Inspect CSV and TSV tables`
+7. `Preview linked images, GIFs, and video`
+8. `Read code, Quick Look, and print`
+9. `Open docs from Terminal with qmv`

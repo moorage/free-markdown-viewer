@@ -1,0 +1,35 @@
+{
+  "app": "Quick Markdown Viewer",
+  "view": {
+    "mode": "tree",
+    "source": true,
+    "lines": "original",
+    "collapse": [
+      "objects",
+      "arrays",
+      "ndjson records"
+    ]
+  },
+  "release": {
+    "version": "1.7",
+    "formats": [
+      {
+        "name": "JSON",
+        "formats": ["json", "jsonc"]
+      },
+      {
+        "name": "Line-delimited records",
+        "formats": ["ndjson", "jsonl"]
+      },
+      {
+        "name": "Markdown fences",
+        "formats": ["```json", "```jsonc", "```ndjson"]
+      }
+    ]
+  },
+  "lines": [
+    {"source": 1, "path": "app"},
+    {"source": 3, "path": "view.mode"},
+    {"source": 12, "path": "release.formats[0]"}
+  ]
+}

@@ -7,10 +7,14 @@ Use `scripts/capture-app-store-screenshots` to generate a repeatable set of cand
 The capture flow uses `Fixtures/app-store/` so the sidebar and document titles read like customer-facing content:
 
 - `Open Markdown Folders.md`
-- `Architecture Overview.md`
-- `Code Sample.md`
-- `Image Preview.md`
-- `Navigation Notes.md`
+- `Outline Navigation.md`
+- `Full Text Search.md`
+- `Mermaid Workflow.md`
+- `Structured JSON.json`
+- `Metrics.csv`
+- `Media Preview.md`
+- `Code and Printing.md`
+- `Command Line Launcher.md`
 
 ## Command
 
