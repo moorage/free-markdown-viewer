@@ -1,0 +1,162 @@
+{
+  "workspace": {
+    "release": {
+      "streams": [
+        {
+          "name": "alpha",
+          "records": [
+            {
+              "id": "alpha-01",
+              "status": "queued",
+              "tags": ["import", "preview"],
+              "checks": {
+                "duration": 12,
+                "retries": 0
+              }
+            },
+            {
+              "id": "alpha-02",
+              "status": "running",
+              "tags": ["render", "source"],
+              "checks": {
+                "duration": 18,
+                "retries": 1
+              }
+            },
+            {
+              "id": "alpha-03",
+              "status": "done",
+              "tags": ["print", "quicklook"],
+              "checks": {
+                "duration": 9,
+                "retries": 0
+              }
+            },
+            {
+              "id": "alpha-04",
+              "status": "done",
+              "tags": ["gutter", "line"],
+              "checks": {
+                "duration": 11,
+                "retries": 0
+              }
+            }
+          ]
+        },
+        {
+          "name": "beta",
+          "records": [
+            {
+              "id": "beta-01",
+              "status": "queued",
+              "tags": ["sticky", "ancestor"],
+              "checks": {
+                "duration": 21,
+                "retries": 0
+              }
+            },
+            {
+              "id": "beta-02",
+              "status": "queued",
+              "tags": ["sticky", "header"],
+              "checks": {
+                "duration": 22,
+                "retries": 1
+              }
+            },
+            {
+              "id": "beta-03",
+              "status": "running",
+              "tags": ["deep", "array"],
+              "checks": {
+                "duration": 23,
+                "retries": 0
+              }
+            },
+            {
+              "id": "beta-04",
+              "status": "running",
+              "tags": ["tree", "view"],
+              "checks": {
+                "duration": 24,
+                "retries": 0
+              }
+            },
+            {
+              "id": "beta-05",
+              "status": "running",
+              "tags": ["collapse", "expand"],
+              "checks": {
+                "duration": 25,
+                "retries": 2
+              }
+            },
+            {
+              "id": "beta-06",
+              "status": "done",
+              "tags": ["source", "viewer"],
+              "checks": {
+                "duration": 26,
+                "retries": 0
+              }
+            },
+            {
+              "id": "beta-07",
+              "status": "done",
+              "tags": ["mac", "ios"],
+              "checks": {
+                "duration": 27,
+                "retries": 1
+              }
+            },
+            {
+              "id": "beta-08",
+              "status": "done",
+              "tags": ["quicklook", "print"],
+              "checks": {
+                "duration": 28,
+                "retries": 0
+              }
+            },
+            {
+              "id": "beta-09",
+              "status": "done",
+              "tags": ["line", "number"],
+              "checks": {
+                "duration": 29,
+                "retries": 0
+              }
+            },
+            {
+              "id": "beta-10",
+              "status": "done",
+              "tags": ["record", "array"],
+              "checks": {
+                "duration": 30,
+                "retries": 1
+              }
+            },
+            {
+              "id": "beta-11",
+              "status": "done",
+              "tags": ["final", "viewport"],
+              "checks": {
+                "duration": 31,
+                "retries": 0
+              }
+            },
+            {
+              "id": "beta-12",
+              "status": "done",
+              "tags": ["target", "sticky"],
+              "checks": {
+                "duration": 32,
+                "retries": 0
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

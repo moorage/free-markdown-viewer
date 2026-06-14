@@ -147,47 +147,15 @@ nonisolated struct JSONViewerRow: Identifiable, Hashable, Sendable {
     let hasChildren: Bool
     let isCollapsed: Bool
     let ancestorTitles: [String]
-    let tableProjection: JSONTableProjection?
 }
 
 nonisolated struct JSONDisplayedViewerRow: Identifiable, Hashable, Sendable {
     let row: JSONViewerRow
     let visibleLineNumber: Int?
-    let tableRows: [JSONDisplayedTableProjectionRow]
 
     var id: String {
         row.id
     }
-}
-
-nonisolated struct JSONDisplayedTableProjectionRow: Identifiable, Hashable, Sendable {
-    let row: JSONTableProjectionRow
-    let visibleLineNumber: Int?
-
-    var id: String {
-        row.id
-    }
-}
-
-nonisolated struct JSONTableProjection: Hashable, Sendable {
-    let id: String
-    let depth: Int
-    let columns: [String]
-    let rows: [JSONTableProjectionRow]
-}
-
-nonisolated struct JSONTableProjectionRow: Identifiable, Hashable, Sendable {
-    let id: String
-    let lineNumber: Int
-    let cells: [JSONTableProjectionCell]
-}
-
-nonisolated struct JSONTableProjectionCell: Identifiable, Hashable, Sendable {
-    let id: String
-    let column: String
-    let lineNumber: Int
-    let displayValue: String
-    let kind: JSONValueKind
 }
 
 nonisolated enum JSONPresentationBuilder {
@@ -217,8 +185,7 @@ nonisolated enum JSONPresentationBuilder {
                     displayValue: diagnostic.message,
                     hasChildren: false,
                     isCollapsed: false,
-                    ancestorTitles: [],
-                    tableProjection: nil
+                    ancestorTitles: []
                 )
             }
         }
@@ -237,8 +204,6 @@ nonisolated enum JSONPresentationBuilder {
         let displayValue = flattenedRecordChild.map { "\(node.summary) \($0.summary)" } ?? node.summary
         let renderedChildren = flattenedRecordChild?.children ?? node.children
         let title = rowTitle(for: node, displayValue: displayValue)
-        let projectedNode = flattenedRecordChild ?? node
-        let tableProjection = isCollapsed ? nil : tableProjection(for: projectedNode, depth: depth + 1)
         rows.append(
             JSONViewerRow(
                 id: node.id,
@@ -250,12 +215,10 @@ nonisolated enum JSONPresentationBuilder {
                 displayValue: displayValue,
                 hasChildren: !renderedChildren.isEmpty,
                 isCollapsed: isCollapsed,
-                ancestorTitles: ancestors,
-                tableProjection: tableProjection
+                ancestorTitles: ancestors
             )
         )
         guard !isCollapsed else { return }
-        if tableProjection != nil { return }
         let nextAncestors = node.isContainer ? ancestors + [title] : ancestors
         for child in renderedChildren {
             append(
@@ -281,59 +244,6 @@ nonisolated enum JSONPresentationBuilder {
         guard child.kind == .object || child.kind == .array else { return nil }
         return child
     }
-
-    private nonisolated static func tableProjection(for node: JSONValueNode, depth: Int) -> JSONTableProjection? {
-        guard node.kind == .array else { return nil }
-        let objectRows = node.children.filter { $0.kind == .object }
-        guard objectRows.count == node.children.count, objectRows.count >= 2 else { return nil }
-
-        var columns: [String] = []
-        for row in objectRows {
-            for child in row.children where child.kind != .comment && child.kind != .error {
-                guard let key = child.key, !columns.contains(key) else { continue }
-                columns.append(key)
-            }
-        }
-        guard !columns.isEmpty else { return nil }
-
-        let projectedRows = objectRows.enumerated().map { rowIndex, row in
-            var childrenByKey: [String: JSONValueNode] = [:]
-            for child in row.children {
-                guard let key = child.key, childrenByKey[key] == nil else { continue }
-                childrenByKey[key] = child
-            }
-            let cells = columns.map { column in
-                if let child = childrenByKey[column] {
-                    return JSONTableProjectionCell(
-                        id: "\(row.id).cell.\(column)",
-                        column: column,
-                        lineNumber: child.lineNumber,
-                        displayValue: child.summary,
-                        kind: child.kind
-                    )
-                }
-                return JSONTableProjectionCell(
-                    id: "\(row.id).cell.\(column).missing",
-                    column: column,
-                    lineNumber: row.lineNumber,
-                    displayValue: "",
-                    kind: .null
-                )
-            }
-            return JSONTableProjectionRow(
-                id: "\(node.id).table.row.\(rowIndex)",
-                lineNumber: row.lineNumber,
-                cells: cells
-            )
-        }
-
-        return JSONTableProjection(
-            id: "\(node.id).table",
-            depth: depth,
-            columns: columns,
-            rows: projectedRows
-        )
-    }
 }
 
 nonisolated enum JSONGutterPresentationBuilder {
@@ -343,23 +253,9 @@ nonisolated enum JSONGutterPresentationBuilder {
             let visibleLineNumber = lineNumberForGutter(row.lineNumber, after: previousLineNumber)
             previousLineNumber = row.lineNumber
 
-            var tableRows: [JSONDisplayedTableProjectionRow] = []
-            if let tableProjection = row.tableProjection {
-                for tableRow in tableProjection.rows {
-                    tableRows.append(
-                        JSONDisplayedTableProjectionRow(
-                            row: tableRow,
-                            visibleLineNumber: lineNumberForGutter(tableRow.lineNumber, after: previousLineNumber)
-                        )
-                    )
-                    previousLineNumber = tableRow.lineNumber
-                }
-            }
-
             return JSONDisplayedViewerRow(
                 row: row,
-                visibleLineNumber: visibleLineNumber,
-                tableRows: tableRows
+                visibleLineNumber: visibleLineNumber
             )
         }
     }
@@ -592,7 +488,7 @@ private nonisolated final class JSONFamilyParser {
                 continue
             }
             let childPath = "\(path).\(itemIndex)"
-            let child = parseValue(path: childPath, key: nil) ?? errorNode(path: childPath, message: "Expected array item.", at: currentToken())
+            let child = parseValue(path: childPath, key: "[\(itemIndex)]") ?? errorNode(path: childPath, message: "Expected array item.", at: currentToken())
             children.append(child)
             itemIndex += 1
             if consume(.comma) {

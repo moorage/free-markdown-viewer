@@ -173,7 +173,7 @@ struct JSONDocumentView: View {
                 indentation(row.depth)
 
                 if let key = row.key {
-                    Text(verbatim: "\"\(key)\"")
+                    Text(verbatim: formattedKey(key))
                         .font(monospacedFont)
                         .foregroundStyle(Color.teal)
                     Text(":")
@@ -191,12 +191,6 @@ struct JSONDocumentView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 3)
 
-            if let tableProjection = row.tableProjection {
-                tableProjectionView(
-                    tableProjection,
-                    displayedRows: displayedRow.tableRows
-                )
-            }
         }
         .background(
             GeometryReader { proxy in
@@ -215,48 +209,6 @@ struct JSONDocumentView: View {
         .accessibilityIdentifier("json.row.\(row.nodeID)")
     }
 
-    private func tableProjectionView(
-        _ table: JSONTableProjection,
-        displayedRows: [JSONDisplayedTableProjectionRow]
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                gutter(table.rows.first?.lineNumber ?? 1, visibleLineNumber: nil)
-                    .opacity(0)
-                indentation(table.depth)
-                ForEach(table.columns, id: \.self) { column in
-                    Text(verbatim: column)
-                        .font(.system(size: 12 * fontScale, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 140, alignment: .leading)
-                }
-            }
-            .padding(.vertical, 3)
-
-            ForEach(displayedRows) { displayedRow in
-                let projectedRow = displayedRow.row
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    gutter(
-                        projectedRow.lineNumber,
-                        visibleLineNumber: displayedRow.visibleLineNumber
-                    )
-                    indentation(table.depth)
-                    ForEach(projectedRow.cells) { cell in
-                        Text(verbatim: cell.displayValue)
-                            .font(monospacedFont)
-                            .foregroundStyle(color(for: cell.kind))
-                            .lineLimit(2)
-                            .frame(width: 140, alignment: .leading)
-                            .accessibilityIdentifier("json.table.cell.\(cell.id)")
-                    }
-                }
-                .padding(.vertical, 3)
-            }
-        }
-        .padding(.bottom, 4)
-        .accessibilityIdentifier("json.table.\(table.id)")
-    }
-
     private func gutter(_ lineNumber: Int, visibleLineNumber: Int?) -> some View {
         Text(verbatim: visibleLineNumber.map(String.init) ?? "")
             .font(.system(size: 11 * fontScale, weight: .regular, design: .monospaced))
@@ -270,6 +222,13 @@ struct JSONDocumentView: View {
     private func indentation(_ depth: Int) -> some View {
         Color.clear
             .frame(width: CGFloat(depth) * 18 * fontScale, height: 1)
+    }
+
+    private func formattedKey(_ key: String) -> String {
+        if key.hasPrefix("[") && key.hasSuffix("]") {
+            return key
+        }
+        return "\"\(key)\""
     }
 
     private var monospacedFont: Font {

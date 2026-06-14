@@ -77,7 +77,7 @@ Purpose:
 - detect standalone `.json`, `.jsonc`, `.ndjson`, and `.jsonl` files
 - detect Markdown fenced `json`, `jsonc`, `ndjson`, and `jsonl` blocks
 - parse JSON-family source into native source-mapped rows with diagnostics
-- render viewer/source modes with line gutters, token highlighting, collapsible sections, sticky ancestor context, and compact table projections for homogeneous object arrays
+- render viewer/source modes with line gutters, token highlighting, collapsible sections, sticky ancestor context, and indexed array items
 
 Primary code areas:
 

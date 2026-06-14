@@ -2632,7 +2632,7 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
         XCTAssertTrue(try XCTUnwrap(rows.last).isCollapsed)
     }
 
-    func testJSONViewerRowsProjectHomogeneousObjectArraysAsTables() throws {
+    func testJSONViewerRowsRenderObjectArraysAsIndexedItems() throws {
         let document = JSONDocumentModel.parse(
             source: """
             {
@@ -2647,12 +2647,56 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
 
         let rows = JSONPresentationBuilder.rows(for: document, collapsedNodeIDs: [])
         let eventsRow = try XCTUnwrap(rows.first { $0.key == "events" })
-        let table = try XCTUnwrap(eventsRow.tableProjection)
 
-        XCTAssertEqual(table.columns, ["id", "name"])
-        XCTAssertEqual(table.rows.map(\.lineNumber), [3, 4])
-        XCTAssertEqual(table.rows.first?.cells.map(\.displayValue), ["1", #""launch""#])
-        XCTAssertFalse(rows.contains { $0.key == "id" })
+        XCTAssertEqual(eventsRow.displayValue, "[ 2 ]")
+        XCTAssertTrue(rows.contains { $0.id == "root.events.0" && $0.key == "[0]" && $0.displayValue == "{ 2 }" && $0.lineNumber == 3 })
+        XCTAssertTrue(rows.contains { $0.id == "root.events.0.id" && $0.key == "id" && $0.displayValue == "1" && $0.lineNumber == 3 })
+        XCTAssertTrue(rows.contains { $0.id == "root.events.0.name" && $0.key == "name" && $0.displayValue == #""launch""# && $0.lineNumber == 3 })
+        XCTAssertTrue(rows.contains { $0.id == "root.events.1" && $0.key == "[1]" && $0.displayValue == "{ 2 }" && $0.lineNumber == 4 })
+
+        let collapsedRows = JSONPresentationBuilder.rows(for: document, collapsedNodeIDs: ["root.events.1"])
+        XCTAssertTrue(collapsedRows.contains { $0.id == "root.events.1" && $0.isCollapsed })
+        XCTAssertFalse(collapsedRows.contains { $0.id == "root.events.1.id" })
+    }
+
+    func testJSONViewerRowsRenderScalarArraysAsIndexedItems() throws {
+        let document = JSONDocumentModel.parse(
+            source: """
+            {
+              "labels": ["alpha", "beta", true, null, 42]
+            }
+            """,
+            kind: .json
+        )
+
+        let rows = JSONPresentationBuilder.rows(for: document, collapsedNodeIDs: [])
+
+        XCTAssertTrue(rows.contains { $0.id == "root.labels" && $0.key == "labels" && $0.displayValue == "[ 5 ]" })
+        XCTAssertTrue(rows.contains { $0.id == "root.labels.0" && $0.key == "[0]" && $0.displayValue == #""alpha""# && $0.kind == .string })
+        XCTAssertTrue(rows.contains { $0.id == "root.labels.1" && $0.key == "[1]" && $0.displayValue == #""beta""# && $0.kind == .string })
+        XCTAssertTrue(rows.contains { $0.id == "root.labels.2" && $0.key == "[2]" && $0.displayValue == "true" && $0.kind == .bool })
+        XCTAssertTrue(rows.contains { $0.id == "root.labels.3" && $0.key == "[3]" && $0.displayValue == "null" && $0.kind == .null })
+        XCTAssertTrue(rows.contains { $0.id == "root.labels.4" && $0.key == "[4]" && $0.displayValue == "42" && $0.kind == .number })
+    }
+
+    func testJSONStickyHeaderFixtureProvidesDeepScrollableAncestorRows() throws {
+        let fixture = repoRootURL.appendingPathComponent("Fixtures/docs/json_sticky_headers_showcase.json")
+        let document = JSONDocumentModel.parse(
+            source: try String(contentsOf: fixture, encoding: .utf8),
+            kind: .json
+        )
+
+        let rows = JSONPresentationBuilder.rows(for: document, collapsedNodeIDs: [])
+        let sampleRow = try XCTUnwrap(rows.first { $0.id == "root.workspace.release.streams.1.records.11.checks.duration" })
+
+        XCTAssertGreaterThan(rows.count, 120)
+        XCTAssertTrue(sampleRow.ancestorTitles.contains("workspace"))
+        XCTAssertTrue(sampleRow.ancestorTitles.contains("release"))
+        XCTAssertTrue(sampleRow.ancestorTitles.contains("streams"))
+        XCTAssertTrue(sampleRow.ancestorTitles.contains("[1]"))
+        XCTAssertTrue(sampleRow.ancestorTitles.contains("records"))
+        XCTAssertTrue(sampleRow.ancestorTitles.contains("[11]"))
+        XCTAssertTrue(sampleRow.ancestorTitles.contains("checks"))
     }
 
     func testJSONParserPublishesSourceTokensForHighlighting() throws {

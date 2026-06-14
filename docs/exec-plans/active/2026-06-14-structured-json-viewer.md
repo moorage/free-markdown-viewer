@@ -15,8 +15,9 @@ The line gutter is part of the product contract: viewer rows must continue to id
 - [x] (2026-06-14T07:02Z) Added first-class `.json`, `.jsonc`, `.ndjson`, and `.jsonl` workspace/document recognition, macOS document type declarations, Quick Look content type declarations, and macOS file-drop/open normalization coverage.
 - [x] (2026-06-14T07:02Z) Wired standalone JSON-family files and Markdown fenced JSON-family blocks into `MarkdownBlockKind.jsonDocument`, with viewer/source SwiftUI rendering, line gutters, collapsible rows, print fallback text, and deterministic fixtures.
 - [x] (2026-06-14T07:02Z) Added bounded Quick Look rendered support for JSON-family files with native line-numbered previews.
-- [x] (2026-06-14T07:46Z) Added shared syntax tokens, homogeneous object-array table projection, token-highlighted source mode, live active-ancestor sticky headers, projected table rendering, and print text output for projected tables.
-- [x] (2026-06-14T07:46Z) Added Quick Look strict-JSON expand/collapse controls, plus focused parser, table projection, and Quick Look collapse coverage.
+- [x] (2026-06-14T07:46Z) Added shared syntax tokens, token-highlighted source mode, live active-ancestor sticky headers, readable array rendering, and print text output for JSON viewer rows.
+- [x] (2026-06-14T07:46Z) Added Quick Look strict-JSON expand/collapse controls, plus focused parser and Quick Look collapse coverage.
+- [x] (2026-06-14T16:54Z) Replaced object-array table rendering with regular indexed array rows, added scalar-array coverage, and added a large nested fixture for sticky ancestor validation.
 
 ## Surprises & Discoveries
 
@@ -66,9 +67,13 @@ The line gutter is part of the product contract: viewer rows must continue to id
   Rationale: the Quick Look formatter is intentionally extension-local; strict JSON and sanitized JSONC can be safely pretty-printed and collapsed through Foundation, while NDJSON can collapse each parseable physical record line without linking the app parser into the extension.
   Date/Author: 2026-06-14 / Codex
 
+- Decision: Render JSON arrays as indexed tree rows instead of compact tables.
+  Rationale: tables hide the actual array structure and make object arrays feel different from scalar arrays. Indexed rows keep arrays, nested objects, and simple strings readable with the same disclosure, gutter, and sticky-ancestor behavior.
+  Date/Author: 2026-06-14 / Codex
+
 ## Outcomes & Retrospective
 
-Implementation completed for the current milestone. JSON-family files are workspace-visible and draggable/openable on macOS, Markdown fenced JSON-family blocks render as structured JSON blocks, and the app exposes a native viewer/source JSON surface with source-mapped gutters, collapsible rows, token-highlighted source mode, live active-ancestor sticky headers, and compact table projection for homogeneous object arrays. Print text output includes projected table rows with source line gutters. Quick Look declares JSON-family content types, pretty-prints JSON/JSONC when possible, collapses JSON/JSONC containers, collapses parseable NDJSON/JSONL record lines, and preserves native line-numbered source fallback.
+Implementation completed for the current milestone. JSON-family files are workspace-visible and draggable/openable on macOS, Markdown fenced JSON-family blocks render as structured JSON blocks, and the app exposes a native viewer/source JSON surface with source-mapped gutters, collapsible rows, indexed array items, token-highlighted source mode, and live active-ancestor sticky headers. Print text output includes the same expanded row outline with source line gutters. Quick Look declares JSON-family content types, pretty-prints JSON/JSONC when possible, collapses JSON/JSONC containers, collapses parseable NDJSON/JSONL record lines, and preserves native line-numbered source fallback.
 
 Remaining follow-up candidates: add full UI automation for sticky ancestor scrolling, add Quick Look JSONC/NDJSON structural parsing if extension target sharing becomes desirable, and add screenshot/checkpoint artifacts for the new JSON fixtures.
 
@@ -142,12 +147,12 @@ Expected new implementation areas:
    - visible label/key/value fragments with syntax roles
    - disclosure availability and collapsed state
    - ancestor chain for sticky headers
-   - optional table projection metadata for arrays of mostly homogeneous objects
+   - indexed array labels for object and scalar array items
    - diagnostic state where parsing recovered
 
 7. Define the line-gutter rule before UI work: source mode shows physical source lines. Viewer mode shows the original source line that produced each rendered row. If a minified one-line object is pretty-rendered into many rows, each derived row uses the same original source line, with continuation styling allowed but not a blank or synthetic line number. When a node is collapsed, the collapsed summary row keeps the container's opening source line.
 
-8. Add table projection for arrays of objects only when it is clearly helpful and bounded: the node remains collapsible as normal JSON, but an expanded homogeneous array may render as a compact table section with object keys as columns. Long table projections use sticky column headers and the sticky ancestor stack. Sparse or heterogeneous arrays stay in tree rows.
+8. Render arrays as normal tree rows with indexed item labels such as `[0]` and `[1]`. Object arrays and scalar arrays use the same disclosure, gutter, and sticky ancestor behavior as any other JSON node.
 
 9. Extend the shared block model. Either add `MarkdownBlockKind.jsonDocument` with a `MarkdownJSONDocument` payload, or add a JSON payload to `MarkdownCodeBlock` and introduce a standalone JSON block wrapper. The chosen shape must support both standalone files and Markdown fenced JSON-family blocks without losing current code-block fallback behavior for unknown languages.
 
@@ -168,7 +173,7 @@ Expected new implementation areas:
 
 14. Wire standalone JSON-family documents so the main document toolbar exposes the same viewer/source mode. Store selected mode and collapsed IDs in view state keyed by selected path; reset or reconcile that state when the selected file changes. Avoid persisting collapsed state to disk in this milestone.
 
-15. Update printing. `PrintableDocumentCompositionView` should render JSON-family sections through a print-specific JSON view that is deterministic, noninteractive, and source-mapped. Printing a selected JSON document should honor current source/viewer mode when the mode is available in the composition input; print-all may default to viewer mode with all nodes expanded except very large table projections that print as readable paginated sections. Printed output must include line gutters and syntax styling where the platform print renderer supports color.
+15. Update printing. `PrintableDocumentCompositionView` should render JSON-family sections through a print-specific JSON view that is deterministic, noninteractive, and source-mapped. Printing a selected JSON document should honor current source/viewer mode when the mode is available in the composition input; print-all may default to viewer mode with all nodes expanded. Printed output must include line gutters and syntax styling where the platform print renderer supports color.
 
 16. Update `DocumentPlainTextRenderer` so harness text-print artifacts for JSON-family documents remain useful. Include source text for source-mode artifacts and a deterministic tree outline for viewer-mode artifacts if mode state is threaded into the composition; otherwise default to raw source in plain-text artifacts and rely on PDF export for visual acceptance.
 
@@ -182,7 +187,7 @@ Expected new implementation areas:
    - `Fixtures/docs/events.ndjson`
    - `Fixtures/docs/events.jsonl`
    - `Fixtures/docs/markdown_json_showcase.md`
-   These should cover minified one-line JSON, deeply nested objects, arrays of homogeneous objects, sparse arrays, long string wrapping, JSONC comments and trailing commas, malformed records, blank NDJSON lines, and fenced JSON-family blocks in Markdown.
+   These should cover minified one-line JSON, deeply nested objects, arrays of objects, scalar arrays, sparse arrays, long string wrapping, JSONC comments and trailing commas, malformed records, blank NDJSON lines, sticky ancestor scrolling, and fenced JSON-family blocks in Markdown.
 
 20. Add focused tests in `Quick_Markdown_ViewerTests.swift` or split test files if the suite becomes too large:
    - file-kind and supported-extension mapping
@@ -191,7 +196,7 @@ Expected new implementation areas:
    - source line preservation for pretty rows, collapsed rows, comments, and NDJSON records
    - Markdown fenced JSON-family line offsets
    - visible row building after expand/collapse
-   - homogeneous array table projection and fallback
+   - indexed object-array and scalar-array rendering
    - print composition for standalone and fenced JSON-family content
    - Quick Look content type declarations and runtime viewer/source switching
 
@@ -204,10 +209,10 @@ Acceptance requires:
 - `.json`, `.jsonc`, `.ndjson`, and `.jsonl` files appear in local and GitHub workspaces, can be selected from the sidebar, and can be dragged or Launch Services-opened on macOS to open the parent folder with the dropped file selected.
 - Standalone JSON-family documents default to viewer mode with a visible `Viewer` / `Source` toggle.
 - Markdown fenced blocks declared as `json`, `jsonc`, `ndjson`, or `jsonl` render with the same viewer/source behavior inside Markdown documents.
-- Viewer mode supports collapsing and expanding object, array, record, and projected table sections without losing stable row IDs or incorrect line gutters.
+- Viewer mode supports collapsing and expanding object, array, and record sections without losing stable row IDs or incorrect line gutters.
 - Source mode shows syntax-highlighted original source with line numbers.
 - Viewer mode shows syntax-highlighted structured rows with compact indentation and original source line numbers, including pretty-rendered rows that span multiple visual rows from one original source line.
-- Long nested JSON views keep active ancestor headers visible while scrolling; projected table sections keep both ancestor context and column headers visible.
+- Long nested JSON views keep active ancestor headers visible while scrolling.
 - JSONC comments and trailing commas render intentionally in JSONC mode and produce diagnostics in strict JSON mode.
 - NDJSON/JSONL preserve physical record line numbers, recover from malformed records, and continue rendering later valid records.
 - Printing produces readable JSON-family output with line gutters and no blank pages in the exported PDF path.
@@ -238,7 +243,7 @@ Validation run in this implementation:
 - `git diff --check`
 - `./scripts/test-unit`
 - `./scripts/build --platform all`
-- `./scripts/test-unit --only-testing Quick_Markdown_ViewerTests/Quick_Markdown_ViewerTests/testJSONViewerRowsProjectHomogeneousObjectArraysAsTables --only-testing Quick_Markdown_ViewerTests/Quick_Markdown_ViewerTests/testJSONParserPublishesSourceTokensForHighlighting --only-testing Quick_Markdown_ViewerTests/Quick_Markdown_ViewerTests/testQuickLookPreviewExtensionCollapsesJSONContainers`
+- `./scripts/test-unit --only-testing Quick_Markdown_ViewerTests/Quick_Markdown_ViewerTests/testJSONViewerRowsRenderObjectArraysAsIndexedItems --only-testing Quick_Markdown_ViewerTests/Quick_Markdown_ViewerTests/testJSONViewerRowsRenderScalarArraysAsIndexedItems --only-testing Quick_Markdown_ViewerTests/Quick_Markdown_ViewerTests/testJSONStickyHeaderFixtureProvidesDeepScrollableAncestorRows --only-testing Quick_Markdown_ViewerTests/Quick_Markdown_ViewerTests/testJSONParserPublishesSourceTokensForHighlighting --only-testing Quick_Markdown_ViewerTests/Quick_Markdown_ViewerTests/testQuickLookPreviewExtensionCollapsesJSONContainers`
 
 ## Idempotence and Recovery
 
@@ -266,7 +271,7 @@ Design notes:
 - Use compact indentation. Start with 14 to 16 points per nesting level in viewer mode, then adjust only if visual validation shows crowding.
 - Keep gutter width stable with monospaced digits based on the largest original source line in the rendered source, not the number of visible rows.
 - Collapsed containers should display a short summary such as object property count, array item count, NDJSON record number, and any diagnostic count.
-- Table projection is a readability enhancement, not the only representation. Users must still be able to collapse the array section and inspect individual nested values.
+- Arrays render as indexed rows rather than tables so users can collapse the array section and inspect individual nested values consistently.
 - Do not add sorting, filtering, editing, schema validation, JSONPath search, or persisted collapse state in this milestone.
 
 ## Interfaces and Dependencies

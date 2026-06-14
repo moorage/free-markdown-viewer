@@ -57,8 +57,6 @@ Stable identifiers include:
 - `json.row.<id>`
 - `json.gutter.<line>`
 - `json.disclosure.<id>`
-- `json.table.<id>`
-- `json.table.cell.<id>`
 - `block.placeholder.0`
 - `block.image.<id>`
 - `block.video.<id>`
