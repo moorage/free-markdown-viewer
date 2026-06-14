@@ -43,12 +43,13 @@ struct JSONDocumentView: View {
             for: jsonDocument.document,
             collapsedNodeIDs: isPrinting ? [] : collapsedNodeIDs
         )
+        let displayedRows = JSONGutterPresentationBuilder.rows(from: rows)
 
         return Group {
             if isPrinting {
                 VStack(alignment: .leading, spacing: 0) {
-                    ForEach(rows) { row in
-                        viewerRow(row)
+                    ForEach(displayedRows) { displayedRow in
+                        viewerRow(displayedRow)
                     }
                 }
                 .padding(12)
@@ -56,8 +57,8 @@ struct JSONDocumentView: View {
                 ScrollView(.vertical, showsIndicators: true) {
                     LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
                         Section {
-                            ForEach(rows) { row in
-                                viewerRow(row)
+                            ForEach(displayedRows) { displayedRow in
+                                viewerRow(displayedRow)
                             }
                         } header: {
                             stickyHeader()
@@ -82,7 +83,10 @@ struct JSONDocumentView: View {
                 Section {
                     ForEach(Array(lines.enumerated()), id: \.offset) { offset, line in
                         HStack(alignment: .firstTextBaseline, spacing: 12) {
-                            gutter(jsonDocument.document.sourceLineOffset + offset + 1)
+                            gutter(
+                                jsonDocument.document.sourceLineOffset + offset + 1,
+                                visibleLineNumber: jsonDocument.document.sourceLineOffset + offset + 1
+                            )
                             sourceLineText(lineNumber: jsonDocument.document.sourceLineOffset + offset + 1, text: line)
                                 .font(monospacedFont)
                             .lineLimit(nil)
@@ -119,10 +123,11 @@ struct JSONDocumentView: View {
             .background(.regularMaterial)
     }
 
-    private func viewerRow(_ row: JSONViewerRow) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
+    private func viewerRow(_ displayedRow: JSONDisplayedViewerRow) -> some View {
+        let row = displayedRow.row
+        return VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
-                gutter(row.lineNumber)
+                gutter(row.lineNumber, visibleLineNumber: displayedRow.visibleLineNumber)
 
                 Button {
                     toggle(row)
@@ -158,7 +163,10 @@ struct JSONDocumentView: View {
             .padding(.vertical, 3)
 
             if let tableProjection = row.tableProjection {
-                tableProjectionView(tableProjection)
+                tableProjectionView(
+                    tableProjection,
+                    displayedRows: displayedRow.tableRows
+                )
             }
         }
         .background(
@@ -178,10 +186,13 @@ struct JSONDocumentView: View {
         .accessibilityIdentifier("json.row.\(row.nodeID)")
     }
 
-    private func tableProjectionView(_ table: JSONTableProjection) -> some View {
+    private func tableProjectionView(
+        _ table: JSONTableProjection,
+        displayedRows: [JSONDisplayedTableProjectionRow]
+    ) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                gutter(table.rows.first?.lineNumber ?? 1)
+                gutter(table.rows.first?.lineNumber ?? 1, visibleLineNumber: nil)
                     .opacity(0)
                 indentation(table.depth)
                 ForEach(table.columns, id: \.self) { column in
@@ -193,9 +204,13 @@ struct JSONDocumentView: View {
             }
             .padding(.vertical, 3)
 
-            ForEach(table.rows) { projectedRow in
+            ForEach(displayedRows) { displayedRow in
+                let projectedRow = displayedRow.row
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    gutter(projectedRow.lineNumber)
+                    gutter(
+                        projectedRow.lineNumber,
+                        visibleLineNumber: displayedRow.visibleLineNumber
+                    )
                     indentation(table.depth)
                     ForEach(projectedRow.cells) { cell in
                         Text(verbatim: cell.displayValue)
@@ -213,13 +228,14 @@ struct JSONDocumentView: View {
         .accessibilityIdentifier("json.table.\(table.id)")
     }
 
-    private func gutter(_ lineNumber: Int) -> some View {
-        Text(verbatim: "\(lineNumber)")
+    private func gutter(_ lineNumber: Int, visibleLineNumber: Int?) -> some View {
+        Text(verbatim: visibleLineNumber.map(String.init) ?? "")
             .font(.system(size: 11 * fontScale, weight: .regular, design: .monospaced))
             .foregroundStyle(.secondary)
             .monospacedDigit()
             .frame(width: 44, alignment: .trailing)
-            .accessibilityIdentifier("json.gutter.\(lineNumber)")
+            .accessibilityIdentifier(visibleLineNumber == nil ? "json.gutter.\(lineNumber).repeat" : "json.gutter.\(lineNumber)")
+            .accessibilityLabel(Text("Line \(lineNumber)"))
     }
 
     private func indentation(_ depth: Int) -> some View {

@@ -150,6 +150,25 @@ nonisolated struct JSONViewerRow: Identifiable, Hashable, Sendable {
     let tableProjection: JSONTableProjection?
 }
 
+nonisolated struct JSONDisplayedViewerRow: Identifiable, Hashable, Sendable {
+    let row: JSONViewerRow
+    let visibleLineNumber: Int?
+    let tableRows: [JSONDisplayedTableProjectionRow]
+
+    var id: String {
+        row.id
+    }
+}
+
+nonisolated struct JSONDisplayedTableProjectionRow: Identifiable, Hashable, Sendable {
+    let row: JSONTableProjectionRow
+    let visibleLineNumber: Int?
+
+    var id: String {
+        row.id
+    }
+}
+
 nonisolated struct JSONTableProjection: Hashable, Sendable {
     let id: String
     let depth: Int
@@ -303,6 +322,39 @@ nonisolated enum JSONPresentationBuilder {
             columns: columns,
             rows: projectedRows
         )
+    }
+}
+
+nonisolated enum JSONGutterPresentationBuilder {
+    nonisolated static func rows(from rows: [JSONViewerRow]) -> [JSONDisplayedViewerRow] {
+        var previousLineNumber: Int?
+        return rows.map { row in
+            let visibleLineNumber = lineNumberForGutter(row.lineNumber, after: previousLineNumber)
+            previousLineNumber = row.lineNumber
+
+            var tableRows: [JSONDisplayedTableProjectionRow] = []
+            if let tableProjection = row.tableProjection {
+                for tableRow in tableProjection.rows {
+                    tableRows.append(
+                        JSONDisplayedTableProjectionRow(
+                            row: tableRow,
+                            visibleLineNumber: lineNumberForGutter(tableRow.lineNumber, after: previousLineNumber)
+                        )
+                    )
+                    previousLineNumber = tableRow.lineNumber
+                }
+            }
+
+            return JSONDisplayedViewerRow(
+                row: row,
+                visibleLineNumber: visibleLineNumber,
+                tableRows: tableRows
+            )
+        }
+    }
+
+    private nonisolated static func lineNumberForGutter(_ lineNumber: Int, after previousLineNumber: Int?) -> Int? {
+        lineNumber == previousLineNumber ? nil : lineNumber
     }
 }
 

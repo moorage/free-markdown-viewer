@@ -2575,6 +2575,43 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
         XCTAssertEqual(rows.map(\.key), [nil, "name", "count"])
     }
 
+    func testJSONGutterHidesRepeatedVisibleLineNumbers() throws {
+        let document = JSONDocumentModel.parse(
+            source: #"{"name":"Quick Markdown Viewer","count":2}"#,
+            kind: .json
+        )
+        let rows = JSONPresentationBuilder.rows(for: document, collapsedNodeIDs: [])
+        let displayedRows = JSONGutterPresentationBuilder.rows(from: rows)
+
+        XCTAssertEqual(rows.map(\.lineNumber), [1, 1, 1])
+        XCTAssertEqual(displayedRows.map(\.visibleLineNumber), [1, nil, nil])
+    }
+
+    func testJSONGutterShowsLineNumberWhenVisibleLineChanges() throws {
+        let document = JSONDocumentModel.parse(
+            source: """
+            {"event":"one","ok":true}
+
+            {"event":"two","ok":true}
+            """,
+            kind: .ndjson
+        )
+        let rows = JSONPresentationBuilder.rows(for: document, collapsedNodeIDs: [])
+        let displayedRows = JSONGutterPresentationBuilder.rows(from: rows)
+
+        XCTAssertEqual(rows.first { $0.id == "record.1" }?.lineNumber, 3)
+
+        var previousLineNumber: Int?
+        for displayedRow in displayedRows {
+            if displayedRow.row.lineNumber == previousLineNumber {
+                XCTAssertNil(displayedRow.visibleLineNumber)
+            } else {
+                XCTAssertEqual(displayedRow.visibleLineNumber, displayedRow.row.lineNumber)
+            }
+            previousLineNumber = displayedRow.row.lineNumber
+        }
+    }
+
     func testJSONViewerRowsPreserveLineNumbersAfterCollapse() throws {
         let document = JSONDocumentModel.parse(
             source: """
