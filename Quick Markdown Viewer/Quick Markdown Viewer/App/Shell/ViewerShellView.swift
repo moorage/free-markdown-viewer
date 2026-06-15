@@ -383,6 +383,7 @@ struct ViewerShellView: View {
 
             if sidebarPane == .files {
                 sidebarFilterField
+                sidebarAncestorHeader
 
                 List(visibleSidebarRows) { row in
                     sidebarRow(for: row)
@@ -681,6 +682,30 @@ struct ViewerShellView: View {
         visibleSidebarRowsCache
     }
 
+    private var selectedSidebarAncestorRows: [SidebarFileTree.FolderRow] {
+        SidebarFileTree.ancestorFolderRows(for: model.selectedPath, within: visibleSidebarRows)
+    }
+
+    @ViewBuilder
+    private var sidebarAncestorHeader: some View {
+        let ancestorRows = selectedSidebarAncestorRows
+        if ancestorRows.isEmpty == false {
+            VStack(spacing: 0) {
+                ForEach(ancestorRows) { folder in
+                    sidebarAncestorRow(for: folder)
+                }
+            }
+            #if os(macOS)
+            .background(Color(nsColor: .windowBackgroundColor))
+            #else
+            .background(Color(uiColor: .systemBackground))
+            #endif
+            .overlay(alignment: .bottom) {
+                Divider()
+            }
+        }
+    }
+
     private func rebuildSidebarTreeSnapshot() {
         sidebarTreeSnapshot = SidebarFileTree.Snapshot(files: filteredFiles)
         refreshVisibleSidebarRows()
@@ -733,6 +758,19 @@ struct ViewerShellView: View {
         .listRowInsets(EdgeInsets(top: 2, leading: 6, bottom: 2, trailing: 6))
         .listRowBackground(sidebarFocusedRowBackground(isFocused: isFocused))
         .accessibilityIdentifier(AccessibilityIDs.sidebarFolderNode(folder.path))
+    }
+
+    private func sidebarAncestorRow(for folder: SidebarFileTree.FolderRow) -> some View {
+        Button {
+            #if os(macOS)
+            sidebarFocused = true
+            #endif
+            activeSidebarRowID = folder.id
+            toggleSidebarFolder(folder)
+        } label: {
+            SidebarAncestorFolderRow(folder: folder, isFocused: resolvedActiveSidebarRowID == folder.id)
+        }
+        .buttonStyle(.plain)
     }
 
     private func sidebarFileRow(for file: SidebarFileTree.FileRow) -> some View {
@@ -2145,6 +2183,35 @@ private struct SidebarFolderRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
+        .contentShape(Rectangle())
+    }
+}
+
+private struct SidebarAncestorFolderRow: View {
+    let folder: SidebarFileTree.FolderRow
+    let isFocused: Bool
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if folder.depth > 0 {
+                Color.clear
+                    .frame(width: CGFloat(folder.depth) * 16)
+            }
+            Image(systemName: "chevron.down")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(width: 10)
+            Image(systemName: "folder.fill")
+                .foregroundStyle(isFocused ? Color.accentColor : Color.secondary)
+            Text(folder.label)
+                .font(ViewerFont.body(scale: 0.92))
+                .foregroundStyle(isFocused ? Color.accentColor : Color.primary)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 5)
         .contentShape(Rectangle())
     }
 }

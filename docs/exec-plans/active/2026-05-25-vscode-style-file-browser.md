@@ -20,6 +20,7 @@ The result should preserve the current quick filter, selected-file opening, acce
 - [x] (2026-05-26 05:16Z) Split folder focus styling from viewed-document selection styling so folder navigation no longer creates two identical selected rows.
 - [x] (2026-05-26 05:22Z) Removed the visible `Sidebar` picker label and added icons to the Files/Search tabs.
 - [x] (2026-05-26 05:51Z) Replaced the sidebar mode segmented picker with custom icon button tabs and removed the tab strip's opaque system-background fill.
+- [x] (2026-06-15T07:20Z) Added a sticky selected-file ancestor stack above the Files list, backed by focused sidebar tree tests for normal and compacted folder chains.
 
 ## Surprises & Discoveries
 
@@ -34,6 +35,9 @@ The result should preserve the current quick filter, selected-file opening, acce
 
 - SwiftUI's segmented `Picker` flattened the `Label` icon content in the sidebar mode tabs, and the explicit `windowBackgroundColor`/`systemBackground` fill behind it created an unintended white strip in the side pane.
   Evidence: the Files/Search switcher now uses explicit `Button` labels with visible SF Symbols and no pane-wide background fill.
+
+- Deeply nested selected files lose folder context when their ancestor rows scroll out of the left drawer viewport.
+  Evidence: the Files pane now derives selected ancestor rows from `SidebarFileTree` and renders them outside the scrolling `List`.
 
 ## Decision Log
 
@@ -61,9 +65,13 @@ The result should preserve the current quick filter, selected-file opening, acce
   Rationale: the segmented picker was not reliably rendering icons on macOS and required an opaque backing. The custom buttons keep the tab behavior, expose stable accessibility IDs, and render the icons directly.
   Date/Author: 2026-05-26 / Codex
 
+- Decision: Render the selected file's ancestor folders as a fixed stack above the scrolling Files list instead of trying to infer which SwiftUI `List` rows are currently offscreen.
+  Rationale: the app already knows the selected path and expanded folder tree; a fixed stack keeps the ancestry visible deterministically across macOS, iPhone, and iPad without adding viewport geometry state to the source list.
+  Date/Author: 2026-06-15 / Codex
+
 ## Outcomes & Retrospective
 
-Implemented. The left drawer now has an icon-labeled Files/Search switcher without a redundant visible picker label or opaque white backing, and the Files pane renders a derived tree with disclosure rows, compacted folder chains, hidden empty-only folders, selected file highlighting, lighter focused-folder styling, and keyboard navigation. Right arrow expands a collapsed folder, left arrow collapses an expanded folder or walks back to its parent, and up/down moves through visible rows and opens files consistently. Large-workspace switching and expansion now reuse a cached tree snapshot instead of reparsing and sorting every path during view rendering.
+Implemented. The left drawer now has an icon-labeled Files/Search switcher without a redundant visible picker label or opaque white backing, and the Files pane renders a derived tree with disclosure rows, compacted folder chains, hidden empty-only folders, selected file highlighting, lighter focused-folder styling, sticky selected-file ancestor rows, and keyboard navigation. Right arrow expands a collapsed folder, left arrow collapses an expanded folder or walks back to its parent, and up/down moves through visible rows and opens files consistently. Large-workspace switching and expansion now reuse a cached tree snapshot instead of reparsing and sorting every path during view rendering.
 
 Validation is green for the implemented file-browser model and build surfaces: unit tests cover collapsed folder-chain derivation, visible-row navigation, and a 5,000-file large-folder expansion through `SidebarFileTree.Snapshot`; the macOS UI test expands/collapses `emptyfolder / fullfolder` with pointer and arrow keys and verifies the nested file opens. For the tab-strip follow-up, the macOS app build and UI-test build-for-testing pass; the local focused UI-test execution was blocked by `Quick Markdown ViewerUITests-Runner` exiting before bootstrapping, before it connected to the app.
 
@@ -114,6 +122,7 @@ Acceptance requires:
 - Right arrow expands a selected collapsed folder; left arrow collapses an expanded folder or moves focus to its parent.
 - Empty/intermediate folder chains render as one row label like `emptyfolder / fullfolder`.
 - Standalone empty folders do not appear.
+- The selected file's open ancestor folders remain visible above the scrolling Files list when list scrolling moves their normal rows out of view.
 - Quick filter still opens matching documents and does not require manually expanding every ancestor.
 - Existing file opening and print ordering remain unchanged.
 - Focused unit tests, macOS UI verification, `./scripts/build --platform macos`, `python3 scripts/check_execplan.py`, and `python3 scripts/knowledge/check_docs.py` pass.
@@ -140,6 +149,27 @@ Commands run for the tab-strip follow-up:
 - `osascript ... tell process "Quick Markdown Viewer" ...`
 - `xcodebuild -quiet -project "Quick Markdown Viewer/Quick Markdown Viewer.xcodeproj" -scheme "Quick Markdown Viewer" -configuration Debug -derivedDataPath /tmp/qmv-sidebar-tabs-bft -destination "platform=macOS,arch=arm64" DEVELOPMENT_TEAM=GG34PA8F4A build-for-testing`
 - `xcodebuild -quiet -project "Quick Markdown Viewer/Quick Markdown Viewer.xcodeproj" -scheme "Quick Markdown Viewer" -configuration Debug -derivedDataPath /tmp/qmv-sidebar-tabs-ui -destination "platform=macOS,arch=arm64" DEVELOPMENT_TEAM=GG34PA8F4A "-only-testing:Quick Markdown ViewerUITests/Quick_Markdown_ViewerUITests/testSearchCurrentDocumentFindsMatchesAndNextResultStaysInDocument" "-only-testing:Quick Markdown ViewerUITests/Quick_Markdown_ViewerUITests/testSearchAllDocumentsFindsMatchesAndOpensClickedResult" test`
+
+Commands planned for the sticky ancestor follow-up:
+
+- `xcodebuild -quiet -project "Quick Markdown Viewer/Quick Markdown Viewer.xcodeproj" -scheme "Quick Markdown Viewer" -configuration Debug -derivedDataPath /tmp/qmv-sidebar-ancestor-tests -destination "platform=macOS,arch=arm64" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" "-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testSidebarFileTreeReturnsSelectedFileAncestorRows" "-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testSidebarFileTreeReturnsCompactedSelectedFileAncestorRows" "-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testSidebarFileTreeSupportsVisibleRowNavigation" "-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testSidebarFileTreeSnapshotHandlesLargeFolderExpansion" test`
+- `./scripts/test-unit`
+- `python3 scripts/check_execplan.py docs/exec-plans/active/2026-05-25-vscode-style-file-browser.md`
+- `python3 scripts/knowledge/check_docs.py`
+- `git diff --check`
+
+Commands run for the sticky ancestor follow-up:
+
+- `xcodebuild -quiet -project "Quick Markdown Viewer/Quick Markdown Viewer.xcodeproj" -scheme "Quick Markdown Viewer" -configuration Debug -derivedDataPath /tmp/qmv-sidebar-ancestor-tests -destination "platform=macOS,arch=arm64" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" "-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testSidebarFileTreeReturnsSelectedFileAncestorRows" "-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testSidebarFileTreeReturnsCompactedSelectedFileAncestorRows" "-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testSidebarFileTreeSupportsVisibleRowNavigation" "-only-testing:Quick Markdown ViewerTests/Quick_Markdown_ViewerTests/testSidebarFileTreeSnapshotHandlesLargeFolderExpansion" test`
+  Result: passed; Xcode emitted existing macOS 13.0 deployment target warnings while linking XCTest libraries built for macOS 14.0.
+- `./scripts/test-unit`
+  Result: passed; result bundle written to `artifacts/xcodebuild/test-unit.xcresult`.
+- `python3 scripts/check_execplan.py docs/exec-plans/active/2026-05-25-vscode-style-file-browser.md`
+  Result: passed.
+- `python3 scripts/knowledge/check_docs.py`
+  Result: passed.
+- `git diff --check`
+  Result: passed.
 
 ## Interfaces and Dependencies
 

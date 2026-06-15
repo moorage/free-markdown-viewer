@@ -93,8 +93,12 @@ final class AppModel: ObservableObject {
     }
 
     var windowTitle: String {
-        guard selectedPath != nil else { return workspaceRootDisplay }
-        return "\(workspaceRootDisplay) > \(selectedFileDisplayName)"
+        guard let selectedPath else { return workspaceRootDisplay }
+        let selectedPathComponents = selectedPath.rawValue.split(separator: "/").map(String.init)
+        let selectedPathDisplay = selectedPathComponents.isEmpty
+            ? selectedFileDisplayName
+            : selectedPathComponents.joined(separator: " > ")
+        return "\(workspaceRootDisplay) > \(selectedPathDisplay)"
     }
 
     var selectedFileURL: URL? {

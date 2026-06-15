@@ -1309,6 +1309,43 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
     }
 
     @MainActor
+    func testWindowTitleIncludesNestedFolderPath() async throws {
+        let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let nestedFolder = tempRoot.appendingPathComponent("docs/tutorials", isDirectory: true)
+        try FileManager.default.createDirectory(at: nestedFolder, withIntermediateDirectories: true)
+        try "# Getting Started".write(
+            to: nestedFolder.appendingPathComponent("getting-started.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let model = AppModel(
+            launchOptions: HarnessLaunchOptions(
+                fixtureRoot: tempRoot,
+                openFile: "docs/tutorials/getting-started.md",
+                uiTestOpenFolderURL: nil,
+                theme: nil,
+                windowSize: nil,
+                disableFileWatch: true,
+                dumpVisibleStateURL: nil,
+                dumpPerfStateURL: nil,
+                screenshotPathURL: nil,
+                commandDirectoryURL: nil,
+                uiTestMode: true,
+                platformTarget: .macos,
+                deviceClass: .mac
+            )
+        )
+        model.bootstrap()
+        try await Task.sleep(nanoseconds: 300_000_000)
+
+        XCTAssertEqual(
+            model.windowTitle,
+            "\(tempRoot.lastPathComponent) > docs > tutorials > getting-started.md"
+        )
+    }
+
+    @MainActor
     func testAppModelRestoresInitialWorkspaceSession() async throws {
         let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
@@ -1604,6 +1641,56 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
         XCTAssertEqual(model.windowTitle, "\(cachedWorkspace.descriptor.displayRoot) > guide.md")
         XCTAssertEqual(model.restorationSession?.selectedFile, "guide.md")
         XCTAssertFalse(model.canRevealSelectedFileInFinder)
+    }
+
+    @MainActor
+    func testRestoredGitHubWorkspaceTitleIncludesNestedFolderPath() async throws {
+        let fixtureURL = try makeGitHubFixtureFile()
+        let options = HarnessLaunchOptions(
+            fixtureRoot: nil,
+            openFile: nil,
+            uiTestOpenFolderURLs: [],
+            uiTestInstallCommandLineToolURL: nil,
+            uiTestGitHubFixtureURL: fixtureURL,
+            uiTestOpenLinkedMediaURL: nil,
+            uiTestResetCommandLineToolInstallState: false,
+            theme: nil,
+            windowSize: nil,
+            disableFileWatch: true,
+            dumpVisibleStateURL: nil,
+            dumpPerfStateURL: nil,
+            screenshotPathURL: nil,
+            commandDirectoryURL: nil,
+            uiTestMode: true,
+            platformTarget: .macos,
+            deviceClass: .mac
+        )
+        let (service, _) = try makeGitHubWorkspaceService(fixtureURL: fixtureURL)
+        let cachedWorkspace = try await service.loadWorkspace(from: "https://github.com/moorage/free-markdown-viewer")
+
+        let session = WorkspaceWindowSession(
+            source: .github(
+                GitHubWorkspaceSessionSource(
+                    originalURLString: cachedWorkspace.descriptor.originalURLString,
+                    cachedRootPath: cachedWorkspace.cacheRootURL.path,
+                    descriptor: cachedWorkspace.descriptor
+                )
+            ),
+            selectedFile: "docs/guide.md"
+        )
+
+        let model = AppModel(
+            launchOptions: options,
+            initialSession: session,
+            githubWorkspaceLoader: service
+        )
+        retainForTestLifetime(model)
+        model.bootstrap()
+        try await Task.sleep(nanoseconds: 500_000_000)
+
+        XCTAssertEqual(model.selectedPath?.rawValue, "docs/guide.md")
+        XCTAssertEqual(model.windowTitle, "\(cachedWorkspace.descriptor.displayRoot) > docs > guide.md")
+        XCTAssertEqual(model.restorationSession?.selectedFile, "docs/guide.md")
     }
 
     @MainActor
@@ -2537,6 +2624,44 @@ final class Quick_Markdown_ViewerTests: XCTestCase {
             SidebarFileTree.adjacentRowID(from: "file:docs/release/qa.md", within: rows, offset: -1),
             "file:docs/release/plan.md"
         )
+    }
+
+    func testSidebarFileTreeReturnsSelectedFileAncestorRows() {
+        let files = [
+            MarkdownFileNode(path: WorkspacePath(rawValue: "top/overview.md"), name: "overview.md", kind: .markdown),
+            MarkdownFileNode(path: WorkspacePath(rawValue: "top/middle/notes.md"), name: "notes.md", kind: .markdown),
+            MarkdownFileNode(path: WorkspacePath(rawValue: "top/middle/bottom/my-file.md"), name: "my-file.md", kind: .markdown),
+        ]
+        let rows = SidebarFileTree.visibleRows(
+            from: files,
+            expandedFolderIDs: ["top", "top/middle", "top/middle/bottom"]
+        )
+
+        let ancestors = SidebarFileTree.ancestorFolderRows(
+            for: WorkspacePath(rawValue: "top/middle/bottom/my-file.md"),
+            within: rows
+        )
+
+        XCTAssertEqual(ancestors.map(\.path), ["top", "top/middle", "top/middle/bottom"])
+        XCTAssertEqual(ancestors.map(\.label), ["top", "middle", "bottom"])
+    }
+
+    func testSidebarFileTreeReturnsCompactedSelectedFileAncestorRows() {
+        let files = [
+            MarkdownFileNode(path: WorkspacePath(rawValue: "top/middle/bottom/my-file.md"), name: "my-file.md", kind: .markdown),
+        ]
+        let rows = SidebarFileTree.visibleRows(
+            from: files,
+            expandedFolderIDs: ["top/middle/bottom"]
+        )
+
+        let ancestors = SidebarFileTree.ancestorFolderRows(
+            for: WorkspacePath(rawValue: "top/middle/bottom/my-file.md"),
+            within: rows
+        )
+
+        XCTAssertEqual(ancestors.map(\.path), ["top/middle/bottom"])
+        XCTAssertEqual(ancestors.map(\.label), ["top / middle / bottom"])
     }
 
     func testSidebarFileTreeSnapshotHandlesLargeFolderExpansion() {

@@ -111,14 +111,7 @@ nonisolated struct SidebarFileTree: Sendable {
     }
 
     static func folderPathPrefixes(for path: WorkspacePath?) -> Set<String> {
-        guard let path else { return [] }
-        let components = path.rawValue.split(separator: "/").map(String.init)
-        guard components.count > 1 else { return [] }
-        var prefixes: Set<String> = []
-        for index in 0..<(components.count - 1) {
-            prefixes.insert(components[0...index].joined(separator: "/"))
-        }
-        return prefixes
+        Set(folderPathPrefixesInDisplayOrder(for: path))
     }
 
     static func fileRowID(for path: WorkspacePath) -> String {
@@ -143,6 +136,19 @@ nonisolated struct SidebarFileTree: Sendable {
     static func row(withID rowID: String?, within rows: [Row]) -> Row? {
         guard let rowID else { return nil }
         return rows.first { $0.id == rowID }
+    }
+
+    static func ancestorFolderRows(for path: WorkspacePath?, within rows: [Row]) -> [FolderRow] {
+        let prefixOrder = folderPathPrefixesInDisplayOrder(for: path)
+        guard prefixOrder.isEmpty == false else { return [] }
+        let prefixSet = Set(prefixOrder)
+        let foldersByPath = Dictionary(
+            uniqueKeysWithValues: rows.compactMap { row -> (String, FolderRow)? in
+                guard case let .folder(folder) = row, prefixSet.contains(folder.path) else { return nil }
+                return (folder.path, folder)
+            }
+        )
+        return prefixOrder.compactMap { foldersByPath[$0] }
     }
 
     private static func insert(_ file: MarkdownFileNode, into root: DirectoryBuilder) {
@@ -258,6 +264,15 @@ nonisolated struct SidebarFileTree: Sendable {
     private static func sortedFiles(_ files: [MarkdownFileNode]) -> [MarkdownFileNode] {
         files.sorted {
             $0.name.localizedStandardCompare($1.name) == .orderedAscending
+        }
+    }
+
+    private static func folderPathPrefixesInDisplayOrder(for path: WorkspacePath?) -> [String] {
+        guard let path else { return [] }
+        let components = path.rawValue.split(separator: "/").map(String.init)
+        guard components.count > 1 else { return [] }
+        return (0..<(components.count - 1)).map { index in
+            components[0...index].joined(separator: "/")
         }
     }
 }
