@@ -17,8 +17,10 @@ Read local Markdown folders, inspect JSON/JSONC/NDJSON, search docs, jump with o
 
 Use this for the `What's New` field on the next App Store version:
 
-Quick Markdown Viewer 1.7 adds structured JSON-family reading and improves macOS file-opening workflows:
+This update improves folder context in the reader and adds structured JSON-family reading:
 
+- Show the full folder path in the header for files opened from nested folders
+- Keep the selected file's ancestor folders visible above the scrolling file sidebar
 - Open JSON, JSONC, NDJSON, and JSONL files in a collapsible structured viewer
 - View JSON-family fenced blocks inside Markdown with source/viewer controls
 - Keep original source line numbers visible while expanding, collapsing, and reading pretty JSON rows
